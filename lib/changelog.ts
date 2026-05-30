@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.119.0',
+    date: '2026-05-30',
+    changes: [
+      { type: 'feat', description: '`@dependabot rebase` will rebase this PR' },
+      { type: 'feat', description: '`@dependabot recreate` will recreate this PR, overwriting any edits that have been made to it' },
+      { type: 'feat', description: '`@dependabot show <dependency name> ignore conditions` will show all of the ignore conditions of the specified dependency' },
+      { type: 'feat', description: '`@dependabot ignore this major version` will close this PR and stop Dependabot creating any more for this major version (unless you reopen the PR or upgrade to it yourself)' },
+      { type: 'feat', description: '`@dependabot ignore this minor version` will close this PR and stop Dependabot creating any more for this minor version (unless you reopen the PR or upgrade to it yourself)' },
+      { type: 'feat', description: '`@dependabot ignore this dependency` will close this PR and stop Dependabot creating any more for this dependency (unless you reopen the PR or upgrade to it yourself)' },
+    ],
+  },
+  {
     version: '0.118.0',
     date: '2026-05-30',
     changes: [
