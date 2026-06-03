@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import withSerwistInit from "@serwist/next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf-8"));
@@ -12,14 +11,6 @@ const withSerwist = withSerwistInit({
   swDest: "public/sw.js",
   disable: process.env.NODE_ENV === "development",
 });
-
-// Keep deploys independent from Sentry release configuration drift.
-// Source map upload stays opt-in via an explicit build flag.
-const sentryBuildEnabled =
-  process.env.SENTRY_BUILD_ENABLED === "true" &&
-  Boolean(process.env.SENTRY_AUTH_TOKEN) &&
-  Boolean(process.env.SENTRY_ORG) &&
-  Boolean(process.env.SENTRY_PROJECT);
 
 // CSP is handled by proxy.ts (per-request nonce-based script-src).
 // Non-CSP security headers remain here as static config.
@@ -60,33 +51,4 @@ const nextConfig = {
 
 const wrappedConfig = withSerwist(nextConfig);
 
-export default sentryBuildEnabled
-  ? withSentryConfig(wrappedConfig, {
-      org: process.env.SENTRY_ORG,
-      project: process.env.SENTRY_PROJECT,
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-
-      // Upload wider set of client source files for better stack traces
-      widenClientFileUpload: true,
-
-      // Proxy route to bypass ad-blockers
-      tunnelRoute: "/monitoring",
-
-      // Suppress output unless in CI
-      silent: !process.env.CI,
-
-      // Disable source map upload when no auth token is configured
-      sourcemaps: {
-        disable: !process.env.SENTRY_AUTH_TOKEN,
-      },
-
-      hideSourceMaps: true,
-
-      // Tree-shake Sentry debug logging in production (webpack only)
-      webpack: {
-        treeshake: {
-          removeDebugLogging: true,
-        },
-      },
-    })
-  : wrappedConfig;
+export default wrappedConfig;

@@ -3,13 +3,6 @@
 import { renderHook, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@sentry/nextjs', () => ({
-  addBreadcrumb: vi.fn(),
-  captureMessage: vi.fn(),
-  setTag: vi.fn(),
-  setContext: vi.fn(),
-}))
-
 import { useDSPWorker } from '../useDSPWorker'
 import { DEFAULT_SETTINGS } from '@/lib/dsp/constants'
 import type { DetectedPeak } from '@/types/advisory'

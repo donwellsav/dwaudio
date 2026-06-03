@@ -1,7 +1,6 @@
 'use client'
 
 import type { MutableRefObject } from 'react'
-import * as Sentry from '@sentry/nextjs'
 import type { DetectedPeak } from '@/types/advisory'
 import type { WorkerInboundMessage, WorkerOutboundMessage } from '@/lib/dsp/dspWorker'
 import { logWarn } from '@/lib/utils/logger'
@@ -307,11 +306,6 @@ export function createDSPWorkerMessageHandler(
         refs.crashedRef.current = false
         refs.permanentlyDeadRef.current = false
         refs.restartCountRef.current = 0
-        Sentry.addBreadcrumb({
-          category: 'dsp',
-          message: 'Worker ready',
-          level: 'info',
-        })
         replayPendingCollection(worker, refs)
         replayPendingFeedbackHistory(worker, refs)
         flushBufferedPeak(refs)
@@ -372,7 +366,6 @@ export function createDSPWorkerMessageHandler(
         break
       case 'error':
         refs.busyRef.current = false
-        Sentry.captureMessage(`DSP worker soft error: ${message.message}`, 'warning')
         refs.callbacksRef.current.onError?.(message.message)
         break
       default:
@@ -396,21 +389,8 @@ export function createDSPWorkerErrorHandler(
     refs.isReadyRef.current = false
     refs.busyRef.current = false
 
-    Sentry.addBreadcrumb({
-      category: 'dsp',
-      message: `Worker crashed: ${event.message ?? 'unknown'}`,
-      level: 'error',
-    })
-
     const attempt = refs.restartCountRef.current + 1
     const canRestart = attempt <= MAX_RESTARTS && refs.lastInitRef.current !== null
-
-    Sentry.captureMessage(
-      `DSP worker crashed (attempt ${attempt}/${MAX_RESTARTS}): ${event.message ?? 'unknown'}${
-        canRestart ? ' - auto-restarting' : ' - giving up'
-      }`,
-      canRestart ? 'warning' : 'error',
-    )
 
     refs.callbacksRef.current.onError?.(
       canRestart

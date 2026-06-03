@@ -270,7 +270,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-04-14',
     highlights: 'Deployability recovery for the April 14 feedback/Companion hardening work',
     changes: [
-      { type: 'fix', description: 'Recover session work into a deployable build by gating Sentry source map upload behind an explicit build flag' },
+      { type: 'fix', description: 'Recover session work into a deployable build by gating external telemetry source map upload behind an explicit build flag' },
       { type: 'fix', description: 'Install @companion-module/base at the app root so CI and Vercel can type-check companion-module sources during Next builds' },
     ],
   },
@@ -363,7 +363,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'fix', description: 'Ingest endpoint validates ALL snapshots instead of spot-checking 3 — closes schema bypass vulnerability (`api/v1/ingest/route.ts`)' },
       { type: 'fix', description: 'Companion relay store capped at 500 codes with 30-min expiry (was 2h) — prevents memory exhaustion from code-flooding (`relay/[code]/route.ts`)' },
       { type: 'ui', description: 'Algorithm status moved from sidebar header to footer bar — compact 9px mono text matching DoneWell branding, shows mode + content type + MSD frame count' },
-      { type: 'refactor', description: 'Dependency audit: react 19.2.5, sentry 10.48.0, vitest 4.1.4, vite 7.3.2 (security pin), lucide 1.8.0, resizable-panels 4.10.0. Removed jest-dom, autoprefixer, docx, pptxgenjs. Added pnpm overrides for flatted ≥3.4.2. 7 security vulns resolved (4 HIGH, 3 MODERATE — all dev-only).' },
+      { type: 'refactor', description: 'Dependency audit: react 19.2.5, external telemetry 10.48.0, vitest 4.1.4, vite 7.3.2 (security pin), lucide 1.8.0, resizable-panels 4.10.0. Removed jest-dom, autoprefixer, docx, pptxgenjs. Added pnpm overrides for flatted ≥3.4.2. 7 security vulns resolved (4 HIGH, 3 MODERATE — all dev-only).' },
     ],
   },
   {
@@ -459,7 +459,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'feat', description: '**DSP hot path**: Eliminate ~2000+ heap allocations/sec in Web Worker by replacing array allocs with pre-allocated scratch buffers, quickselect median (O(n) vs O(n log n) sort), dbToLinearLut for merged spectrum passes, single-pass kurtosis, and mutable weights objects' },
       { type: 'feat', description: '**React rendering**: Convert useSignalTint from useState to useRef (output is CSS vars only — no React re-renders needed)' },
       { type: 'feat', description: '**Architecture**: Extract getSeverityColor/getSeverityText from DSP modules to lib/utils/advisoryDisplay.ts, decoupling 8 UI-layer imports from algorithm code' },
-      { type: 'feat', description: '**Sentry**: Reduce tracesSampleRate from 1.0 to 0.1 (errors still 100%, traces sampled at 10%)' },
+      { type: 'feat', description: '**external telemetry**: Reduce tracesSampleRate from 1.0 to 0.1 (errors still 100%, traces sampled at 10%)' },
       { type: 'feat', description: '**Fix**: Migrate react-resizable-panels to v2.1 API (Group→PanelGroup, Separator→PanelResizeHandle, string %→numbers, orientation→direction) — resolves all 16 pre-existing tsc errors' },
       { type: 'feat', description: '**Fix**: Install missing eslint-plugin-import-x dependency' },
       { type: 'feat', description: '[x] `npx tsc --noEmit` — 0 errors (was 16 before this PR)' },
@@ -1108,7 +1108,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-03-31',
     changes: [
       { type: 'feat', description: '**Hardened `/api/companion/proxy`** with 11-layer defense-in-depth SSRF protection, verified through 9 rounds of Codex adversarial review' },
-      { type: 'feat', description: '**Added API route tests** for companion relay, geo, and sentry endpoints + extended vitest config for `app/` test discovery' },
+      { type: 'feat', description: '**Added API route tests** for companion relay, geo, and external telemetry endpoints + extended vitest config for `app/` test discovery' },
       { type: 'feat', description: '**Gitignore cleanup** — coverage, generated docs, worktrees, repomix exports, tsbuildinfo' },
       { type: 'feat', description: 'Codex plugin Windows `spawn` fix (`shell: process.platform === "win32"`)' },
       { type: 'feat', description: 'Codex review budget cap (768KB) to handle large working trees' },
@@ -1116,7 +1116,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'feat', description: '[x] `npx tsc --noEmit` passes' },
       { type: 'feat', description: '[x] `pnpm test` — 1136 tests pass (57 suites), 4 skipped' },
       { type: 'feat', description: '[x] 32 proxy route tests covering all defense layers' },
-      { type: 'feat', description: '[x] 9 API route tests (relay, geo, sentry)' },
+      { type: 'feat', description: '[x] 9 API route tests (relay, geo, external telemetry)' },
       { type: 'feat', description: '[x] 9 rounds of Codex adversarial review — no remaining security bypasses' },
     ],
   },
@@ -1199,7 +1199,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.44.0',
     date: '2026-03-30',
     changes: [
-      { type: 'feat', description: 'Set `sendDefaultPii: false` in all 3 Sentry configs — aligns with GDPR consent flow' },
+      { type: 'feat', description: 'Set `sendDefaultPii: false` in all 3 external telemetry configs — aligns with GDPR consent flow' },
       { type: 'feat', description: 'Added IPv6 SSRF checks to companion proxy (`::1`, `::ffff:*`, `fe80::`, `fc00::/7`, multicast)' },
       { type: 'feat', description: 'Validated relay codes match `DWA-[A-Z0-9]{6}` format on all handlers' },
       { type: 'feat', description: 'Added `Content-Type` check (415 if not JSON) + `isNaN` guard on `Content-Length` to ingest API' },
@@ -1212,7 +1212,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'feat', description: 'Added `console.warn` if dev CSP (`unsafe-eval`) runs on `VERCEL_ENV=production`' },
       { type: 'feat', description: '[x] `npx tsc --noEmit` — clean' },
       { type: 'feat', description: '[x] `pnpm test` — 1076 pass, 4 skip (same baseline)' },
-      { type: 'feat', description: '[ ] Verify Sentry events no longer contain IP/cookies after deploy' },
+      { type: 'feat', description: '[ ] Verify external telemetry events no longer contain IP/cookies after deploy' },
       { type: 'feat', description: '[ ] Verify `isBlockedHost(\'http://[::1]:8000/\')` returns `true` (IPv6 SSRF fix)' },
       { type: 'feat', description: '[ ] Verify relay rejects codes not matching `DWA-XXXXXX` with 400' },
       { type: 'feat', description: '[ ] Verify ingest returns 415 for non-JSON Content-Type' },
@@ -1737,7 +1737,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.8.1',
     date: '2026-03-23',
     changes: [
-      { type: 'fix', description: 'Fix Sentry setup and add ONNX runtime dependency' },
+      { type: 'fix', description: 'Fix external telemetry setup and add ONNX runtime dependency' },
     ],
   },
   {
@@ -1832,7 +1832,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.3.2',
     date: '2026-03-22',
     changes: [
-      { type: 'feat', description: 'feat: configure Sentry source maps, tunnel route, and ad-blocker bypass' },
+      { type: 'feat', description: 'feat: configure external telemetry source maps, tunnel route, and ad-blocker bypass' },
     ],
   },
   {
@@ -2253,10 +2253,10 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: '0.156.0',
     date: '2026-03-19',
-    highlights: 'Architecture audit: diagnostics, Sentry breadcrumbs, worker tests',
+    highlights: 'Architecture audit: diagnostics, external telemetry breadcrumbs, worker tests',
     changes: [
       { type: 'fix', description: 'Worker error messages now include peak frequency and bin index for faster crash diagnosis' },
-      { type: 'feat', description: 'Sentry breadcrumbs at worker init, ready, and crash events — gives crash reports a timeline of what happened before the error' },
+      { type: 'feat', description: 'external telemetry breadcrumbs at worker init, ready, and crash events — gives crash reports a timeline of what happened before the error' },
       { type: 'feat', description: 'Worker message type contract tests (12 tests) — validates WorkerOutboundMessage type safety and error format' },
     ],
   },
@@ -2628,7 +2628,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       { type: 'feat', description: 'Formant gate: pFeedback *= 0.65 when 2+ vocal formant bands active + Q 3–20 (sustained vowel FP mitigation)' },
       { type: 'feat', description: 'Chromatic quantization gate: phase boost *= 0.60 when on 12-TET grid ±5 cents (Auto-Tune FP mitigation)' },
       { type: 'feat', description: 'Comb stability tracker: comb confidence *= 0.25 when spacing CV > 0.05 over 16 frames (flanger/phaser FP mitigation)' },
-      { type: 'feat', description: 'Worker crash recovery — auto-restart with 500ms debounce, max 3 retries, Sentry logging' },
+      { type: 'feat', description: 'Worker crash recovery — auto-restart with 500ms debounce, max 3 retries, external telemetry logging' },
       { type: 'fix', description: 'SpectrumCanvas missing devicePixelRatio — full DPR scaling for Retina displays' },
       { type: 'fix', description: 'ms-based persistence thresholds replace frame-count-based (FUTURE-002)' },
     ],
@@ -2678,13 +2678,13 @@ export const CHANGELOG: ChangelogEntry[] = [
   {
     version: '0.95.0',
     date: '2026-03-13',
-    highlights: 'Sentry error reporting, dead code cleanup, repo rename, docs refresh',
+    highlights: 'external telemetry error reporting, dead code cleanup, repo rename, docs refresh',
     changes: [
-      { type: 'feat', description: 'Add Sentry error reporting — browser, server, and edge runtime integration with source maps' },
-      { type: 'feat', description: 'Add `ErrorBoundary` Sentry capture and DSP worker crash reporting' },
+      { type: 'feat', description: 'Add external telemetry error reporting — browser, server, and edge runtime integration with source maps' },
+      { type: 'feat', description: 'Add `ErrorBoundary` external telemetry capture and DSP worker crash reporting' },
       { type: 'refactor', description: 'Delete 14 unused UI components and `@radix-ui/react-separator` (20 UI components remain)' },
       { type: 'refactor', description: 'Rename repository from `v0sucks-killthering2` to `killthering`' },
-      { type: 'fix', description: 'Update all documentation to reflect current codebase (326 tests, 4 contexts, Sentry integration)' },
+      { type: 'fix', description: 'Update all documentation to reflect current codebase (326 tests, 4 contexts, external telemetry integration)' },
     ],
   },
   {
