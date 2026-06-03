@@ -12,6 +12,37 @@ The app should do three things well:
 
 Everything unrelated to those jobs should be removed or reduced. The resulting app should not collect, upload, relay, or report user data.
 
+## Local-Only Meaning
+
+Local-only means the analyzer can be loaded from this cloned repo and can fetch its own static app assets, but analysis data stays on the machine running the browser.
+
+Allowed:
+
+- serving the app from `localhost` during development
+- loading same-origin JavaScript, CSS, images, fonts, service-worker assets, and other static app files
+- using browser local storage for user preferences
+- running local tests, builds, and browser smoke checks
+
+Not allowed:
+
+- uploading audio, spectrum snapshots, advisories, errors, telemetry, or session data
+- third-party runtime services for telemetry, replay, analytics, ingest, storage, model loading, or control relays
+- GitHub pushes, pull requests, release actions, or upstream changes as part of this experiment
+- relying on the original repository as a target for experimental changes
+
+## Repository Isolation
+
+This work is an experimental local fork in `/Volumes/M5/donewellaudio`.
+
+The implementation must stay isolated:
+
+- work on a local experiment branch, not upstream `main`
+- do not push to GitHub
+- do not open pull requests
+- do not publish packages or release artifacts
+- keep the original GitHub repository as a read/fetch source only unless the user later gives explicit approval
+- keep any local commits clearly scoped to this clone and this experiment
+
 ## Current Audit Summary
 
 The cloned repo currently includes several systems beyond local feedback analysis:
