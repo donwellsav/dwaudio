@@ -5,8 +5,7 @@
   "packageManager": "pnpm@10.30.1",
   "scripts": {
     "audit:prod": "node scripts/audit-prod.mjs",
-    "audit:snapshots": "tsx --tsconfig autoresearch/tsconfig.json autoresearch/evaluateSnapshots.ts --verbose",
-    "audit:q": "tsx --tsconfig autoresearch/tsconfig.json autoresearch/evaluateSnapshots.ts --verbose --q-audit",
+    "verify:local-only": "node scripts/verify-local-only.mjs",
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
