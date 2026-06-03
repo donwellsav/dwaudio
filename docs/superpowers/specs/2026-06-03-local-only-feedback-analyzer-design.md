@@ -1,231 +1,247 @@
 # Local-Only Feedback Analyzer Design
 
-## Goal
+Date: 2026-06-03
+Repo: `/Volumes/M5/donewellaudio`
+Branch: `local-only-experiment`
 
-Slim DoneWell Audio down to a local-only feedback analysis app.
+## Intent
 
-The app should do three things well:
+Reduce DoneWellAudio to a local-only feedback analysis app. The app should do three things clearly:
 
-- show a live microphone spectrum
-- detect feedback or ringing issues
-- recommend EQ actions for each issue
+1. Show the live spectrum from the user's microphone.
+2. Detect likely feedback and related live-sound issues with deterministic DSP.
+3. Recommend practical EQ actions, with expert algorithm settings available for tuning.
 
-Everything unrelated to those jobs should be removed or reduced. The resulting app should not collect, upload, relay, or report user data.
+This experiment must stay isolated. It must not push to GitHub, open pull requests, publish releases, or depend on the upstream repository for any runtime behavior.
 
-## Local-Only Meaning
+## Definition Of Local-Only
 
-Local-only means the analyzer can be loaded from this cloned repo and can fetch its own static app assets, but analysis data stays on the machine running the browser.
+Local-only means the runtime app does not send analyzer data, issue data, settings, room data, snapshots, location data, telemetry, logs, or control commands to external services or companion systems.
 
-Allowed:
+Allowed behavior:
 
-- serving the app from `localhost` during development
-- loading same-origin JavaScript, CSS, images, fonts, service-worker assets, and other static app files
-- using browser local storage for user preferences
-- running local tests, builds, and browser smoke checks
+- Browser microphone capture through Web Audio.
+- Local DSP analysis in the app and worker.
+- Local display of live spectrum, detected issues, and EQ recommendations.
+- Local browser storage for preferences and expert settings.
 
-Not allowed:
+Disallowed behavior:
 
-- uploading audio, spectrum snapshots, advisories, errors, telemetry, or session data
-- third-party runtime services for telemetry, replay, analytics, ingest, storage, model loading, or control relays
-- GitHub pushes, pull requests, release actions, or upstream changes as part of this experiment
-- relying on the original repository as a target for experimental changes
+- Companion, mixer, relay, proxy, or remote-control integration.
+- Data collection, consent-to-upload, ingest APIs, geo lookup, snapshot uploading, or Supabase persistence.
+- Sentry telemetry, Sentry sample routes, or external error reporting.
+- ONNX/ML inference, shipped models, training/export scripts, or ML-assisted fusion.
+- Any runtime network call not required to load the local app itself.
 
-## Repository Isolation
+## Current Audit
 
-This work is an experimental local fork in `/Volumes/M5/donewellaudio`.
+The bloat crosses runtime code, APIs, docs, scripts, tests, and dependencies.
 
-The implementation must stay isolated:
+Companion/control surfaces:
 
-- work on a local experiment branch, not upstream `main`
-- do not push to GitHub
-- do not open pull requests
-- do not publish packages or release artifacts
-- keep the original GitHub repository as a read/fetch source only unless the user later gives explicit approval
-- keep any local commits clearly scoped to this clone and this experiment
+- `companion-module/`
+- `companion-module-dbx-driverack-pa2/`
+- `app/api/companion/`
+- `lib/companion/`
+- `types/companion.ts`
+- `hooks/useCompanion*.ts`
+- `components/analyzer/CompanionCommandBridge.tsx`
+- `components/analyzer/help/CompanionTab.tsx`
+- companion tests, docs, and generated artifacts
+- `@companion-module/base`
 
-## Current Audit Summary
+Data collection and sharing surfaces:
 
-The cloned repo currently includes several systems beyond local feedback analysis:
+- `app/api/v1/ingest/`
+- `app/api/geo/`
+- `lib/data/`
+- `types/data.ts`
+- `hooks/useDataCollection.ts`
+- `components/analyzer/DataConsentDialog.tsx`
+- `supabase/functions/ingest/`
+- `supabase/migrations/`
+- `scripts/test-ingest.mjs`
+- `scripts/test-pipeline.mjs`
 
-- Bitfocus Companion and mixer-control integration in `companion-module/`, `companion-module-dbx-driverack-pa2/`, `app/api/companion/*`, `hooks/useCompanion*`, `lib/companion/*`, `types/companion.ts`, UI send-to-mixer controls, docs, tests, and packaged zip artifacts.
-- Spectral data collection in `hooks/useDataCollection.ts`, `components/analyzer/DataConsentDialog.tsx`, `lib/data/*`, `app/api/v1/ingest`, `app/api/geo`, Supabase functions and migrations, IndexedDB upload retry code, tests, scripts, and docs.
-- ML/ONNX scoring in `lib/dsp/mlInference.ts`, `onnxruntime-web`, `public/models/*`, `scripts/ml/*`, `mlEnabled` settings, fusion weights, tests, and docs.
-- Sentry telemetry and sample routes in `instrumentation*.ts`, `sentry.*.config.ts`, `@sentry/nextjs`, `app/sentry-example-*`, ErrorBoundary/reporting hooks, tests, and docs.
-- Product/business and integration docs that describe removed cloud, Companion, data sharing, monetization, and training paths.
+ML surfaces:
 
-## Product Scope
+- `lib/dsp/mlInference.ts`
+- `lib/dsp/__tests__/mlInference.test.ts`
+- `public/models/`
+- `scripts/ml/`
+- ML settings and fusion fields such as `mlEnabled`, `AlgorithmScores.ml`, and ML weight branches
+- `onnxruntime-web`
 
-Keep:
+Telemetry surfaces:
 
-- local microphone analysis
-- deterministic DSP detection algorithms: MSD, phase coherence, spectral flatness, comb pattern, IHR, and PTMR
-- live spectrum/RTA visualization
-- detected issue list
-- EQ recommendation generation
-- expert algorithm settings for deterministic algorithms
-- local error alerts for microphone, browser, and worker failures
+- `instrumentation.ts`
+- `instrumentation-client.ts`
+- `sentry.server.config.ts`
+- `sentry.edge.config.ts`
+- `app/api/sentry-example-api/`
+- `app/sentry-example-page/`
+- Sentry imports in runtime error handling and DSP worker hooks
+- `@sentry/nextjs`
 
-Remove:
+Adjacent complexity that conflicts with the simpler app:
 
-- Companion, mixer-control, relay, and proxy behavior
-- cloud data sharing, consent prompting, geo lookup, ingest API, Supabase storage, and upload retry queues
-- ML/ONNX inference, model downloads, model assets, and training/export scripts
-- Sentry client/server/edge telemetry, replay, hardcoded DSNs, and sample Sentry pages/routes
-- room/ring-out/calibration/session-history/export flows that are not required for the simplified analyzer
-- docs and tests that only cover removed systems
+- Ring-out wizard UI and state.
+- Room measurement UI and worker messages.
+- Calibration and session export UI.
+- Snapshot fixture and pipeline code that exists to support remote collection or research workflows.
+- Docs that describe removed cloud, companion, telemetry, data collection, or ML systems.
 
-## Non-Goals
+## Target Product Shape
 
-- No hardware mixer control.
-- No Stream Deck or Companion workflow.
-- No cloud upload of spectral snapshots.
-- No analytics, telemetry, replay, or external error reporting.
-- No ML model loading or training workflow.
-- No monetization, account, team, or sharing features.
+The first screen should be the actual analyzer, not a landing page.
+
+Primary layout:
+
+- Live Spectrum: the current spectrum visualization and input status.
+- Detected Issues: current feedback markers and other deterministic issue cards.
+- Recommended EQ Actions: frequency, gain, Q, confidence, and short rationale for each action.
+
+Expert settings:
+
+- Keep deterministic algorithm controls that directly affect detection and EQ advice.
+- Remove ML toggles and any settings that imply cloud sharing, model scoring, companion output, or remote workflows.
+- Prefer compact controls that can be scanned quickly during live sound work.
 
 ## Architecture
 
-The simplified runtime pipeline is:
+Keep the local DSP path:
 
-```text
-Microphone
-  -> Web Audio analyser
-  -> deterministic DSP worker
-  -> advisory state
-  -> live spectrum + issue list + EQ recommendation UI
-```
+1. `AudioAnalyzer` owns app state and coordinates microphone, settings, issues, and layout.
+2. Web Audio captures microphone input locally.
+3. The DSP worker computes FFT/spectrum and deterministic issue candidates.
+4. Fusion and EQ advisor logic produce issue confidence and recommended EQ actions.
+5. React components render the three-panel analyzer and expert settings.
 
-The DSP worker remains because it keeps heavy analysis off the UI thread. Its message contract should be reduced to local analysis concerns:
+Remove external/control paths from the architecture:
 
-- initialize worker settings
-- update detector settings
-- process spectrum and peak frames
-- publish tracks and advisories
-- clear/reset local state
-- report local worker errors
+- No companion bridge, relay, proxy, mixer profile, or outbound command generation.
+- No snapshot collector, upload queue, consent dialog, ingest route, or Supabase function.
+- No geo lookup.
+- No Sentry instrumentation.
+- No ML inference engine or ONNX model loading.
 
-The worker should no longer support snapshot collection, ML warmup, model inference, Supabase upload preparation, or remote feedback labeling.
+## Component Plan
 
-## UI Design
+`components/analyzer/AudioAnalyzer.tsx` should stop mounting or passing:
 
-The first screen is the analyzer, not a landing page.
+- data collection state
+- companion command bridge
+- calibration/session export flows
+- ring-out flow
+- room measurement state
 
-Required surfaces:
+Analyzer layouts should be simplified so mobile and desktop both expose:
 
-- header with app name, microphone/start control, compact analyzer status, and settings access
-- main live spectrum/RTA with threshold line and active issue markers
-- issue panel with frequency, pitch, severity, confidence, and EQ recommendation
-- expert settings drawer for deterministic algorithm controls and tuning
+- spectrum
+- issues
+- EQ recommendations
+- expert settings
 
-Removed surfaces:
+Issue cards should stop offering companion/mixer send actions. They should focus on local explanation and recommendation.
 
-- Companion help tab
-- send-to-mixer buttons
-- data consent dialog
-- data collection settings
-- Sentry sample page
-- ring-out wizard
-- calibration recording flow
-- session export/history panels
-- room setup and measurement UI
-- monetization and integration copy
+Help/settings tabs should be rebuilt around the reduced product. Companion, data sharing, telemetry, ML, room measurement, and upload documentation should be removed from visible UI.
 
-## Settings Design
+## DSP And Settings Plan
 
-Keep a smaller settings model:
+The worker and DSP modules should keep deterministic algorithms and remove ML/data-collection branches.
 
-- sensitivity and input gain
-- display preferences needed by the spectrum and issue list
-- max displayed issues
-- deterministic algorithm mode: auto or custom
-- deterministic algorithm toggles: MSD, phase, spectral, comb, IHR, PTMR
-- expert threshold, timing, noise-floor, and track-management controls
+Remove:
 
-Remove these settings:
-
+- `MLInferenceEngine`
+- model warmup and feature-vector plumbing
 - `mlEnabled`
-- `ml` as an algorithm key
-- Companion pairing, auto-send, confidence, and relay settings
-- data collection consent status
-- calibration session recording settings
-- room measurement and room template UI settings unless a specific internal detector dependency requires a narrow retained field
+- ML weights and score fields
+- snapshot collector messages
+- user feedback messages intended for training or upload
+- room-measurement worker messages
 
-## Data Flow And Privacy Requirements
+Keep:
 
-Audio and spectrum data stay in the browser runtime.
+- feedback detection
+- spectral algorithms
+- compression or stability detection where it directly improves local issue detection
+- EQ advisor
+- deterministic fusion
+- local settings defaults and derived settings
 
-The analyzer must not:
+The settings model should no longer include options that reference ML, data sharing, companion routing, upload consent, or external integrations.
 
-- call `/api/v1/ingest`
-- call `/api/geo`
-- call `/api/companion/*`
-- call Sentry endpoints
-- load ONNX model files
-- store pending upload batches in IndexedDB
-- send advisory data to a cloud relay
+## Dependency And File Removal
 
-Local storage may remain for local user preferences if it does not queue data for upload.
+Remove dependencies that only support removed systems:
 
-## Documentation Cleanup
+- `@companion-module/base`
+- `@sentry/nextjs`
+- `onnxruntime-web`
 
-Update current docs to describe only the local-only product:
+Remove generated, training, cloud, and integration assets when they have no local-only role:
 
-- `README.md`
-- `docs/SYSTEM_ARCHITECTURE.md`
-- `docs/DEVELOPER_GUIDE.md`
-- `docs/TECHNICAL_REFERENCE.md`
-- `docs/API_DOCUMENTATION.md` if any local API remains
-- `tests/README.md`
+- companion module build artifacts
+- ONNX model files
+- ML training/export scripts
+- Supabase functions and migrations
+- ingest and pipeline test scripts
 
-Remove current docs whose main subject is removed functionality. Archived historical docs may remain only if they are clearly outside the current product documentation set:
+Docs should be reduced to current local-only behavior. Historical archive docs can stay only if they do not confuse active development; active docs should not instruct users to configure cloud ingest, companion, Sentry, Supabase, ML models, or sharing.
 
-- Companion integration
-- Supabase ingest
-- data sharing
-- ML training/export
-- monetization
-- external control
-- historical archived audit plans that point future maintainers back into removed systems
+## Tests And Verification
 
-## Testing And Verification
+Required verification after implementation:
 
-Implementation is complete only when these checks pass:
+- `rg` proves runtime code has no companion, Supabase, ingest, geo, Sentry, ONNX, or ML inference paths.
+- Package dependencies no longer include removed systems.
+- Typecheck passes.
+- Lint passes.
+- Unit tests pass, after deleting or rewriting tests for removed systems.
+- Production build passes.
+- Browser smoke test shows the app loads to the simplified analyzer.
+- Runtime network audit confirms the analyzer makes no external calls while using local microphone analysis.
 
-- `pnpm lint`
-- `npx tsc --noEmit`
-- `pnpm test`
-- `pnpm build`
+Expected retained tests:
 
-The repo also needs explicit removal audits:
+- deterministic DSP detection
+- EQ advisor behavior
+- settings default and derivation behavior
+- issue rendering
+- spectrum rendering
+- local analyzer state flow
 
-```bash
-rg -n "Companion|companion|Bitfocus|@companion-module|relay|send to mixer"
-rg -n "Supabase|supabase|ingest|data collection|DataConsent|useDataCollection|/api/geo|x-vercel-ip-country"
-rg -n "Sentry|sentry|NEXT_PUBLIC_SENTRY|captureException|replayIntegration"
-rg -n "onnx|ONNX|mlInference|mlEnabled|dwa-fp-filter|public/models|scripts/ml"
-```
+Expected removed or rewritten tests:
 
-Expected result: no live runtime references remain. Historical mentions may remain only if clearly isolated in deleted/archived material that is not part of the app, test, package, or current docs.
+- companion tests
+- ingest/geo/Supabase tests
+- Sentry sample tests
+- ML inference tests
+- snapshot upload/research pipeline tests
+- ring-out, room measurement, calibration export, and session export tests
 
-Browser smoke verification should confirm:
+## Git And Isolation Rules
 
-- the analyzer loads as the first screen
-- microphone start works
-- the live spectrum renders
-- issue cards can show EQ recommendations from the local detector path
-- startup network activity does not include removed endpoints or third-party telemetry
+Work stays on `local-only-experiment`.
 
-## Implementation Order
+Do not:
 
-1. Remove external telemetry and cloud APIs: Sentry, ingest, geo, Supabase, and data collection.
-2. Remove Companion modules, relay/proxy APIs, hooks, UI controls, docs, tests, and artifacts.
-3. Remove ML/ONNX model loading, model assets, training scripts, settings, fusion weights, and tests.
-4. Simplify settings and analyzer UI around live spectrum, issues, EQ recommendations, and expert deterministic controls.
-5. Clean docs and package dependencies.
-6. Run full verification and browser smoke tests.
+- push
+- open a pull request
+- fetch or sync unless the user explicitly asks
+- change GitHub repository settings
+- rewrite `main`
+- merge into `main`
+
+Local commits are allowed only as local checkpoints for this isolated experiment. The remote push URL is intentionally disabled.
 
 ## Success Criteria
 
-The repo is successful when a maintainer can describe it as:
+The cleanup is complete when:
 
-"A local browser-based feedback analyzer that uses microphone input to show a live spectrum, detect feedback, and recommend EQ cuts. It has no data sharing, no telemetry, no cloud relay, no hardware-control integration, and no ML model dependency."
+- The app presents only the simplified local analyzer experience.
+- Removed systems are gone from runtime code, dependencies, tests, active docs, and app UI.
+- The production build succeeds.
+- Browser proof shows the simplified analyzer loads.
+- A network audit shows no runtime external sharing or telemetry.
+- The branch remains isolated and unpushed.
