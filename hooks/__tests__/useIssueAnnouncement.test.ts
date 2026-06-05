@@ -80,4 +80,26 @@ describe('useIssueAnnouncement', () => {
 
     expect(result.current).toBe(firstAnnouncement)
   })
+
+  it('does not announce held entries as new active feedback', () => {
+    const heldEntry: IssueListEntry = {
+      ...makeEntry(makeAdvisory('adv-held')),
+      isHeld: true,
+    }
+
+    const { result, rerender } = renderHook(
+      ({ entries }) => useIssueAnnouncement(entries),
+      { initialProps: { entries: [] as IssueListEntry[] } },
+    )
+
+    act(() => {
+      rerender({ entries: [heldEntry] })
+    })
+
+    act(() => {
+      vi.runOnlyPendingTimers()
+    })
+
+    expect(result.current).toBe('')
+  })
 })

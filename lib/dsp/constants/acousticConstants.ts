@@ -1,40 +1,20 @@
 /**
- * Acoustic Constants — Room Physics & Analysis
+ * Acoustic Constants — local detector analysis
  *
- * Schroeder frequency, frequency band definitions, modal overlap,
- * cumulative growth tracking, vibrato detection, and room dimension
- * estimation parameters.
- *
- * @see Hopkins, "Sound Insulation" (2007) — Schroeder frequency, modal overlap
- * @see Kuttruff, "Room Acoustics" 6th ed. — rectangular room eigenfrequencies
+ * Frequency band definitions, Q-overlap thresholds, cumulative growth tracking,
+ * and vibrato detection parameters.
  */
 
-// Schroeder frequency calculation: f_S = 2000 * sqrt(T/V)
-// Below this frequency, individual room modes dominate
-// T = reverberation time (seconds), V = room volume (m³)
-export const SCHROEDER_CONSTANTS = {
-  COEFFICIENT: 2000, // From textbook Equation 1.111
-  // Default estimates for typical venues when room data unavailable
-  DEFAULT_RT60: 1.2, // seconds - typical for medium venue
-  DEFAULT_VOLUME: 500, // m³ - typical conference room / small venue
-  // Pre-calculated default Schroeder frequency
-  get DEFAULT_FREQUENCY() {
-    return this.COEFFICIENT * Math.sqrt(this.DEFAULT_RT60 / this.DEFAULT_VOLUME)
-  },
-} as const
-
-// Frequency band definitions for frequency-dependent thresholds
-// Based on textbook + acoustic principles for PA feedback detection
+// Frequency band definitions for frequency-dependent thresholds.
 export const FREQUENCY_BANDS = {
-  // Low band: Below Schroeder frequency, room modes dominate
-  // Requires longer sustain, higher prominence to distinguish from bass content
+  // Low band: slower bass/low-mid behavior, needs slightly longer sustain.
   LOW: {
     minHz: 20,
-    maxHz: 300, // Approximate - adjusted by Schroeder calculation
+    maxHz: 300,
     prominenceMultiplier: 1.15, // Mild extra prominence (was 1.4 — too aggressive with other gates)
     sustainMultiplier: 1.2, // Slightly longer sustain (was 1.5)
     qThresholdMultiplier: 0.6, // Lower Q threshold (broader peaks expected)
-    description: 'Sub-bass to low-mid (room modes)',
+    description: 'Sub-bass to low-mid',
   },
   // Mid band: Primary speech/vocal range, most feedback-prone
   // Standard thresholds, fastest response
@@ -58,8 +38,7 @@ export const FREQUENCY_BANDS = {
   },
 } as const
 
-// Modal overlap indicator thresholds (M = 1/Q)
-// Based on textbook Section 1.2.6.7 adapted for feedback detection
+// Q-overlap indicator thresholds (M = 1/Q), adapted for feedback detection.
 // With M = 1/Q: high Q (feedback-like) gives low M, low Q (broad) gives high M
 export const MODAL_OVERLAP = {
   ISOLATED: 0.03, // M < 0.03 (Q > 33): Sharp isolated peak, high feedback risk
@@ -83,30 +62,4 @@ export const VIBRATO_DETECTION = {
   MIN_DEPTH_CENTS: 20, // Minimum vibrato depth
   MAX_DEPTH_CENTS: 100, // Maximum vibrato depth (wider = more likely whistle)
   DETECTION_WINDOW_MS: 500, // Window for vibrato analysis
-} as const
-
-// Room dimension estimation from detected resonances (inverse eigenvalue solver)
-export const ROOM_ESTIMATION = {
-  /** Speed of sound (m/s) at ~20°C */
-  SPEED_OF_SOUND: 343,
-  /** Minimum stable peaks required to attempt estimation */
-  MIN_PEAKS: 4,
-  /** Maximum frequency to consider for room modes (Hz) — above Schroeder is diffuse */
-  MAX_FREQUENCY_HZ: 500,
-  /** Minimum Q factor for a peak to be considered a room mode */
-  MIN_Q: 10,
-  /** Minimum persistence (ms) before a peak is considered stable */
-  MIN_PERSISTENCE_MS: 500,
-  /** Accumulation window (ms) — how long to listen before estimating */
-  ACCUMULATION_WINDOW_MS: 10_000,
-  /** Frequency tolerance for harmonic series matching (fraction) */
-  HARMONIC_TOLERANCE: 0.04,
-  /** Minimum harmonics in a series to identify a dimension */
-  MIN_HARMONICS: 2,
-  /** Maximum room dimension (meters) — sanity check */
-  MAX_DIMENSION_M: 50,
-  /** Minimum room dimension (meters) — sanity check */
-  MIN_DIMENSION_M: 1.5,
-  /** Minimum confidence to report an estimate */
-  MIN_CONFIDENCE: 0.3,
 } as const

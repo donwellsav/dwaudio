@@ -148,4 +148,45 @@ describe('useIssuesListEntries', () => {
 
     expect(result.current.map((entry) => entry.advisory.id)).toEqual(['b', 'a'])
   })
+
+  it('shows the first live advisory without waiting for the hold timer', () => {
+    const firstEntries = [
+      makeEntry('a', 1000, 1),
+    ]
+
+    const { result, rerender } = renderHook(
+      ({ entries }) => useStableIssueEntries(entries),
+      { initialProps: { entries: [] as IssueListEntry[] } },
+    )
+
+    rerender({ entries: firstEntries })
+    act(() => {
+      vi.advanceTimersByTime(0)
+    })
+
+    expect(result.current.map((entry) => entry.advisory.id)).toEqual(['a'])
+  })
+
+  it('marks retained entries as held while the live list is empty', () => {
+    const firstEntries = [
+      makeEntry('a', 800, 1),
+    ]
+
+    const { result, rerender } = renderHook(
+      ({ entries }) => useStableIssueEntries(entries),
+      { initialProps: { entries: firstEntries } },
+    )
+
+    rerender({ entries: [] })
+
+    expect(result.current).toHaveLength(1)
+    expect(result.current[0].advisory.id).toBe('a')
+    expect(result.current[0].isHeld).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(MIN_ISSUE_DISPLAY_MS)
+    })
+
+    expect(result.current).toEqual([])
+  })
 })

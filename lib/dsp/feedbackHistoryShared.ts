@@ -5,8 +5,6 @@ export const FEEDBACK_HISTORY_GROUPING_CENTS = 100
 export interface FeedbackHotspotSummary {
   centerFrequencyHz: number
   occurrences: number
-  learnedCutDb?: number
-  successfulCutCount?: number
   lastSeen: number
 }
 

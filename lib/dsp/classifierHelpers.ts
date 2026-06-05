@@ -21,8 +21,6 @@ export const CHROMATIC_SNAP_CENTS = 5
 export const CHROMATIC_PHASE_THRESHOLD = 0.80
 export const CHROMATIC_PHASE_REDUCTION = 0.60
 
-const SCHROEDER_TRANSITION_HZ = 12.5
-
 export const FORMANT_BANDS = [
   { min: 300, max: 900 },   // F1
   { min: 800, max: 2500 },  // F2
@@ -39,11 +37,6 @@ type HistoryLikeEntry = {
 }
 
 // ── Helper Functions ───────────────────────────────────────────────────────
-
-/** Sigmoid weight: ~1 below Schroeder, ~0 above. */
-export function belowSchroederWeight(freq: number, schroederHz: number): number {
-  return 1 / (1 + Math.exp((freq - schroederHz) / SCHROEDER_TRANSITION_HZ))
-}
 
 // Helper to normalize input to common interface
 export function normalizeTrackInput(input: TrackInput) {

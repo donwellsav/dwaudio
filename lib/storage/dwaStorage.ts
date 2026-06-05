@@ -4,9 +4,8 @@
  * Every domain gets a typed accessor via typedStorage<T>(key, defaultValue).
  * All accessors share: try/catch, JSON ser/de, SSR guard, quota-safe writes.
  *
- * Domains with complex storage logic (consent.ts, feedbackHistory.ts) are
- * intentionally NOT migrated here — their storage is intertwined with
- * business logic (versioning, debounced writes, quota recovery).
+ * Domain-specific storage with complex behavior should live beside that
+ * domain. Current analyzer recurrence state is intentionally in-memory only.
  */
 
 // ── Quota exceeded detection ─────────────────────────────────────────────────
@@ -142,7 +141,6 @@ export interface FlagStorage {
 
 /**
  * Boolean flag backed by key presence (value = 'true').
- * Used for one-time gates like onboarding.
  */
 export function flagStorage(key: string): FlagStorage {
   return {
@@ -181,59 +179,8 @@ export function flagStorage(key: string): FlagStorage {
 
 // ── Domain accessors ─────────────────────────────────────────────────────────
 
-import type { DetectorSettings } from '@/types/advisory'
-import type { RoomProfile } from '@/types/calibration'
-import { EMPTY_ROOM_PROFILE } from '@/types/calibration'
-
-/**
- * @deprecated Legacy flat preset storage. Replaced by structured rig presets
- * in `lib/storage/settingsStorageV2.ts` (key: dwa-v2-presets). Old data is
- * not migrated — intent cannot be reverse-engineered from partial field bags.
- * Will be removed in Phase 6.
- */
-interface CustomPreset {
-  name: string
-  settings: Partial<DetectorSettings>
-}
-
-/** @deprecated Use `presetsStorageV2` from settingsStorageV2.ts instead. */
-export const presetStorage = typedStorage<CustomPreset[]>('dwa-custom-presets', [])
-
 /** Selected audio input device ID */
 export const deviceStorage = stringStorage('dwa-audio-device')
 
-/** Room profile for calibration */
-export const roomStorage = typedStorage<RoomProfile>('dwa-calibration-room', { ...EMPTY_ROOM_PROFILE })
-
-/** First-run onboarding flag */
-export const onboardingStorage = flagStorage('dwa-onboarding-seen')
-
-/**
- * @deprecated Legacy full-snapshot defaults. Session state is now managed by
- * `useLayeredSettings` via `sessionStorageV2` (key: dwa-v2-session). The old
- * auto-persist-everything model is replaced by layered ownership.
- * Will be removed in Phase 6.
- */
-export const customDefaultsStorage = typedStorage<DetectorSettings | null>('dwa-custom-defaults', null)
-
 /** First-drag hint dismissed — once user drags the RTA threshold, hide the "Drag to adjust" label forever */
 export const thresholdDraggedStorage = flagStorage('dwa-threshold-dragged')
-
-/** Swipe gesture hint shown — once user sees the swipe labeling tooltip, don't show again */
-export const swipeHintStorage = flagStorage('dwa-swipe-hint-seen')
-
-
-/** Clear resizable panel layout data (forces re-mount to defaults) */
-export function clearPanelLayouts(): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.removeItem('react-resizable-panels:dwa-layout-main')
-    localStorage.removeItem('react-resizable-panels:dwa-layout-main-v2')
-    localStorage.removeItem('react-resizable-panels:dwa-layout-main-v3')
-    localStorage.removeItem('react-resizable-panels:dwa-layout-main-v4')
-    localStorage.removeItem('react-resizable-panels:dwa-layout-vertical')
-    localStorage.removeItem('react-resizable-panels:dwa-layout-bottom')
-  } catch {
-    // Ignore
-  }
-}

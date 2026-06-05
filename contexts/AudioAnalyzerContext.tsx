@@ -2,7 +2,6 @@
 
 import { useMemo, type ReactNode } from 'react'
 import { useAnalyzerContextState } from '@/hooks/useAnalyzerContextState'
-import type { DataCollectionHandle } from '@/hooks/useDataCollection'
 
 import { EngineContext, useEngine } from '@/contexts/EngineContext'
 import type { EngineContextValue } from '@/contexts/EngineContext'
@@ -36,17 +35,15 @@ export type AudioAnalyzerContextValue =
   EngineContextValue & SettingsContextValue & MeteringContextValue & DetectionContextValue
 
 interface AudioAnalyzerProviderProps {
-  dataCollection: DataCollectionHandle
   frozenRef?: React.RefObject<boolean>
   children: ReactNode
 }
 
 export function AudioAnalyzerProvider({
-  dataCollection,
   frozenRef,
   children,
 }: AudioAnalyzerProviderProps) {
-  const state = useAnalyzerContextState({ dataCollection, frozenRef })
+  const state = useAnalyzerContextState({ frozenRef })
   const {
     isRunning,
     isStarting,
@@ -59,12 +56,6 @@ export function AudioAnalyzerProvider({
     selectedDeviceId,
     handleDeviceChange,
     dspWorker,
-    roomEstimate,
-    roomMeasuring,
-    roomProgress,
-    startRoomMeasurement,
-    stopRoomMeasurement,
-    clearRoomEstimate,
     settings,
     resetSettings,
     layeredSession,
@@ -85,13 +76,11 @@ export function AudioAnalyzerProvider({
   } = state
   const {
     setMode,
-    setEnvironment,
     setSensitivityOffset,
     setInputGain,
     setAutoGain,
     setFocusRange,
     setEqStyle,
-    setMicProfile,
     updateDisplay,
     updateDiagnostics,
     updateLiveOverrides,
@@ -109,12 +98,6 @@ export function AudioAnalyzerProvider({
     selectedDeviceId,
     handleDeviceChange,
     dspWorker,
-    roomEstimate,
-    roomMeasuring,
-    roomProgress,
-    startRoomMeasurement,
-    stopRoomMeasurement,
-    clearRoomEstimate,
   }), [
     isRunning,
     isStarting,
@@ -127,12 +110,6 @@ export function AudioAnalyzerProvider({
     selectedDeviceId,
     handleDeviceChange,
     dspWorker,
-    roomEstimate,
-    roomMeasuring,
-    roomProgress,
-    startRoomMeasurement,
-    stopRoomMeasurement,
-    clearRoomEstimate,
   ])
 
   const settingsValue = useMemo(() => createSettingsContextValue({
@@ -142,13 +119,11 @@ export function AudioAnalyzerProvider({
     layeredDisplay,
     layered: {
       setMode,
-      setEnvironment,
       setSensitivityOffset,
       setInputGain,
       setAutoGain,
       setFocusRange,
       setEqStyle,
-      setMicProfile,
       updateDisplay,
       updateDiagnostics,
       updateLiveOverrides,
@@ -159,13 +134,11 @@ export function AudioAnalyzerProvider({
     layeredSession,
     layeredDisplay,
     setMode,
-    setEnvironment,
     setSensitivityOffset,
     setInputGain,
     setAutoGain,
     setFocusRange,
     setEqStyle,
-    setMicProfile,
     updateDisplay,
     updateDiagnostics,
     updateLiveOverrides,

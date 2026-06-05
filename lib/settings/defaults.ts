@@ -10,7 +10,6 @@
  * @see types/settings.ts for interface definitions
  */
 
-import type { MicCalibrationProfile } from '@/types/advisory'
 import type {
   DiagnosticsProfile,
   DisplayPrefs,
@@ -20,16 +19,8 @@ import type {
 } from '@/types/settings'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
 
-/** Default environment: no room physics, neutral offsets */
+/** Default environment: local mains-hum gate state. */
 export const DEFAULT_ENVIRONMENT: EnvironmentSelection = {
-  templateId: 'none',
-  treatment: 'typical',
-  feedbackOffsetDb: 0,
-  ringOffsetDb: 0,
-  provenance: 'template',
-  roomRT60: 1.0,
-  roomVolume: 1000,
-  displayUnit: 'meters',
   mainsHumEnabled: true,
   mainsHumFundamental: 'auto' as const,
 }
@@ -51,8 +42,7 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   showTooltips: true,
   showAlgorithmScores: false,
   showPeqDetails: false,
-  showFreqZones: false,
-  showRoomModeLines: true,
+  showFreqZones: true,
   spectrumWarmMode: true,
   spectrumSmoothingMode: 'raw',
   rtaDbMin: -100,
@@ -64,16 +54,14 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   faderLinkMode: 'unlinked',
   faderLinkRatio: 1.0,
   faderLinkCenterGainDb: 0,
-  faderLinkCenterSensDb: 25,
-  swipeLabeling: false,
+  faderLinkCenterSensDb: 26,
   signalTintEnabled: true,
 }
 
-/** Default diagnostics profile: all algorithms on, no overrides */
+/** Default diagnostics profile: deterministic algorithms on, no overrides */
 export const DEFAULT_DIAGNOSTICS: DiagnosticsProfile = {
-  mlEnabled: true,
   algorithmMode: 'auto',
-  enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml'],
+  enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr'],
   thresholdMode: 'hybrid',
   noiseFloorAttackMs: 200,
   noiseFloorReleaseMs: 1000,
@@ -83,14 +71,11 @@ export const DEFAULT_DIAGNOSTICS: DiagnosticsProfile = {
   peakMergeCents: 200,
 }
 
-/** Default mic calibration profile */
-export const DEFAULT_MIC_PROFILE: MicCalibrationProfile = 'none'
-
 /**
- * Fresh-start startup threshold that preserves the legacy 25 dB Speech-session
+ * Fresh-start startup threshold for the default local analyzer session
  * behavior without changing the actual speech mode baseline.
  */
-export const FRESH_START_FEEDBACK_THRESHOLD_DB = 25
+export const FRESH_START_FEEDBACK_THRESHOLD_DB = 26
 
 /**
  * Startup-only sensitivity bump relative to the current speech baseline.
@@ -107,14 +92,13 @@ export const DEFAULT_SESSION_STATE: DwaSessionState = {
   environment: DEFAULT_ENVIRONMENT,
   liveOverrides: DEFAULT_LIVE_OVERRIDES,
   diagnostics: DEFAULT_DIAGNOSTICS,
-  micCalibrationProfile: DEFAULT_MIC_PROFILE,
 }
 
 /**
  * Fresh-start session state used on first load and "reset all".
  *
  * This intentionally differs from the zero-state layered model:
- * the app starts with the historical 25 dB startup threshold even though the
+ * the app starts with the operator 26 dB startup threshold even though the
  * explicit speech mode baseline stays at 20 dB.
  */
 export const FRESH_START_SESSION_STATE: DwaSessionState = {

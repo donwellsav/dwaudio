@@ -34,7 +34,6 @@ const MODE_RELATIVE_HEADROOM_SCALE: Readonly<Record<string, number>> = {
   liveMusic: 0.55,
   theater: 0.75,
   monitors: 0.8,
-  ringOut: 0.65,
   broadcast: 0.8,
   outdoor: 0.6,
 }

@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { IssueCard } from '@/components/analyzer/IssueCard'
+import { IssueCard, formatIssueAge } from '@/components/analyzer/IssueCard'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
 
 vi.mock('next-themes', () => ({
@@ -35,6 +35,17 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
 }
 
 describe('IssueCard', () => {
+  it('does not treat monotonic analyzer timestamps as wall-clock ages', () => {
+    expect(formatIssueAge(1_800_000_000_000, 10_000)).toBe('just now')
+  })
+
+  it('formats wall-clock advisory ages normally', () => {
+    const now = 1_800_000_000_000
+
+    expect(formatIssueAge(now, now - 10_000)).toBe('10s')
+    expect(formatIssueAge(now, now - 65_000)).toBe('1m')
+  })
+
   it('renders frequency text', () => {
     render(<IssueCard advisory={makeAdvisory()} occurrenceCount={1} />)
     const matches = screen.getAllByText(/1.*kHz|1.*000.*Hz/i)
@@ -57,6 +68,21 @@ describe('IssueCard', () => {
     expect(screen.getByText('92%')).toBeDefined()
   })
 
+  it('renders confirmation latency when available', () => {
+    render(<IssueCard advisory={makeAdvisory({ confirmLatencyMs: 140 })} occurrenceCount={1} />)
+    expect(screen.getByText(/140ms/i)).toBeDefined()
+  })
+
+  it('labels held cards as cleared instead of active detections', () => {
+    render(<IssueCard advisory={makeAdvisory()} occurrenceCount={1} isHeld />)
+    expect(screen.getByText(/cleared/i)).toBeDefined()
+  })
+
+  it('labels resolved cards as cleared instead of leaving stale-looking issues', () => {
+    render(<IssueCard advisory={makeAdvisory({ resolved: true })} occurrenceCount={1} />)
+    expect(screen.getByText(/cleared/i)).toBeDefined()
+  })
+
   it('does not render the internal advisory id', () => {
     const { container } = render(
       <IssueCard advisory={makeAdvisory({ id: 'adv-visible-id-123' })} occurrenceCount={1} />,
@@ -76,15 +102,12 @@ describe('IssueCard', () => {
         advisory={makeAdvisory()}
         occurrenceCount={1}
         touchFriendly
-        onFalsePositive={vi.fn()}
-        onConfirmFeedback={vi.fn()}
         onDismiss={vi.fn()}
-        onSendToMixer={vi.fn()}
       />,
     )
 
     const buttons = Array.from(container.querySelectorAll('button'))
-    expect(buttons.length).toBeGreaterThanOrEqual(5)
+    expect(buttons.length).toBeGreaterThanOrEqual(2)
 
     for (const button of buttons) {
       expect(button.className).toContain('p-0')
@@ -180,19 +203,6 @@ describe('IssueCard', () => {
     expect(svg).not.toBeNull()
   })
 
-  it('renders false-positive styling when flagged', () => {
-    const { container } = render(
-      <IssueCard
-        advisory={makeAdvisory()}
-        occurrenceCount={1}
-        isFalsePositive
-      />,
-    )
-
-    const card = container.firstElementChild as HTMLElement
-    expect(card.className).toContain('opacity-50')
-  })
-
   it('renders resolved card without progress bar', () => {
     const { container } = render(
       <IssueCard
@@ -206,28 +216,6 @@ describe('IssueCard', () => {
       element.className?.includes?.('h-[3px]'),
     )
     expect(progressBar).toBeUndefined()
-  })
-
-  it('renders partial apply status when Companion only applies one side', () => {
-    render(
-      <IssueCard
-        advisory={makeAdvisory()}
-        occurrenceCount={1}
-        companionState={{
-          partialApply: {
-            at: Date.now(),
-            peqApplied: false,
-            geqApplied: true,
-            failReason: 'PEQ slots full',
-          },
-        }}
-      />,
-    )
-
-    expect(screen.getByText('PARTIAL')).toBeDefined()
-    expect(
-      screen.getByLabelText(/partial apply: peq failed, geq applied; peq slots full/i),
-    ).toBeDefined()
   })
 
   it('renders broader-region guidance when nearby peaks were merged', () => {

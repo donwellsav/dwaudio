@@ -14,7 +14,6 @@
  *   5. Three-model consensus vulnerability scenarios (TEST-004)
  *   6. Pure feedback / pure music / pure noise baselines
  *   7. Edge cases (single algorithm, warmup, null scores)
- *   8. Proposed V2 weights (regression tests for improved weights)
  *
  * References:
  *   - algorithmFusion.ts: fuseAlgorithmResults(), FUSION_WEIGHTS
@@ -55,25 +54,25 @@ function fuse(
 describe('Fusion Weight Profiles', () => {
   it('DEFAULT weights sum to 1.0', () => {
     const w = FUSION_WEIGHTS.DEFAULT
-    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr + w.ml
+    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr
     expect(sum).toBeCloseTo(1.0, 10)
   })
 
   it('SPEECH weights sum to 1.0', () => {
     const w = FUSION_WEIGHTS.SPEECH
-    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr + w.ml
+    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr
     expect(sum).toBeCloseTo(1.0, 10)
   })
 
   it('MUSIC weights sum to 1.0', () => {
     const w = FUSION_WEIGHTS.MUSIC
-    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr + w.ml
+    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr
     expect(sum).toBeCloseTo(1.0, 10)
   })
 
   it('COMPRESSED weights sum to 1.0', () => {
     const w = FUSION_WEIGHTS.COMPRESSED
-    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr + w.ml
+    const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr
     expect(sum).toBeCloseTo(1.0, 10)
   })
 })
@@ -91,28 +90,28 @@ describe('Effective Weights — Comb Absent', () => {
    * Effective share = algorithmWeight / totalNoComb.
    */
 
-  it('SPEECH MSD effective weight is ~31.3% (reduced from 34.7% after ML redistribution)', () => {
+  it('SPEECH MSD effective weight is ~34.7% when comb is absent', () => {
     const w = FUSION_WEIGHTS.SPEECH
     const totalNoComb = 1 - w.comb
     const effectiveMsd = w.msd / totalNoComb
-    // MSD 0.30 / (1 - 0.04) = 0.3125
-    expect(effectiveMsd).toBeCloseTo(0.3125, 2)
+    // MSD 0.33 / (1 - 0.05) = 0.3474
+    expect(effectiveMsd).toBeCloseTo(0.347, 2)
   })
 
-  it('MUSIC Phase effective weight is ~34.4% (reduced from 38.0% after ML redistribution)', () => {
+  it('MUSIC Phase effective weight is ~39.1% when comb is absent', () => {
     const w = FUSION_WEIGHTS.MUSIC
     const totalNoComb = 1 - w.comb
     const effectivePhase = w.phase / totalNoComb
-    // Phase 0.32 / (1 - 0.07) = 0.3441
-    expect(effectivePhase).toBeCloseTo(0.344, 2)
+    // Phase 0.36 / (1 - 0.08) = 0.3913
+    expect(effectivePhase).toBeCloseTo(0.391, 2)
   })
 
-  it('COMPRESSED Phase effective weight is ~29.0% (reduced from 32.6% after ML redistribution)', () => {
+  it('COMPRESSED Phase effective weight is ~32.6% when comb is absent', () => {
     const w = FUSION_WEIGHTS.COMPRESSED
     const totalNoComb = 1 - w.comb
     const effectivePhase = w.phase / totalNoComb
-    // Phase 0.27 / (1 - 0.07) = 0.2903
-    expect(effectivePhase).toBeCloseTo(0.290, 2)
+    // Phase 0.30 / (1 - 0.08) = 0.3261
+    expect(effectivePhase).toBeCloseTo(0.326, 2)
   })
 
 })
@@ -166,8 +165,8 @@ describe('Gemini Vulnerability Scenarios — DEFAULT Profile', () => {
    * moderate flatness (Spectral=0.4), prominent (PTMR=0.7, Existing=0.8).
    * No comb pattern.
    *
-   * EXPECTED: FALSE POSITIVE — music incorrectly classified as feedback.
-   * Gemini calculated: 0.650 (above 0.60 threshold)
+   * Historical failure: music was incorrectly classified as feedback.
+   * Gemini calculated the old behavior at 0.650 (above 0.60 threshold).
    */
   it('FIXED: sustained synth note now stays UNCERTAIN', () => {
     const result = fuse(
@@ -183,8 +182,8 @@ describe('Gemini Vulnerability Scenarios — DEFAULT Profile', () => {
    * Slow MSD growth (MSD=0.4), smeared phase (Phase=0.5), pure tone
    * (Spectral=0.9, IHR=0.9, PTMR=0.8), prominent (Existing=0.9). No comb.
    *
-   * EXPECTED: FALSE NEGATIVE — real feedback missed.
-   * Gemini calculated: 0.571 (below 0.60 threshold)
+   * Historical failure: real feedback was missed.
+   * Gemini calculated the old behavior at 0.571 (below 0.60 threshold).
    */
   it('FIXED: low-freq reverberant feedback now reaches FEEDBACK', () => {
     const result = fuse(
@@ -202,8 +201,8 @@ describe('Gemini Vulnerability Scenarios — SPEECH Profile', () => {
    * Stable amplitude (MSD=0.9), highly tonal (Phase=0.8), complex harmonics
    * (IHR=0.2, Spectral=0.5), prominent (PTMR=0.6, Existing=0.7).
    *
-   * EXPECTED: FALSE POSITIVE — speech incorrectly classified as feedback.
-   * Gemini calculated: 0.710 (well above threshold)
+   * Historical failure: speech was incorrectly classified as feedback.
+   * Gemini calculated the old behavior at 0.710 (well above threshold).
    * ROOT CAUSE: MSD weight of 0.40 makes any stable amplitude trigger detection.
    */
   it('FIXED: sustained vowel now stays UNCERTAIN', () => {
@@ -220,8 +219,8 @@ describe('Gemini Vulnerability Scenarios — SPEECH Profile', () => {
    * Zero growth (MSD=0.1), perfect tone (Phase=0.9, Spectral=0.9, IHR=0.9,
    * PTMR=0.9), prominent (Existing=0.8).
    *
-   * EXPECTED: FALSE NEGATIVE — real feedback missed because limiter kills MSD.
-   * Gemini calculated: 0.525 (below threshold)
+   * Historical failure: real feedback was missed because limiter killed MSD.
+   * Gemini calculated the old behavior at 0.525 (below threshold).
    * ROOT CAUSE: MSD weight of 0.40 means zero-growth feedback can't compensate.
    */
   it('FIXED: limiter-clamped feedback now reaches FEEDBACK', () => {
@@ -240,9 +239,9 @@ describe('Gemini Vulnerability Scenarios — MUSIC Profile', () => {
    * Flat envelope (MSD=0.8), perfectly coherent (Phase=0.95), some harmonics
    * (IHR=0.2, Spectral=0.6), very prominent (PTMR=0.8, Existing=0.9).
    *
-   * EXPECTED: FALSE POSITIVE — but arguably correct, since intentional
-   * feedback IS acoustically identical to unwanted feedback.
-   * Gemini calculated: 0.711
+   * Intentional guitar feedback is acoustically close to unwanted feedback, so
+   * this remains acceptable as a possible corrective path.
+   * Gemini calculated the old behavior at 0.711.
    */
   it('Intentional guitar feedback remains acceptable as POSSIBLE or FEEDBACK', () => {
     const result = fuse(
@@ -258,8 +257,8 @@ describe('Gemini Vulnerability Scenarios — MUSIC Profile', () => {
    * Phase ruined by mix masking (Phase=0.3), slowly growing (MSD=0.6),
    * pure tone in FFT gap (Spectral=0.8, IHR=0.8, PTMR=0.7), Existing=0.6.
    *
-   * EXPECTED: FALSE NEGATIVE — real feedback missed in dense mix.
-   * Gemini calculated: 0.496 (well below threshold)
+   * Historical failure: real feedback was missed in dense mix.
+   * Gemini calculated the old behavior at 0.496 (well below threshold).
    * ROOT CAUSE: Phase weight of 0.35 means dense mixes that mask phase cause failure.
    */
   it('FIXED: feedback hidden in dense mix now reaches FEEDBACK', () => {
@@ -278,8 +277,8 @@ describe('Gemini Vulnerability Scenarios — COMPRESSED Profile', () => {
    * Slight growth (MSD=0.5), perfectly tonal (Phase=0.95), moderate purity
    * (Spectral=0.6, IHR=0.3, PTMR=0.6), prominent (Existing=0.8).
    *
-   * EXPECTED: FALSE POSITIVE — clean flute classified as feedback.
-   * Gemini calculated: 0.663
+   * Historical failure: clean flute was classified as feedback.
+   * Gemini calculated the old behavior at 0.663.
    */
   it('FIXED: compressed flute sample now stays UNCERTAIN', () => {
     const result = fuse(
@@ -296,16 +295,16 @@ describe('Gemini Vulnerability Scenarios — COMPRESSED Profile', () => {
    * (MSD=0.8), pure tone underneath (Spectral=0.8, IHR=0.9, PTMR=0.8),
    * Existing=0.7.
    *
-   * PRE-FIX-005: FALSE NEGATIVE — real feedback missed because compressor
-   * destroyed the very signal (phase) that COMPRESSED mode relied on most.
-   * Gemini calculated: 0.508. ROOT CAUSE: Phase weight of 0.38 was a
+   * Historical failure: real feedback was missed because compressor destroyed
+   * the very signal (phase) that COMPRESSED mode relied on most.
+   * Gemini calculated the old behavior at 0.508. ROOT CAUSE: Phase weight of 0.38 was a
    * single point of failure.
    *
    * POST-FIX-005: IMPROVED — redistributing phase weight to spectral/ihr/ptmr
    * means the strong non-phase signals (spectral=0.8, ihr=0.9, ptmr=0.8)
    * now carry enough weight to cross the threshold. Real feedback detected!
    */
-  it('FN FIXED: compressor-pumped feedback now reaches FEEDBACK', () => {
+  it('compressor-pumped feedback now reaches FEEDBACK', () => {
     const result = fuse(
       { msd: 0.8, phase: 0.2, spectral: 0.8, comb: 0, ihr: 0.9, ptmr: 0.8, compressed: true },
       'unknown'
@@ -332,17 +331,18 @@ describe('Consensus Vulnerability: DEFAULT Profile', () => {
     expect(result.verdict).toBe('UNCERTAIN')
   })
 
-  it('V2 — FN: Spectral-only feedback (MSD+Phase blind)', () => {
+  it('V2 — spectral/IHR/PTMR corroboration remains on the possible feedback path when MSD+phase are blind', () => {
     const result = fuse(
       { msd: 0, phase: 0, spectral: 0.80, ihr: 0.80, ptmr: 0.80, comb: 0 },
       'unknown'
     )
     expect(result.feedbackProbability).toBeLessThan(0.35)
+    expect(result.verdict).toBe('POSSIBLE_FEEDBACK')
   })
 })
 
 describe('Consensus Vulnerability: SPEECH Profile', () => {
-  it('V3 — FP FIXED: MSD-only conviction no longer reaches FEEDBACK (FIX-004)', () => {
+  it('V3 — MSD-only conviction no longer reaches FEEDBACK', () => {
     const result = fuse(
       { msd: 1.0, phase: 0, spectral: 0.60, ihr: 0.40, ptmr: 0.60, comb: 0 },
       'speech'
@@ -354,14 +354,13 @@ describe('Consensus Vulnerability: SPEECH Profile', () => {
     expect(result.verdict).not.toBe('FEEDBACK')
   })
 
-  it('V4 — FN: No MSD (feedback invisible to dominant algorithm)', () => {
+  it('V4 — no-MSD feedback stays on the possible feedback path through spectral/IHR/PTMR support', () => {
     const result = fuse(
       { msd: 0, phase: 0.20, spectral: 0.80, ihr: 0.80, ptmr: 0.80, comb: 0 },
       'speech'
     )
-    // With existing weight removed, non-MSD algos have slightly more influence.
-    // Probability rises from ~0.33 to ~0.37 — still a false negative.
-    expect(result.feedbackProbability).toBeLessThan(0.40)
+    expect(result.feedbackProbability).toBeGreaterThanOrEqual(0.35)
+    expect(result.verdict).toBe('POSSIBLE_FEEDBACK')
   })
 })
 
@@ -375,12 +374,13 @@ describe('Consensus Vulnerability: MUSIC Profile', () => {
     expect(result.verdict).toBe('UNCERTAIN')
   })
 
-  it('V6 — FN: No phase (feedback invisible to dominant algorithm)', () => {
+  it('V6 — no-phase music feedback stays on the possible feedback path through MSD/spectral/IHR support', () => {
     const result = fuse(
       { msd: 0.80, phase: 0, spectral: 0.80, ihr: 0.80, ptmr: 0.20, comb: 0 },
       'music'
     )
     expect(result.feedbackProbability).toBeLessThan(0.40)
+    expect(result.verdict).toBe('POSSIBLE_FEEDBACK')
   })
 })
 
@@ -389,8 +389,8 @@ describe('Consensus Vulnerability: COMB Pattern', () => {
     const scores = { msd: 0.60, phase: 0.60, spectral: 0.60, ihr: 0.60, ptmr: 0.60, comb: 0 }
 
     const noComb = fuse(scores, 'unknown')
-    // With uniform scores of 0.60, weighted average ≈ 0.60
-    // (ML is null/unavailable so excluded from fusion). Comb absent → no doubling.
+    // With uniform scores of 0.60, weighted average ≈ 0.60.
+    // Comb absent means no comb contribution or doubling.
     // Floating point: 0.6000000000000001, so use closeTo.
     expect(noComb.feedbackProbability).toBeCloseTo(0.60, 10)
 
@@ -401,7 +401,7 @@ describe('Consensus Vulnerability: COMB Pattern', () => {
 })
 
 describe('Consensus Vulnerability: COMPRESSED Profile', () => {
-  it('V8 — FP FIXED: Phase conviction under compression no longer reaches FEEDBACK (FIX-005)', () => {
+  it('V8 — phase conviction under compression no longer reaches FEEDBACK', () => {
     const result = fuse(
       { msd: 0, phase: 1.0, spectral: 0.40, ihr: 0.40, ptmr: 0.60, compressed: true, comb: 0 },
       'unknown'
@@ -507,11 +507,11 @@ describe('Edge Cases', () => {
     expect(result.reasons.some(r => r.includes('Compression detected'))).toBe(true)
   })
 
-  it('Algorithm mode "msd" only uses MSD + IHR + PTMR', () => {
+  it('custom mode can run an MSD-oriented subset', () => {
     const result = fuse(
       { msd: 0.9, phase: 0.9, spectral: 0.9, comb: 0.9, ihr: 0.9, ptmr: 0.9 },
       'unknown',
-      { mode: 'msd' }
+      { mode: 'custom', enabledAlgorithms: ['msd', 'ihr', 'ptmr'] }
     )
     expect(result.contributingAlgorithms).toContain('MSD')
     expect(result.contributingAlgorithms).not.toContain('Phase')
@@ -519,11 +519,11 @@ describe('Edge Cases', () => {
     expect(result.contributingAlgorithms).not.toContain('Comb')
   })
 
-  it('Algorithm mode "phase" excludes MSD', () => {
+  it('custom mode can run a phase-oriented subset', () => {
     const result = fuse(
       { msd: 0.9, phase: 0.9, spectral: 0.9, comb: 0.9, ihr: 0.9, ptmr: 0.9 },
       'unknown',
-      { mode: 'phase' }
+      { mode: 'custom', enabledAlgorithms: ['phase', 'ihr', 'ptmr'] }
     )
     expect(result.contributingAlgorithms).not.toContain('MSD')
     expect(result.contributingAlgorithms).toContain('Phase')
@@ -608,161 +608,5 @@ describe('Low-Frequency Phase Suppression (ADV-002)', () => {
     const delta = normal.feedbackProbability - subBass.feedbackProbability
     // Phase score halved × 35% nominal weight → expect noticeable drop
     expect(delta).toBeGreaterThan(0.05)
-  })
-})
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ML 7th ALGORITHM — Backward compatibility and integration
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('ML 7th Algorithm Integration', () => {
-  it('fusion with ml: null produces same results as before (backward compat)', () => {
-    // buildScores returns ml: null by default
-    const scores = buildScores({ msd: 0.8, phase: 0.9, spectral: 0.7, ihr: 0.6, ptmr: 0.8 })
-    expect(scores.ml).toBeNull()
-
-    const result = fuseAlgorithmResults(scores, 'unknown')
-    // ML null → excluded from fusion, result driven by 5 algorithms only
-    expect(result.feedbackProbability).toBeGreaterThan(0)
-    expect(result.feedbackProbability).toBeLessThanOrEqual(1)
-    expect(result.contributingAlgorithms).not.toContain('ML')
-  })
-
-  it('fusion with ML available includes ML in weighted sum', () => {
-    const scores = buildScores({ msd: 0.8, phase: 0.9, spectral: 0.7, ihr: 0.6, ptmr: 0.8 })
-    // Simulate ML model available with a high feedback score
-    scores.ml = {
-      feedbackScore: 0.95,
-      modelConfidence: 1.0,
-      isAvailable: true,
-      modelVersion: 'dwa-fp-v1',
-    }
-
-    const result = fuseAlgorithmResults(scores, 'unknown')
-    expect(result.contributingAlgorithms).toContain('ML')
-    expect(result.reasons.some(r => r.startsWith('ML:'))).toBe(true)
-  })
-
-  it('ML score at 0 reduces fusion probability compared to ML unavailable', () => {
-    const baseScores = { msd: 0.8, phase: 0.9, spectral: 0.7, ihr: 0.6, ptmr: 0.8 }
-
-    const withoutML = fuseAlgorithmResults(buildScores(baseScores), 'unknown')
-
-    const scoresWithML = buildScores(baseScores)
-    scoresWithML.ml = {
-      feedbackScore: 0.0, // ML says "not feedback"
-      modelConfidence: 1.0,
-      isAvailable: true,
-      modelVersion: 'dwa-fp-v1',
-    }
-    const withML = fuseAlgorithmResults(scoresWithML, 'unknown')
-
-    // ML at 0 should pull probability down relative to ML absent
-    expect(withML.feedbackProbability).toBeLessThan(withoutML.feedbackProbability)
-  })
-
-  it('ML score at 1.0 increases fusion probability compared to ML unavailable', () => {
-    const baseScores = { msd: 0.5, phase: 0.5, spectral: 0.5, ihr: 0.5, ptmr: 0.5 }
-
-    const withoutML = fuseAlgorithmResults(buildScores(baseScores), 'unknown')
-
-    const scoresWithML = buildScores(baseScores)
-    scoresWithML.ml = {
-      feedbackScore: 1.0, // ML says "definitely feedback"
-      modelConfidence: 1.0,
-      isAvailable: true,
-      modelVersion: 'dwa-fp-v1',
-    }
-    const withML = fuseAlgorithmResults(scoresWithML, 'unknown')
-
-    // ML at 1.0 should pull probability up
-    expect(withML.feedbackProbability).toBeGreaterThan(withoutML.feedbackProbability)
-  })
-
-  it('ML score is included in agreement/confidence calculation', () => {
-    const baseScores = { msd: 0.9, phase: 0.9, spectral: 0.9, ihr: 0.9, ptmr: 0.9 }
-
-    // ML agrees with all algorithms
-    const agreeing = buildScores(baseScores)
-    agreeing.ml = { feedbackScore: 0.9, modelConfidence: 1.0, isAvailable: true, modelVersion: 'v1' }
-
-    // ML disagrees with all algorithms
-    const disagreeing = buildScores(baseScores)
-    disagreeing.ml = { feedbackScore: 0.1, modelConfidence: 1.0, isAvailable: true, modelVersion: 'v1' }
-
-    const agreeResult = fuseAlgorithmResults(agreeing, 'unknown')
-    const disagreeResult = fuseAlgorithmResults(disagreeing, 'unknown')
-
-    // When ML disagrees, confidence should be lower (higher variance)
-    expect(agreeResult.confidence).toBeGreaterThan(disagreeResult.confidence)
-  })
-
-  it('all weight profiles include ml and sum to 1.0', () => {
-    for (const [, w] of Object.entries(FUSION_WEIGHTS)) {
-      const sum = w.msd + w.phase + w.spectral + w.comb + w.ihr + w.ptmr + w.ml
-      expect(sum).toBeCloseTo(1.0, 10)
-      expect(w.ml).toBe(0.10)
-    }
-  })
-})
-
-// ═════════════════════════════════════════════════════════════════════════════
-// 9. PROPOSED V2 WEIGHTS — Regression Tests
-//
-// INTENTIONALLY SKIPPED — these test proposed V2 fusion weights from Gemini
-// analysis + Claude audit that have NOT been validated in production.
-//
-// Gate condition: Enable after V2 weights are deployed behind a feature flag
-// and validated via A/B testing against current production weights.
-// See: docs/archive/ for the original Gemini analysis.
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe.skip('Proposed V2 Weights — Regression Tests', () => {
-  // V2 weights based on Gemini analysis + Claude audit (existing removed):
-  // SPEECH_V2:   msd:0.35, phase:0.20, spectral:0.10, comb:0.05, ihr:0.10, ptmr:0.20
-  // MUSIC_V2:    msd:0.05, phase:0.30, spectral:0.12, comb:0.10, ihr:0.18, ptmr:0.25
-  // COMPRESS_V2: msd:0.08, phase:0.30, spectral:0.15, comb:0.10, ihr:0.15, ptmr:0.22
-  // DEFAULT_V2:  msd:0.25, phase:0.22, spectral:0.12, comb:0.08, ihr:0.13, ptmr:0.20
-  //
-  // Note: customWeights uses Partial<typeof FUSION_WEIGHTS.DEFAULT> which has
-  // literal types from `as const`. Cast to number to allow proposed values.
-  type W = Record<string, number>
-
-  it('V2 SPEECH: sustained vowel no longer false positive', () => {
-    const result = fuse(
-      { msd: 0.9, phase: 0.8, spectral: 0.5, comb: 0, ihr: 0.2, ptmr: 0.6 },
-      'speech',
-      { customWeights: { msd: 0.35, phase: 0.20, spectral: 0.10, comb: 0.05, ihr: 0.10, ptmr: 0.20 } as W }
-    )
-    // With V2 weights, this should score BELOW threshold
-    expect(result.feedbackProbability).toBeLessThan(0.60)
-  })
-
-  it('V2 SPEECH: limiter-clamped feedback now detected', () => {
-    fuse(
-      { msd: 0.1, phase: 0.9, spectral: 0.9, comb: 0, ihr: 0.9, ptmr: 0.9 },
-      'speech',
-      { customWeights: { msd: 0.35, phase: 0.20, spectral: 0.10, comb: 0.05, ihr: 0.10, ptmr: 0.20 } as W }
-    )
-    // With V2 weights, PTMR at 0.15 and IHR at 0.10 should compensate for low MSD
-  })
-
-  it('V2 MUSIC: feedback in dense mix now detected', () => {
-    fuse(
-      { msd: 0.6, phase: 0.3, spectral: 0.8, comb: 0, ihr: 0.8, ptmr: 0.7 },
-      'music',
-      { customWeights: { msd: 0.05, phase: 0.30, spectral: 0.12, comb: 0.10, ihr: 0.18, ptmr: 0.25 } as W }
-    )
-    // With V2 weights, IHR at 0.18 and PTMR at 0.15 should push this above threshold
-  })
-
-  it('V2 COMPRESSED: compressor-pumped feedback now detected', () => {
-    fuse(
-      { msd: 0.8, phase: 0.2, spectral: 0.8, comb: 0, ihr: 0.9, ptmr: 0.8, compressed: true },
-      'unknown',
-      { customWeights: { msd: 0.08, phase: 0.30, spectral: 0.15, comb: 0.10, ihr: 0.15, ptmr: 0.22 } as W }
-    )
-    // With V2 weights, reduced phase dependency and increased IHR/spectral
-    // should detect feedback even when phase is ruined by compressor pumping
   })
 })

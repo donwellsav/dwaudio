@@ -127,11 +127,14 @@ export function analyzeInterHarmonicRatio(
   }
 
   const ihr = harmonicEnergy > 0 ? interHarmonicEnergy / harmonicEnergy : 0.5
+  const hasRichValidatedHarmonics = harmonicsFound >= 4
   const isFeedbackLike = ihr < 0.15 && harmonicsFound <= 2
-  const isMusicLike = ihr > 0.35 && harmonicsFound >= 3
+  const isMusicLike = harmonicsFound >= 3 && (ihr > 0.35 || hasRichValidatedHarmonics)
 
   let feedbackScore = 0
-  if (harmonicsFound <= 1) {
+  if (hasRichValidatedHarmonics) {
+    feedbackScore = 0
+  } else if (harmonicsFound <= 1) {
     feedbackScore = Math.max(0, 1 - ihr * 5)
   } else if (harmonicsFound <= 2) {
     feedbackScore = Math.max(0, 0.7 - ihr * 3)

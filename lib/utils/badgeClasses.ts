@@ -2,8 +2,8 @@
  * Severity badge class vocabulary.
  *
  * Centralizes the inline `text-{color}-400 bg-{color}-500/15 border-{color}-500/30`
- * patterns that were scattered across IssueCard, AlgorithmStatusBar, EarlyWarningPanel,
- * and others. Each tone ships both dark and light variants so badges read on either theme.
+ * patterns that were scattered across IssueCard, EarlyWarningPanel, and others.
+ * Each tone ships both dark and light variants so badges read on either theme.
  *
  * Usage:
  *   <span className={badgeClass('warning')}><Icon />TEXT</span>

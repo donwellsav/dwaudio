@@ -1,77 +1,16 @@
-import { getRoomParametersFromDimensions } from '@/lib/dsp/acousticUtils'
-import { ENVIRONMENT_TEMPLATES } from '@/lib/settings/environmentTemplates'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
-import type { DetectorSettings } from '@/types/advisory'
+import { DEFAULT_SMOOTHING_TIME_CONSTANT, type Algorithm, type DetectorSettings } from '@/types/advisory'
 import type {
   DiagnosticsProfile,
   DisplayPrefs,
   DwaSessionState,
-  EnvironmentSelection,
-  RoomTemplateId,
 } from '@/types/settings'
 
-export function resolveEnvironmentSelection(
-  previous: EnvironmentSelection,
-  partial: Partial<EnvironmentSelection> & { templateId?: RoomTemplateId | string },
-): EnvironmentSelection {
-  if (partial.templateId && partial.templateId in ENVIRONMENT_TEMPLATES) {
-    const template = ENVIRONMENT_TEMPLATES[partial.templateId as RoomTemplateId]
-    return {
-      ...previous,
-      templateId: template.templateId,
-      treatment: partial.treatment ?? template.treatment,
-      roomRT60: partial.roomRT60 ?? template.roomRT60,
-      roomVolume: partial.roomVolume ?? template.roomVolume,
-      dimensionsM: partial.dimensionsM ?? {
-        length: template.lengthM,
-        width: template.widthM,
-        height: template.heightM,
-      },
-      provenance: partial.provenance ?? 'template',
-      displayUnit: partial.displayUnit ?? previous.displayUnit,
-      feedbackOffsetDb: partial.feedbackOffsetDb ?? template.feedbackOffsetDb,
-      ringOffsetDb: partial.ringOffsetDb ?? template.ringOffsetDb,
-      mainsHumEnabled: partial.mainsHumEnabled ?? previous.mainsHumEnabled ?? true,
-      mainsHumFundamental: partial.mainsHumFundamental ?? previous.mainsHumFundamental ?? 'auto',
-    }
-  }
-
-  const merged: EnvironmentSelection = { ...previous, ...partial }
-  if (partial.dimensionsM || partial.treatment || partial.displayUnit) {
-    const dims = merged.dimensionsM ?? { length: 15, width: 12, height: 5 }
-    const treatment = merged.treatment ?? previous.treatment
-    const unit = merged.displayUnit ?? previous.displayUnit
-    const FEET_TO_METERS = 0.3048
-    const lM = unit === 'feet' ? dims.length * FEET_TO_METERS : dims.length
-    const wM = unit === 'feet' ? dims.width * FEET_TO_METERS : dims.width
-    const hM = unit === 'feet' ? dims.height * FEET_TO_METERS : dims.height
-    const params = getRoomParametersFromDimensions(lM, wM, hM, treatment)
-    merged.roomRT60 = Math.round(params.rt60 * 10) / 10
-    merged.roomVolume = Math.round(params.volume)
-  }
-  return merged
-}
-
-/**
- * Map legacy algorithm modes to the v2 layered system.
- * Each legacy mode gets an explicit mapping rather than silently collapsing to 'auto',
- * so saved rigs don't lose their detection strategy on first load.
- */
 function normalizeAlgorithmMode(
-  mode: DetectorSettings['algorithmMode'] | undefined,
+  mode: unknown,
 ): DiagnosticsProfile['algorithmMode'] | undefined {
-  if (mode === undefined) return undefined
-  switch (mode) {
-    case 'auto': return 'auto'
-    case 'custom': return 'custom'
-    // Legacy modes that mapped to specific algorithm subsets — preserve as custom
-    // so the user's enabledAlgorithms array (if present) is respected
-    case 'msd': return 'custom'
-    case 'phase': return 'custom'
-    case 'combined': return 'custom'
-    case 'all': return 'auto' // 'all' is equivalent to 'auto' (all algorithms enabled)
-    default: return 'auto'
-  }
+  if (mode === 'auto' || mode === 'custom') return mode
+  return undefined
 }
 
 export function applyInitialDetectorSettings(
@@ -96,48 +35,21 @@ export function applyInitialDetectorSettings(
   }
 
   const baseline = MODE_BASELINES[session.modeId]
-  const hasEnvironmentOverride = (
-    initialSettings.roomPreset !== undefined ||
-    initialSettings.roomTreatment !== undefined ||
-    initialSettings.roomLengthM !== undefined ||
-    initialSettings.roomWidthM !== undefined ||
-    initialSettings.roomHeightM !== undefined ||
-    initialSettings.roomDimensionsUnit !== undefined ||
-    initialSettings.roomRT60 !== undefined ||
-    initialSettings.roomVolume !== undefined ||
+  const hasMainsHumOverride = (
     initialSettings.mainsHumEnabled !== undefined ||
     initialSettings.mainsHumFundamental !== undefined
   )
 
-  if (hasEnvironmentOverride) {
-    const nextDimensions = (
-      initialSettings.roomLengthM !== undefined ||
-      initialSettings.roomWidthM !== undefined ||
-      initialSettings.roomHeightM !== undefined
-    )
-      ? {
-          length: initialSettings.roomLengthM ?? session.environment.dimensionsM?.length ?? 15,
-          width: initialSettings.roomWidthM ?? session.environment.dimensionsM?.width ?? 12,
-          height: initialSettings.roomHeightM ?? session.environment.dimensionsM?.height ?? 5,
-        }
-      : undefined
-
-    session.environment = resolveEnvironmentSelection(session.environment, {
-      ...(initialSettings.roomPreset !== undefined ? { templateId: initialSettings.roomPreset } : {}),
-      ...(initialSettings.roomTreatment !== undefined ? { treatment: initialSettings.roomTreatment } : {}),
-      ...(initialSettings.roomDimensionsUnit !== undefined ? { displayUnit: initialSettings.roomDimensionsUnit } : {}),
-      ...(nextDimensions ? { dimensionsM: nextDimensions } : {}),
-      ...(initialSettings.roomRT60 !== undefined ? { roomRT60: initialSettings.roomRT60, provenance: 'manual' as const } : {}),
-      ...(initialSettings.roomVolume !== undefined ? { roomVolume: initialSettings.roomVolume, provenance: 'manual' as const } : {}),
+  if (hasMainsHumOverride) {
+    session.environment = {
+      ...session.environment,
       ...(initialSettings.mainsHumEnabled !== undefined ? { mainsHumEnabled: initialSettings.mainsHumEnabled } : {}),
       ...(initialSettings.mainsHumFundamental !== undefined ? { mainsHumFundamental: initialSettings.mainsHumFundamental } : {}),
-    })
+    }
   }
 
   if (initialSettings.feedbackThresholdDb !== undefined) {
-    session.liveOverrides.sensitivityOffsetDb = initialSettings.feedbackThresholdDb - (
-      baseline.feedbackThresholdDb + session.environment.feedbackOffsetDb
-    )
+    session.liveOverrides.sensitivityOffsetDb = initialSettings.feedbackThresholdDb - baseline.feedbackThresholdDb
   }
   if (initialSettings.inputGainDb !== undefined) {
     session.liveOverrides.inputGainDb = initialSettings.inputGainDb
@@ -162,19 +74,14 @@ export function applyInitialDetectorSettings(
       ? 'mode-default'
       : initialSettings.eqPreset
   }
-  if (initialSettings.micCalibrationProfile !== undefined) {
-    session.micCalibrationProfile = initialSettings.micCalibrationProfile
-  }
-
   const algorithmMode = normalizeAlgorithmMode(initialSettings.algorithmMode)
   if (algorithmMode !== undefined) {
     session.diagnostics.algorithmMode = algorithmMode
   }
   if (initialSettings.enabledAlgorithms !== undefined) {
-    session.diagnostics.enabledAlgorithms = [...initialSettings.enabledAlgorithms]
-  }
-  if (initialSettings.mlEnabled !== undefined) {
-    session.diagnostics.mlEnabled = initialSettings.mlEnabled
+    const deterministicAlgorithms = new Set<Algorithm>(['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr'])
+    session.diagnostics.enabledAlgorithms = (initialSettings.enabledAlgorithms as readonly string[])
+      .filter((algorithm): algorithm is Algorithm => deterministicAlgorithms.has(algorithm as Algorithm))
   }
   if (initialSettings.adaptivePhaseSkip !== undefined) {
     session.diagnostics.adaptivePhaseSkip = initialSettings.adaptivePhaseSkip
@@ -215,7 +122,7 @@ export function applyInitialDetectorSettings(
       : initialSettings.growthRateThreshold
   session.diagnostics.smoothingTimeConstantOverride = initialSettings.smoothingTimeConstant === undefined
     ? session.diagnostics.smoothingTimeConstantOverride
-    : initialSettings.smoothingTimeConstant === 0.5
+    : initialSettings.smoothingTimeConstant === DEFAULT_SMOOTHING_TIME_CONSTANT || initialSettings.smoothingTimeConstant === 0.5
       ? undefined
       : initialSettings.smoothingTimeConstant
   session.diagnostics.sustainMsOverride = initialSettings.sustainMs === undefined
@@ -250,7 +157,7 @@ export function applyInitialDetectorSettings(
       : initialSettings.fftSize
   session.diagnostics.ringThresholdDbOverride = initialSettings.ringThresholdDb === undefined
     ? session.diagnostics.ringThresholdDbOverride
-    : initialSettings.ringThresholdDb === (baseline.ringThresholdDb + session.environment.ringOffsetDb)
+    : initialSettings.ringThresholdDb === baseline.ringThresholdDb
       ? undefined
       : initialSettings.ringThresholdDb
 
@@ -267,7 +174,6 @@ export function applyInitialDetectorSettings(
   if (initialSettings.showAlgorithmScores !== undefined) display.showAlgorithmScores = initialSettings.showAlgorithmScores
   if (initialSettings.showPeqDetails !== undefined) display.showPeqDetails = initialSettings.showPeqDetails
   if (initialSettings.showFreqZones !== undefined) display.showFreqZones = initialSettings.showFreqZones
-  if (initialSettings.showRoomModeLines !== undefined) display.showRoomModeLines = initialSettings.showRoomModeLines
   if (initialSettings.spectrumWarmMode !== undefined) display.spectrumWarmMode = initialSettings.spectrumWarmMode
   if (initialSettings.spectrumSmoothingMode !== undefined) display.spectrumSmoothingMode = initialSettings.spectrumSmoothingMode
   if (initialSettings.rtaDbMin !== undefined) display.rtaDbMin = initialSettings.rtaDbMin
@@ -280,7 +186,6 @@ export function applyInitialDetectorSettings(
   if (initialSettings.faderLinkRatio !== undefined) display.faderLinkRatio = initialSettings.faderLinkRatio
   if (initialSettings.faderLinkCenterGainDb !== undefined) display.faderLinkCenterGainDb = initialSettings.faderLinkCenterGainDb
   if (initialSettings.faderLinkCenterSensDb !== undefined) display.faderLinkCenterSensDb = initialSettings.faderLinkCenterSensDb
-  if (initialSettings.swipeLabeling !== undefined) display.swipeLabeling = initialSettings.swipeLabeling
 
   return { session, display }
 }

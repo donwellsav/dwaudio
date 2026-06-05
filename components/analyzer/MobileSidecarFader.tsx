@@ -17,6 +17,7 @@ interface MobileSidecarFaderProps {
   noiseFloorDb: number | null
   mobileGuidance: FaderGuidance
   compact?: boolean
+  homeValue: number
 }
 
 export const MobileSidecarFader = memo(function MobileSidecarFader({
@@ -32,7 +33,10 @@ export const MobileSidecarFader = memo(function MobileSidecarFader({
   noiseFloorDb,
   mobileGuidance,
   compact = false,
+  homeValue,
 }: MobileSidecarFaderProps) {
+  const faderWidth = compact ? 42 : 44
+
   return (
     <>
       <button
@@ -61,7 +65,8 @@ export const MobileSidecarFader = memo(function MobileSidecarFader({
           onAutoGainToggle={mobileFaderMode === 'gain' ? (enabled) => setAutoGain(enabled) : undefined}
           noiseFloorDb={mobileFaderMode === 'gain' ? noiseFloorDb : null}
           guidance={mobileFaderMode === 'sensitivity' ? mobileGuidance : undefined}
-          width={48}
+          width={faderWidth}
+          homeValue={homeValue}
         />
       </div>
     </>

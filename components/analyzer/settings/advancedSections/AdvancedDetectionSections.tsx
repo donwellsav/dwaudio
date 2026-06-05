@@ -4,62 +4,8 @@ import { memo } from 'react'
 import { ConsoleSlider } from '@/components/ui/console-slider'
 import { LEDToggle } from '@/components/ui/led-toggle'
 import { Section } from '@/components/analyzer/settings/SettingsShared'
-import { DEFAULT_DISPLAY_PREFS } from '@/lib/settings/defaults'
 import { deriveDefaultDetectorSettings } from '@/lib/settings/defaultDetectorSettings'
 import { AVAILABLE_ALGORITHMS, type AdvancedSectionProps } from './shared'
-
-export const AdvancedFaderLinkSection = memo(function AdvancedFaderLinkSection({
-  settings,
-  actions,
-}: AdvancedSectionProps) {
-  return (
-    <Section
-      title="Fader Link"
-      color="green"
-      showTooltip={settings.showTooltips}
-      tooltip="Configure the dual fader strip coupling. Ratio controls how fast sensitivity moves relative to gain. Center values set the Home button positions."
-    >
-      <div className="space-y-1">
-        <ConsoleSlider
-          label="Link Ratio"
-          color="green"
-          value={`${settings.faderLinkRatio.toFixed(1)}:1`}
-          tooltip={settings.showTooltips ? 'Sensitivity-to-gain visual ratio. 1.0 = equal travel. 2.0 = sensitivity moves twice as fast.' : undefined}
-          min={0.5}
-          max={2}
-          step={0.1}
-          sliderValue={settings.faderLinkRatio}
-          onChange={(value) => actions.updateDisplayField('faderLinkRatio', value)}
-          defaultValue={DEFAULT_DISPLAY_PREFS.faderLinkRatio}
-        />
-        <ConsoleSlider
-          label="Center Gain"
-          color="green"
-          value={`${settings.faderLinkCenterGainDb}dB`}
-          tooltip={settings.showTooltips ? 'Home position for gain fader. Default 0dB (unity).' : undefined}
-          min={-20}
-          max={20}
-          step={1}
-          sliderValue={settings.faderLinkCenterGainDb}
-          onChange={(value) => actions.updateDisplayField('faderLinkCenterGainDb', value)}
-          defaultValue={DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb}
-        />
-        <ConsoleSlider
-          label="Center Sens"
-          color="green"
-          value={`${settings.faderLinkCenterSensDb}dB`}
-          tooltip={settings.showTooltips ? 'Home position for sensitivity fader. Default 25dB threshold.' : undefined}
-          min={5}
-          max={40}
-          step={1}
-          sliderValue={settings.faderLinkCenterSensDb}
-          onChange={(value) => actions.updateDisplayField('faderLinkCenterSensDb', value)}
-          defaultValue={DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb}
-        />
-      </div>
-    </Section>
-  )
-})
 
 export const AdvancedDetectionPolicySection = memo(function AdvancedDetectionPolicySection({
   settings,
@@ -79,7 +25,7 @@ export const AdvancedDetectionPolicySection = memo(function AdvancedDetectionPol
           label="Ring"
           color="amber"
           value={`${settings.ringThresholdDb}dB`}
-          tooltip={settings.showTooltips ? 'Resonance detection. 2-3 dB ring out/monitors, 4-5 dB normal, 6+ dB live music/outdoor.' : undefined}
+          tooltip={settings.showTooltips ? 'Resonance detection. 2-3 dB monitor tuning, 4-5 dB normal, 6+ dB live music/outdoor.' : undefined}
           min={1}
           max={12}
           step={0.5}
@@ -187,16 +133,9 @@ export const AdvancedAlgorithmsSection = memo(function AdvancedAlgorithmsSection
       title="Algorithms"
       color="amber"
       showTooltip={settings.showTooltips}
-      tooltip="ML scoring and algorithm selection for detection fusion. Auto mode uses all 7 algorithms with content-adaptive weights."
+      tooltip="Deterministic algorithm selection for detection fusion. Auto mode uses all six algorithms with content-adaptive weights."
     >
-      <div className="space-y-2">
-        <LEDToggle
-          color="amber"
-          checked={settings.mlEnabled}
-          onChange={(checked) => actions.updateDiagnosticField('mlEnabled', checked)}
-          label="ML Scoring"
-          tooltip={settings.showTooltips ? 'Enable machine learning false-positive filter (7th algorithm). Disable for deterministic 6-algorithm detection.' : undefined}
-        />
+      <div className="space-y-1">
         <LEDToggle
           color="amber"
           checked={settings.adaptivePhaseSkip}
@@ -207,7 +146,7 @@ export const AdvancedAlgorithmsSection = memo(function AdvancedAlgorithmsSection
         <div className="space-y-1">
           <button
             onClick={actions.toggleAlgorithmMode}
-            className={`min-h-11 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 w-full px-1.5 rounded text-xs font-mono font-bold tracking-wide transition-colors ${
+            className={`min-h-8 md:min-h-7 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 w-full px-1.5 rounded text-xs font-mono font-bold tracking-wide transition-colors ${
               settings.algorithmMode === 'auto'
                 ? 'bg-[var(--console-amber)]/15 text-[var(--console-amber)] border border-[var(--console-amber)]/35'
                 : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border'
@@ -224,7 +163,7 @@ export const AdvancedAlgorithmsSection = memo(function AdvancedAlgorithmsSection
                 <button
                   key={key}
                   onClick={() => actions.toggleAlgorithm(key)}
-                  className={`min-h-11 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 px-1 rounded text-xs font-mono font-bold text-center transition-colors ${
+                  className={`min-h-8 md:min-h-7 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 px-1 rounded text-xs font-mono font-bold text-center transition-colors ${
                     isAuto
                       ? 'text-[var(--console-amber)]/50 border border-[var(--console-amber)]/20 bg-transparent'
                       : enabled

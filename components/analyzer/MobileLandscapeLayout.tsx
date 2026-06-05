@@ -58,9 +58,9 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
   toggleRtaFullscreen,
 }: MobileLandscapeLayoutProps) {
   return (
-    <div className="hidden landscape:flex md:landscape:hidden flex-1 overflow-hidden">
+    <div className="hidden landscape:flex xl:landscape:hidden flex-1 overflow-hidden">
       <div
-        className={`${landscapePanel === 'settings' ? 'w-[45%]' : 'w-[40%]'} flex flex-col overflow-hidden border-r border-border/50 transition-[width] duration-200`}
+        className={`${landscapePanel === 'settings' ? 'w-[52%]' : 'w-[40%]'} flex min-w-0 flex-col overflow-hidden border-r border-border/50 transition-[width] duration-200`}
       >
         <div
           className="flex-shrink-0 flex items-center border-b border-border/40 bg-card/30"
@@ -101,7 +101,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
       </div>
 
       <div
-        className={`${landscapePanel === 'settings' ? 'w-[49%]' : 'w-[54%]'} flex flex-col overflow-hidden p-0.5 transition-[width] duration-200`}
+        className={`${landscapePanel === 'settings' ? 'w-[42%]' : 'w-[54%]'} flex min-w-0 flex-col overflow-hidden p-0.5 transition-[width] duration-200`}
       >
         <div className="flex-shrink-0 flex items-center gap-1 px-1 pb-0.5">
           <MobileGraphModeToggle

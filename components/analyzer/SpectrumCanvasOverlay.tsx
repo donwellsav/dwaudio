@@ -4,7 +4,7 @@ import { memo } from 'react'
 import { Spinner } from '@/components/ui/spinner'
 
 interface SpectrumCanvasOverlayProps {
-  showPlaceholder: boolean
+  showIdleStartOverlay: boolean
   isStarting?: boolean
   error?: string | null
   isRunning: boolean
@@ -12,13 +12,13 @@ interface SpectrumCanvasOverlayProps {
 }
 
 export const SpectrumCanvasOverlay = memo(function SpectrumCanvasOverlay({
-  showPlaceholder,
+  showIdleStartOverlay,
   isStarting = false,
   error,
   isRunning,
   onStart,
 }: SpectrumCanvasOverlayProps) {
-  if (showPlaceholder) {
+  if (showIdleStartOverlay) {
     return (
       <div className="absolute inset-0">
         <div

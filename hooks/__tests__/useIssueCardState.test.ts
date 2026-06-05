@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildIssueCardDerivedState,
+  copyTextToClipboard,
   resolveIssueCardActionsLayout,
 } from '@/hooks/useIssueCardState'
 import type { Advisory } from '@/types/advisory'
@@ -34,6 +37,12 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
 }
 
 describe('useIssueCardState helpers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Reflect.deleteProperty(document, 'execCommand')
+  })
+
   it('derives clustered frequency text and runaway state from an advisory', () => {
     const derived = buildIssueCardDerivedState(makeAdvisory({
       velocityDbPerSec: 18,
@@ -52,10 +61,35 @@ describe('useIssueCardState helpers', () => {
     expect(derived.peqNotchSvgPath).toMatch(/^M 0 5 L /)
   })
 
-  it('resolves action layout from touch and swipe settings', () => {
-    expect(resolveIssueCardActionsLayout(false, false)).toBe('desktop')
-    expect(resolveIssueCardActionsLayout(false, true)).toBe('desktop')
-    expect(resolveIssueCardActionsLayout(true, false)).toBe('mobile')
-    expect(resolveIssueCardActionsLayout(true, true)).toBe('mobile')
+  it('resolves action layout from touch settings', () => {
+    expect(resolveIssueCardActionsLayout(false)).toBe('desktop')
+    expect(resolveIssueCardActionsLayout(true)).toBe('mobile')
+  })
+
+  it('copies issue text through navigator.clipboard when available', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    await expect(copyTextToClipboard('1 kHz')).resolves.toBe(true)
+    expect(writeText).toHaveBeenCalledWith('1 kHz')
+  })
+
+  it('falls back to local DOM copy when navigator.clipboard is unavailable', async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    })
+
+    await expect(copyTextToClipboard('1 kHz')).resolves.toBe(true)
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('returns false instead of throwing when no copy mechanism is available', async () => {
+    await expect(copyTextToClipboard('1 kHz')).resolves.toBe(false)
   })
 })

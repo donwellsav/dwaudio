@@ -39,7 +39,7 @@ export function useAnalyzerShellState(
   const openIssuesPanel = useCallback(() => {
     setIssuesPanelOpen(true)
     setActiveSidebarTab(prev => (prev === 'issues' ? 'controls' : prev))
-    requestAnimationFrame(() => issuesPanelRef.current?.resize('25%'))
+    requestAnimationFrame(() => issuesPanelRef.current?.resize('22%'))
   }, [issuesPanelRef])
 
   const closeIssuesPanel = useCallback(() => {

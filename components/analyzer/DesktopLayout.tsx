@@ -5,13 +5,12 @@ import { AlertTriangle, Columns2, PanelLeftClose } from 'lucide-react'
 import { DesktopGraphPanels } from './DesktopGraphPanels'
 import { DesktopIssuesContent } from './DesktopIssuesContent'
 import { DualFaderStrip } from './DualFaderStrip'
-import { SettingsPanel, SETTINGS_TABS, type DataCollectionTabProps } from './settings/SettingsPanel'
+import { SettingsPanel, SETTINGS_TABS } from './settings/SettingsPanel'
 import { useUI } from '@/contexts/UIContext'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import type { usePanelRef } from '@/components/ui/resizable'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { CalibrationTabProps } from './settings/CalibrationTab'
 import { useAnalyzerLayoutState } from '@/hooks/useAnalyzerLayoutState'
 import { useDesktopLayoutState } from '@/hooks/useDesktopLayoutState'
 import { useTabKeyboardNav } from '@/hooks/useTabKeyboardNav'
@@ -25,12 +24,6 @@ interface DesktopLayoutProps {
   closeIssuesPanel: () => void
   closeIssuesPanelToIssues: () => void
   setIssuesPanelOpen: (open: boolean) => void
-  calibration?: Omit<CalibrationTabProps, 'settings'>
-  dataCollection?: DataCollectionTabProps
-  isWizardActive?: boolean
-  onStartWizard?: () => void
-  onFinishWizard?: () => void
-  onStartRingOut?: () => void
 }
 
 export const DesktopLayout = memo(function DesktopLayout({
@@ -42,12 +35,6 @@ export const DesktopLayout = memo(function DesktopLayout({
   closeIssuesPanel,
   closeIssuesPanelToIssues,
   setIssuesPanelOpen,
-  calibration,
-  dataCollection,
-  isWizardActive,
-  onStartWizard,
-  onFinishWizard,
-  onStartRingOut,
 }: DesktopLayoutProps) {
   const {
     isRunning,
@@ -57,13 +44,14 @@ export const DesktopLayout = memo(function DesktopLayout({
     setAutoGain,
     updateDisplay,
     spectrumRef,
+    spectrumStatus,
     noiseFloorDb,
     inputLevel,
+    isLowSignal,
     isAutoGain,
     autoGainDb,
     autoGainLocked,
     handleThresholdChange,
-    roomModes,
     spectrumDisplay,
     spectrumRange,
     spectrumLifecycleWithStart,
@@ -99,7 +87,6 @@ export const DesktopLayout = memo(function DesktopLayout({
   const {
     isFrozen,
     toggleFreeze,
-    layoutKey,
     rtaContainerRef,
     isRtaFullscreen,
     toggleRtaFullscreen,
@@ -111,15 +98,16 @@ export const DesktopLayout = memo(function DesktopLayout({
     ...issuesListBaseProps,
     maxIssues: settings.maxDisplayedIssues,
     onClearAll,
-    onStartRingOut,
   }
 
-  const showStartWizardButton = settings.mode === 'ringOut' && isRunning && !!onStartWizard
-
   return (
-    <div className="hidden lg:flex lg:landscape:hidden md:landscape:flex flex-1 overflow-hidden">
-      <ResizablePanelGroup key={layoutKey} orientation="horizontal">
-        <ResizablePanel defaultSize="20%" minSize="8%" maxSize="30%" collapsible>
+    <div className="hidden xl:flex flex-1 overflow-hidden">
+      <ResizablePanelGroup orientation="horizontal">
+        <ResizablePanel
+          defaultSize={issuesPanelOpen ? '16%' : '14%'}
+          minSize={showSidebarControls ? '16%' : '8%'}
+          maxSize="30%"
+        >
           <div className="flex flex-col h-full amber-sidecar overflow-hidden">
             <div className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1.5 amber-panel-header">
               <div
@@ -216,17 +204,13 @@ export const DesktopLayout = memo(function DesktopLayout({
                               color:
                                 id === 'live'
                                   ? 'var(--console-amber)'
-                                  : id === 'setup'
-                                    ? 'var(--console-blue)'
-                                    : id === 'display'
-                                      ? 'var(--console-green)'
-                                      : 'var(--console-cyan)',
+                                  : 'var(--console-cyan)',
                             }
                           : undefined
                       }
                     />
                     <span className="truncate">{shortLabel ?? label}</span>
-                    {id === 'advanced' && hasCustomGates ? (
+                    {id === 'expert' && hasCustomGates ? (
                       <span
                         className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400"
                         title="Custom gate overrides active"
@@ -238,19 +222,12 @@ export const DesktopLayout = memo(function DesktopLayout({
             ) : null}
 
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex-1 overflow-y-auto p-2">
                 {showSidebarIssues ? (
                   <div className="animate-in fade-in-0 duration-150">
                     <DesktopIssuesContent
-                      advisories={advisories}
                       issuesListProps={desktopIssuesListProps}
                       earlyWarning={earlyWarning}
-                      isRunning={isRunning}
-                      roomModes={roomModes}
-                      isWizardActive={isWizardActive}
-                      onFinishWizard={onFinishWizard}
-                      showStartWizardButton={showStartWizardButton}
-                      onStartWizard={onStartWizard}
                       withErrorBoundary
                     />
                   </div>
@@ -259,8 +236,6 @@ export const DesktopLayout = memo(function DesktopLayout({
                   <div className="animate-in fade-in-0 duration-150">
                     <SettingsPanel
                       settings={settings}
-                      calibration={calibration}
-                      dataCollection={dataCollection}
                       activeTab={controlsTab}
                       onTabChange={setControlsTab}
                     />
@@ -271,62 +246,62 @@ export const DesktopLayout = memo(function DesktopLayout({
           </div>
         </ResizablePanel>
 
-        {issuesPanelOpen ? <ResizableHandle withHandle /> : null}
+        {issuesPanelOpen ? (
+          <>
+            <ResizableHandle withHandle />
 
-        <ResizablePanel
-          panelRef={issuesPanelRef}
-          defaultSize="25%"
-          collapsedSize="0%"
-          minSize="10%"
-          maxSize="35%"
-          collapsible
-          onResize={(panelSize) => {
-            setIssuesPanelOpen(panelSize.asPercentage > 0)
-          }}
-        >
-          <div className="flex flex-col h-full amber-sidecar overflow-hidden">
-            <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 amber-panel-header">
-              <h2 className="section-label flex items-center gap-1.5 text-[var(--console-amber)]">
-                <AlertTriangle className="w-3 h-3 text-[var(--console-amber)]" />
-                Issues
-                {activeAdvisoryCount > 0 ? (
-                  <span className="font-mono text-[var(--console-amber)]">{activeAdvisoryCount}</span>
-                ) : null}
-              </h2>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={closeIssuesPanelToIssues}
-                    className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Show Issues in sidebar"
-                  >
-                    <PanelLeftClose className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-sm">
-                  Show Issues only
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-3">
-              <DesktopIssuesContent
-                advisories={advisories}
-                issuesListProps={desktopIssuesListProps}
-                earlyWarning={earlyWarning}
-                isRunning={isRunning}
-                roomModes={roomModes}
-                isWizardActive={isWizardActive}
-                onFinishWizard={onFinishWizard}
-              />
-            </div>
-          </div>
-        </ResizablePanel>
+            <ResizablePanel
+              panelRef={issuesPanelRef}
+              defaultSize="22%"
+              collapsedSize="0%"
+              minSize="10%"
+              maxSize="30%"
+              collapsible
+              onResize={(panelSize) => {
+                setIssuesPanelOpen(panelSize.asPercentage > 0)
+              }}
+            >
+              <div className="flex flex-col h-full amber-sidecar overflow-hidden">
+                <div className="flex-shrink-0 flex items-center justify-between px-3 py-1 amber-panel-header">
+                  <h2 className="section-label flex items-center gap-1.5 text-[var(--console-amber)]">
+                    <AlertTriangle className="w-3 h-3 text-[var(--console-amber)]" />
+                    Issues
+                    {activeAdvisoryCount > 0 ? (
+                      <span className="font-mono text-[var(--console-amber)]">{activeAdvisoryCount}</span>
+                    ) : null}
+                  </h2>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={closeIssuesPanelToIssues}
+                        className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+                        aria-label="Show Issues in sidebar"
+                      >
+                        <PanelLeftClose className="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-sm">
+                      Show Issues only
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                  <DesktopIssuesContent
+                    issuesListProps={desktopIssuesListProps}
+                    earlyWarning={earlyWarning}
+                  />
+                </div>
+              </div>
+            </ResizablePanel>
+          </>
+        ) : null}
 
         <ResizableHandle withHandle />
 
         <DesktopGraphPanels
+          defaultSize={issuesPanelOpen ? '62%' : '86%'}
           rtaContainerRef={rtaContainerRef}
           isRunning={isRunning}
           noiseFloorDb={noiseFloorDb}
@@ -346,7 +321,6 @@ export const DesktopLayout = memo(function DesktopLayout({
             earlyWarning,
             clearedIds: rtaClearedIds,
             isFrozen,
-            roomModes,
             display: spectrumDisplay,
             range: spectrumRange,
             onFreqRangeChange: handleFreqRangeChange,
@@ -357,6 +331,8 @@ export const DesktopLayout = memo(function DesktopLayout({
             graphFontSize: Math.max(10, settings.graphFontSize - 4),
             clearedIds: geqClearedIds,
             isRunning,
+            isLowSignal,
+            spectrumStatus,
           }}
         />
       </ResizablePanelGroup>

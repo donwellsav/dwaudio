@@ -39,7 +39,7 @@ export function useIssueAnnouncement(entries: IssueListEntry[]): string {
 
     for (const entry of entries) {
       const { advisory } = entry
-      if (announcedIdsRef.current.has(advisory.id) || advisory.resolved) continue
+      if (entry.isHeld || announcedIdsRef.current.has(advisory.id) || advisory.resolved) continue
 
       announcedIdsRef.current.add(advisory.id)
       lastAnnounceTimeRef.current = now

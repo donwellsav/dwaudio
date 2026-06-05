@@ -18,7 +18,7 @@ export function getDesktopSidebarViewState(
 ): DesktopSidebarViewState {
   return {
     showSidebarIssues: activeSidebarTab === 'issues' && !issuesPanelOpen,
-    showSidebarControls: activeSidebarTab === 'controls',
+    showSidebarControls: activeSidebarTab === 'controls' || issuesPanelOpen,
   }
 }
 

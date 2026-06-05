@@ -1,17 +1,11 @@
 {
   "compilerOptions": {
-    // Both "dom" and "webworker" are included because multiple files need
-    // WebWorker types: lib/dsp/dspWorker.ts (DSP web worker) and app/sw.ts
-    // (Serwist service worker). Splitting into project references requires
-    // composite builds that add complexity without proportional benefit.
+    // "webworker" is included for lib/dsp/dspWorker.ts worker types.
     "lib": [
       "dom",
       "dom.iterable",
       "esnext",
       "webworker"
-    ],
-    "types": [
-      "@serwist/next/typings"
     ],
     "allowJs": true,
     "target": "ES6",
@@ -45,10 +39,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "public/sw.js",
-    "supabase/functions",
-    "companion/extracted",
-    "companion-module"
+    "node_modules"
   ]
 }

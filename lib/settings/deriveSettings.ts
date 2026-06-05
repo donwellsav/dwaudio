@@ -8,16 +8,15 @@
  *
  * Composition order:
  *   1. Mode baseline (frozen detector policy)
- *   2. Environment offsets (relative threshold adjustments)
- *   3. Live operator overrides (sensitivity, gain, focus range)
- *   4. Diagnostics overrides (expert-only field replacements)
- *   5. Display preferences (UI-only, no DSP impact)
- *   6. Calibration (mic profile)
- *
- * @see docs/CONTROLS_SETTINGS_REBUILD_SPEC_2026-03-25.md for design rationale
+ *   2. Live operator overrides (sensitivity, gain, focus range)
+ *   3. Diagnostics overrides (expert-only field replacements)
+ *   4. Display preferences (UI-only, no DSP impact)
+ * Environment is limited to local electrical-hum gate state. Older saved
+ * sessions may still contain removed venue-modeling keys, but typed runtime
+ * settings no longer accept or emit them.
  */
 
-import type { DetectorSettings, MicCalibrationProfile } from '@/types/advisory'
+import { DEFAULT_SMOOTHING_TIME_CONSTANT, type DetectorSettings } from '@/types/advisory'
 import type {
   DiagnosticsProfile,
   DisplayPrefs,
@@ -32,6 +31,11 @@ const DEFAULT_AUTO_GAIN_TARGET_DB = -18
 /** Minimum allowed threshold to prevent nonsensical negative values */
 const MIN_THRESHOLD_DB = 1
 
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  return Math.max(min, Math.min(max, numeric))
+}
+
 /**
  * Derives a flat DetectorSettings object from the layered state contract.
  *
@@ -44,18 +48,20 @@ export function deriveDetectorSettings(
   live: LiveOverrides,
   display: DisplayPrefs,
   diagnostics: DiagnosticsProfile,
-  micCalibrationProfile: MicCalibrationProfile,
 ): DetectorSettings {
   // ── Threshold composition ─────────────────────────────────────────────
-  // effectiveThreshold = baseline + room offset + live sensitivity offset
+  // effectiveThreshold = baseline + live sensitivity offset.
+  // Hidden/stored environment offsets are ignored in the local-only analyzer.
   const feedbackThresholdDb = Math.max(
     MIN_THRESHOLD_DB,
-    baseline.feedbackThresholdDb + environment.feedbackOffsetDb + live.sensitivityOffsetDb,
+    baseline.feedbackThresholdDb + live.sensitivityOffsetDb,
   )
 
-  const ringThresholdDb = diagnostics.ringThresholdDbOverride ?? Math.max(
-    MIN_THRESHOLD_DB,
-    baseline.ringThresholdDb + environment.ringOffsetDb,
+  const ringThresholdDb = clampNumber(
+    diagnostics.ringThresholdDbOverride,
+    Math.max(MIN_THRESHOLD_DB, baseline.ringThresholdDb),
+    1,
+    12,
   )
 
   // ── Focus range ───────────────────────────────────────────────────────
@@ -84,9 +90,12 @@ export function deriveDetectorSettings(
     : (baseline.defaultAutoGainTargetDb ?? DEFAULT_AUTO_GAIN_TARGET_DB)
 
   // ── Diagnostics overrides ─────────────────────────────────────────────
-  const confidenceThreshold = diagnostics.confidenceThresholdOverride ?? baseline.confidenceThreshold
-  const growthRateThreshold = diagnostics.growthRateThresholdOverride ?? baseline.growthRateThreshold
-  const smoothingTimeConstant = diagnostics.smoothingTimeConstantOverride ?? 0.5
+  const confidenceThreshold = clampNumber(diagnostics.confidenceThresholdOverride, baseline.confidenceThreshold, 0.2, 0.8)
+  const growthRateThreshold = clampNumber(diagnostics.growthRateThresholdOverride, baseline.growthRateThreshold, 0.5, 8)
+  const smoothingTimeConstant = clampNumber(diagnostics.smoothingTimeConstantOverride, DEFAULT_SMOOTHING_TIME_CONSTANT, 0, 0.95)
+  const sustainMs = clampNumber(diagnostics.sustainMsOverride, baseline.sustainMs, 100, 2000)
+  const clearMs = clampNumber(diagnostics.clearMsOverride, baseline.clearMs, 100, 2000)
+  const prominenceDb = clampNumber(diagnostics.prominenceDbOverride, baseline.prominenceDb, 4, 30)
 
   // ── Compose the flat DetectorSettings ─────────────────────────────────
   return {
@@ -107,12 +116,12 @@ export function deriveDetectorSettings(
     growthRateThreshold,
 
     // Timing (baseline, overridable by diagnostics)
-    sustainMs: diagnostics.sustainMsOverride ?? baseline.sustainMs,
-    clearMs: diagnostics.clearMsOverride ?? baseline.clearMs,
+    sustainMs,
+    clearMs,
 
     // Report gate
     confidenceThreshold,
-    prominenceDb: diagnostics.prominenceDbOverride ?? baseline.prominenceDb,
+    prominenceDb,
 
     // EQ
     eqPreset,
@@ -122,30 +131,20 @@ export function deriveDetectorSettings(
     autoGainEnabled: live.autoGainEnabled,
     autoGainTargetDb,
 
-    // A-weighting and calibration
+    // A-weighting
     aWeightingEnabled: diagnostics.aWeightingOverride ?? baseline.aWeightingEnabled,
-    micCalibrationProfile,
 
     // Harmonic
     harmonicToleranceCents: diagnostics.harmonicToleranceCents,
     ignoreWhistle: diagnostics.ignoreWhistleOverride ?? baseline.ignoreWhistle,
 
-    // Room (pass through for classifier/worker consumption)
-    roomPreset: environment.templateId as DetectorSettings['roomPreset'],
-    roomRT60: environment.roomRT60,
-    roomVolume: environment.roomVolume,
-    roomTreatment: environment.treatment,
-    roomLengthM: environment.dimensionsM?.length ?? 15,
-    roomWidthM: environment.dimensionsM?.width ?? 12,
-    roomHeightM: environment.dimensionsM?.height ?? 5,
-    roomDimensionsUnit: environment.displayUnit,
+    // Local electrical-hum gate.
     mainsHumEnabled: environment.mainsHumEnabled ?? true,
     mainsHumFundamental: environment.mainsHumFundamental ?? 'auto',
 
     // Algorithm / diagnostics
     algorithmMode: diagnostics.algorithmMode,
     enabledAlgorithms: diagnostics.enabledAlgorithms,
-    mlEnabled: diagnostics.mlEnabled,
     adaptivePhaseSkip: diagnostics.adaptivePhaseSkip ?? true,
 
     // Threshold mode
@@ -177,7 +176,6 @@ export function deriveDetectorSettings(
     showAlgorithmScores: display.showAlgorithmScores,
     showPeqDetails: display.showPeqDetails,
     showFreqZones: display.showFreqZones,
-    showRoomModeLines: display.showRoomModeLines,
     spectrumWarmMode: display.spectrumWarmMode,
     spectrumSmoothingMode: display.spectrumSmoothingMode,
     rtaDbMin: display.rtaDbMin,
@@ -190,7 +188,6 @@ export function deriveDetectorSettings(
     faderLinkRatio: display.faderLinkRatio,
     faderLinkCenterGainDb: display.faderLinkCenterGainDb,
     faderLinkCenterSensDb: display.faderLinkCenterSensDb,
-    swipeLabeling: display.swipeLabeling,
     signalTintEnabled: display.signalTintEnabled,
   }
 }

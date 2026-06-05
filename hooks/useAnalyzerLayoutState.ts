@@ -7,7 +7,6 @@ import { useMetering } from '@/contexts/MeteringContext'
 import { useAdvisories } from '@/contexts/AdvisoryContext'
 import { useThresholdChange } from '@/hooks/useThresholdChange'
 import { useLowSignal } from '@/hooks/useLowSignal'
-import { useRoomModes } from '@/hooks/useRoomModes'
 import type { Advisory, DetectorSettings } from '@/types/advisory'
 import type { DwaSessionState } from '@/types/settings'
 import type {
@@ -24,7 +23,6 @@ type SpectrumDisplaySettings = Pick<
   | 'spectrumLineWidth'
   | 'canvasTargetFps'
   | 'showFreqZones'
-  | 'showRoomModeLines'
   | 'showThresholdLine'
   | 'spectrumWarmMode'
   | 'spectrumSmoothingMode'
@@ -63,7 +61,6 @@ export function buildSpectrumDisplay(settings: SpectrumDisplaySettings): Spectru
     spectrumLineWidth: settings.spectrumLineWidth,
     canvasTargetFps: settings.canvasTargetFps,
     showFreqZones: settings.showFreqZones,
-    showRoomModeLines: settings.showRoomModeLines,
     showThresholdLine: settings.showThresholdLine,
     spectrumWarmMode: settings.spectrumWarmMode,
     spectrumSmoothingMode: settings.spectrumSmoothingMode,
@@ -105,7 +102,6 @@ export function useAnalyzerLayoutState() {
 
   const isLowSignal = useLowSignal(isRunning, inputLevel)
   const handleThresholdChange = useThresholdChange(session, setSensitivityOffset)
-  const roomModes = useRoomModes(settings)
   const {
     graphFontSize,
     rtaDbMin,
@@ -113,7 +109,6 @@ export function useAnalyzerLayoutState() {
     spectrumLineWidth,
     canvasTargetFps,
     showFreqZones,
-    showRoomModeLines,
     showThresholdLine,
     spectrumWarmMode,
     spectrumSmoothingMode,
@@ -130,7 +125,6 @@ export function useAnalyzerLayoutState() {
       spectrumLineWidth,
       canvasTargetFps,
       showFreqZones,
-      showRoomModeLines,
       showThresholdLine,
       spectrumWarmMode,
       spectrumSmoothingMode,
@@ -142,7 +136,6 @@ export function useAnalyzerLayoutState() {
       spectrumLineWidth,
       canvasTargetFps,
       showFreqZones,
-      showRoomModeLines,
       showThresholdLine,
       spectrumWarmMode,
       spectrumSmoothingMode,
@@ -176,28 +169,22 @@ export function useAnalyzerLayoutState() {
     dismissedIds: advisoriesState.dismissedIds,
     isRunning,
     onStart: start,
-    onFalsePositive: advisoriesState.onFalsePositive,
-    falsePositiveIds: advisoriesState.falsePositiveIds,
-    onConfirmFeedback: advisoriesState.onConfirmFeedback,
-    confirmedIds: advisoriesState.confirmedIds,
     isLowSignal,
-    swipeLabeling: settings.swipeLabeling,
+    spectrumStatus,
+    noiseFloorDb,
     showAlgorithmScores: settings.showAlgorithmScores,
     showPeqDetails: settings.showPeqDetails,
     onDismiss: advisoriesState.onDismiss,
   }), [
     advisoriesState.advisories,
     advisoriesState.dismissedIds,
-    advisoriesState.onConfirmFeedback,
     advisoriesState.onDismiss,
-    advisoriesState.onFalsePositive,
-    advisoriesState.confirmedIds,
-    advisoriesState.falsePositiveIds,
     isLowSignal,
     isRunning,
+    noiseFloorDb,
+    spectrumStatus,
     settings.showAlgorithmScores,
     settings.showPeqDetails,
-    settings.swipeLabeling,
     start,
   ])
 
@@ -226,7 +213,6 @@ export function useAnalyzerLayoutState() {
     autoGainLocked,
     isLowSignal,
     handleThresholdChange,
-    roomModes,
     spectrumDisplay,
     spectrumRange,
     spectrumLifecycle,

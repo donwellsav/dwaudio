@@ -22,7 +22,7 @@ Mic -> Web Audio graph -> main-thread peak detection
 
 ## Detection Signals
 
-The worker fuses seven signals:
+The worker fuses six deterministic signals:
 
 1. MSD
 2. phase coherence
@@ -30,7 +30,6 @@ The worker fuses seven signals:
 4. comb pattern
 5. IHR
 6. PTMR
-7. compact ML classifier
 
 The weights are keyed by **content type**, not by user-selected mode. The content classifier chooses among `DEFAULT`, `SPEECH`, `MUSIC`, and `COMPRESSED` profiles.
 
@@ -64,7 +63,6 @@ Operation modes live in:
 | liveMusic | 42 | 8 |
 | theater | 28 | 4 |
 | monitors | 15 | 3 |
-| ringOut | 27 | 2 |
 | broadcast | 22 | 3 |
 | outdoor | 38 | 6 |
 
@@ -93,7 +91,6 @@ DoneWell Audio now separates interpretation from raw display more clearly:
 
 - `Raw` spectrum view: narrow ring hunting
 - `Perceptual` spectrum view: room and speech reading
-- room auto-detect: low-frequency modal context only
 
 The app does **not** yet perform full impulse-response or ETC-style direct-vs-early-vs-late separation.
 
@@ -107,22 +104,9 @@ Recommendations can now carry different intent:
 
 Repeated clustered alerts should not automatically be treated as "apply more narrow notches."
 
-## Companion And Mixer Output
+## Local-Only Boundary
 
-The app can expose advisories to the DoneWell Audio Companion module, which can then drive supported mixers or DSP processors. The app still remains analysis-only; external systems perform any actual control changes.
-
-## Current HTTP Surface
-
-Current route handlers live under `app/api/`:
-
-- `/api/v1/ingest`
-- `/api/geo`
-- `/api/health`
-- `/api/companion/proxy`
-- `/api/companion/relay/[code]`
-- `/api/sentry-example-api`
-
-See `docs/API_DOCUMENTATION.md` for the current summary.
+The app does not upload analyzer data, send telemetry, expose a Companion bridge, or control external mixer/DSP hardware. Recommendations are rendered locally as operator guidance.
 
 ## Validation Rule
 
@@ -132,7 +116,6 @@ Use:
 
 - nearby unit tests
 - integration tests
-- replay fixtures
-- the validation matrix
+- synthetic fusion scenarios
 
 If a change alters operator behavior, update the help tabs and docs in the same branch.

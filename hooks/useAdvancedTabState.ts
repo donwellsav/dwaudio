@@ -5,7 +5,7 @@ import { useSettings } from '@/contexts/SettingsContext'
 import type { Algorithm, DetectorSettings } from '@/types/advisory'
 import type { DiagnosticsProfile, DisplayPrefs } from '@/types/settings'
 
-const DEFAULT_ENABLED_ALGORITHMS: readonly Algorithm[] = ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml']
+const DEFAULT_ENABLED_ALGORITHMS: readonly Algorithm[] = ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr']
 
 function fieldPatch<T, K extends keyof T>(field: K, value: T[K]): Pick<T, K> {
   return { [field]: value } as Pick<T, K>
@@ -13,8 +13,6 @@ function fieldPatch<T, K extends keyof T>(field: K, value: T[K]): Pick<T, K> {
 
 interface UseAdvancedTabStateParams {
   settings: DetectorSettings
-  onEnableCollection?: () => void
-  onDisableCollection?: () => void
 }
 
 export interface UseAdvancedTabStateReturn {
@@ -22,13 +20,10 @@ export interface UseAdvancedTabStateReturn {
   updateDiagnosticField: <K extends keyof DiagnosticsProfile>(field: K, value: DiagnosticsProfile[K]) => void
   toggleAlgorithmMode: () => void
   toggleAlgorithm: (algorithm: Algorithm) => void
-  handleCollectionToggle: (checked: boolean) => void
 }
 
 export function useAdvancedTabState({
   settings,
-  onEnableCollection,
-  onDisableCollection,
 }: UseAdvancedTabStateParams): UseAdvancedTabStateReturn {
   const { updateDisplay, updateDiagnostics } = useSettings()
 
@@ -69,20 +64,10 @@ export function useAdvancedTabState({
     updateDiagnosticField('enabledAlgorithms', [...current, algorithm])
   }, [settings.algorithmMode, settings.enabledAlgorithms, updateDiagnosticField])
 
-  const handleCollectionToggle = useCallback((checked: boolean) => {
-    if (checked) {
-      onEnableCollection?.()
-      return
-    }
-
-    onDisableCollection?.()
-  }, [onDisableCollection, onEnableCollection])
-
   return {
     updateDisplayField,
     updateDiagnosticField,
     toggleAlgorithmMode,
     toggleAlgorithm,
-    handleCollectionToggle,
   }
 }

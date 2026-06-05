@@ -3,7 +3,7 @@
  * Tests for dwaStorage.ts — typed localStorage abstraction.
  *
  * Covers three factory functions (typedStorage, stringStorage, flagStorage),
- * domain accessors, and the clearPanelLayouts utility.
+ * and domain accessors.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -11,7 +11,6 @@ import {
   typedStorage,
   stringStorage,
   flagStorage,
-  clearPanelLayouts,
 } from '../dwaStorage'
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -114,29 +113,5 @@ describe('flagStorage', () => {
     const flag = flagStorage('test-flag-value')
     flag.set()
     expect(localStorage.getItem('test-flag-value')).toBe('true')
-  })
-})
-
-// ── clearPanelLayouts ─────────────────────────────────────────────────────────
-
-describe('clearPanelLayouts', () => {
-  it('removes all known panel layout keys', () => {
-    const keys = [
-      'react-resizable-panels:dwa-layout-main',
-      'react-resizable-panels:dwa-layout-main-v2',
-      'react-resizable-panels:dwa-layout-main-v3',
-      'react-resizable-panels:dwa-layout-main-v4',
-      'react-resizable-panels:dwa-layout-vertical',
-      'react-resizable-panels:dwa-layout-bottom',
-    ]
-    keys.forEach(k => localStorage.setItem(k, 'data'))
-    clearPanelLayouts()
-    keys.forEach(k => expect(localStorage.getItem(k)).toBeNull())
-  })
-
-  it('does not remove unrelated keys', () => {
-    localStorage.setItem('other-key', 'keep me')
-    clearPanelLayouts()
-    expect(localStorage.getItem('other-key')).toBe('keep me')
   })
 })

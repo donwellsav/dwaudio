@@ -7,20 +7,17 @@ import { createAudioAnalyzer } from '@/lib/audio/createAudioAnalyzer'
 import type { AudioAnalyzer } from '@/lib/audio/createAudioAnalyzer'
 import { useDSPWorker, type DSPWorkerCallbacks, type DSPWorkerHandle } from './useDSPWorker'
 import { useAdvisoryMap } from './useAdvisoryMap'
+import { resetFeedbackHistoryForCurrentRun } from '@/lib/dsp/feedbackHistory'
 import type {
   Advisory,
   SpectrumData,
   TrackSummary,
   DetectorSettings,
 } from '@/types/advisory'
-import type { RoomDimensionEstimate } from '@/types/calibration'
 import { useLayeredSettings } from '@/hooks/useLayeredSettings'
-import { useSessionHistory } from '@/hooks/useSessionHistory'
 import { pickAudioRuntimeSettings, pickWorkerRuntimeSettings } from '@/lib/settings/runtimeSettings'
 import type { EarlyWarning, SpectrumStatus } from '@/hooks/audioAnalyzerTypes'
 import { useAnalyzerFrameState } from '@/hooks/useAnalyzerFrameState'
-import { useRoomMeasurement } from '@/hooks/useRoomMeasurement'
-import type { SnapshotBatch } from '@/types/data'
 import type { DwaSessionState, DisplayPrefs } from '@/types/settings'
 import type { UseLayeredSettingsReturn } from '@/hooks/useLayeredSettings'
 
@@ -51,12 +48,6 @@ export interface UseAudioAnalyzerReturn extends UseAudioAnalyzerState {
   spectrumRef: React.RefObject<SpectrumData | null>
   tracksRef: React.RefObject<TrackSummary[]>
   dspWorker: DSPWorkerHandle
-  roomEstimate: RoomDimensionEstimate | null
-  roomMeasuring: boolean
-  roomProgress: { elapsedMs: number; stablePeaks: number }
-  startRoomMeasurement: () => void
-  stopRoomMeasurement: () => void
-  clearRoomEstimate: () => void
   layeredSession: DwaSessionState
   layeredDisplay: DisplayPrefs
   layered: UseLayeredSettingsReturn
@@ -69,7 +60,6 @@ type InternalAnalyzerState = Omit<
 
 export function useAudioAnalyzer(
   initialSettings: Partial<DetectorSettings> = {},
-  externalCallbacks?: { onSnapshotBatch?: (batch: SnapshotBatch) => void },
   frozenRef?: React.RefObject<boolean>,
 ): UseAudioAnalyzerReturn {
   const layered = useLayeredSettings(initialSettings)
@@ -108,30 +98,6 @@ export function useAudioAnalyzer(
     handleCombPatternDetected,
     clearEarlyWarning,
   } = useAnalyzerFrameState()
-  const {
-    roomEstimate,
-    roomMeasuring,
-    roomProgress,
-    handleRoomEstimate,
-    handleRoomProgress,
-    startMeasurement,
-    stopMeasurement,
-    clearEstimate,
-  } = useRoomMeasurement()
-
-  const { endSession, resetGuard, updateContext } = useSessionHistory({
-    isRunning: state.isRunning,
-  })
-
-  useEffect(() => {
-    updateContext({ mode: settings.mode })
-  }, [settings.mode, updateContext])
-
-  const externalCallbacksRef = useRef(externalCallbacks)
-  useEffect(() => {
-    externalCallbacksRef.current = externalCallbacks
-  }, [externalCallbacks])
-
   const stableCallbacks = useRef<DSPWorkerCallbacks>({
     onAdvisory,
     onAdvisoryCleared,
@@ -144,11 +110,6 @@ export function useAudioAnalyzer(
     onError: (message) => {
       setState((previous) => ({ ...previous, workerError: message }))
     },
-    onSnapshotBatch: (batch) => {
-      externalCallbacksRef.current?.onSnapshotBatch?.(batch)
-    },
-    onRoomEstimate: handleRoomEstimate,
-    onRoomMeasurementProgress: handleRoomProgress,
   }).current
 
   const dspWorker = useDSPWorker(stableCallbacks)
@@ -203,7 +164,7 @@ export function useAudioAnalyzer(
     const deviceId = options.deviceId ?? deviceIdRef.current
 
     try {
-      resetGuard()
+      resetFeedbackHistoryForCurrentRun()
       tracksRef.current = []
       clearMap()
       clearEarlyWarning()
@@ -237,19 +198,18 @@ export function useAudioAnalyzer(
         hasPermission: false,
       }))
     }
-  }, [clearEarlyWarning, clearMap, resetGuard, tracksRef])
+  }, [clearEarlyWarning, clearMap, tracksRef])
 
   const stop = useCallback(() => {
     if (!analyzerRef.current) return
 
-    endSession()
     analyzerRef.current.stop({ releaseMic: false })
     tracksRef.current = []
     setState((previous) => ({
       ...previous,
       isRunning: false,
     }))
-  }, [endSession, tracksRef])
+  }, [tracksRef])
 
   const switchDevice = useCallback(async (deviceId: string) => {
     deviceIdRef.current = deviceId
@@ -272,14 +232,6 @@ export function useAudioAnalyzer(
     layered.resetAll()
   }, [layered])
 
-  const startRoomMeasurement = useCallback(() => {
-    startMeasurement(() => dspWorkerRef.current.startRoomMeasurement())
-  }, [startMeasurement])
-
-  const stopRoomMeasurement = useCallback(() => {
-    stopMeasurement(() => dspWorkerRef.current.stopRoomMeasurement())
-  }, [stopMeasurement])
-
   return {
     ...state,
     noiseFloorDb,
@@ -294,12 +246,6 @@ export function useAudioAnalyzer(
     spectrumRef,
     tracksRef,
     dspWorker,
-    roomEstimate,
-    roomMeasuring,
-    roomProgress,
-    startRoomMeasurement,
-    stopRoomMeasurement,
-    clearRoomEstimate: clearEstimate,
     layeredSession: layered.session,
     layeredDisplay: layered.display,
     layered,

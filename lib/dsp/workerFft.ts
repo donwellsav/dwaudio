@@ -20,7 +20,6 @@ import {
 import { TEMPORAL_ENVELOPE, MSD_CONSTANTS, MSD_SETTINGS } from './constants'
 import type { AlgorithmScores } from './advancedDetection'
 import { MSDPool } from './msdPool'
-import { MLInferenceEngine } from './mlInference'
 import { dbToLinearLut as dbToLinear } from './expLut'
 import type { ContentType, DetectedPeak, Track, MSDResult } from '@/types/advisory'
 
@@ -82,6 +81,30 @@ export function getMsdMinFrames(contentType: string): number {
     case 'music':      return MSD_CONSTANTS.MIN_FRAMES_MUSIC
     case 'compressed': return MSD_CONSTANTS.MAX_FRAMES
     default:           return MSD_CONSTANTS.DEFAULT_FRAMES
+  }
+}
+
+function detectorMsdFallback(peak: DetectedPeak, spectrum: Float32Array, binIndex: number): MSDResult | null {
+  if (peak.msd === undefined || !Number.isFinite(peak.msd) || peak.msd < 0) {
+    return null
+  }
+
+  const feedbackScore = Math.max(0, Math.min(1, Math.exp(-peak.msd / MSD_CONSTANTS.THRESHOLD)))
+  const sustainedFrameEstimate = Math.ceil((peak.sustainedMs ?? 0) / 20)
+  const framesAnalyzed = Math.max(
+    peak.persistenceFrames ?? 0,
+    sustainedFrameEstimate,
+    peak.msdFastConfirm ? MSD_SETTINGS.FAST_CONFIRM_FRAMES : 0,
+    MSD_CONSTANTS.MIN_FRAMES_SPEECH,
+  )
+
+  return {
+    msd: peak.msd,
+    feedbackScore,
+    secondDerivative: peak.msdGrowthRate ?? 0,
+    isFeedbackLikely: peak.msdIsHowl === true || peak.msdFastConfirm === true || peak.msd < MSD_CONSTANTS.THRESHOLD,
+    framesAnalyzed,
+    meanMagnitudeDb: Number.isFinite(spectrum[binIndex]) ? spectrum[binIndex] : peak.trueAmplitudeDb,
   }
 }
 
@@ -225,13 +248,7 @@ export class AlgorithmEngine {
   private lastFrameTimestamp: number = -1
   private specMax = -Infinity
   private rmsDb = -100
-  private _mlEngine = new MLInferenceEngine()
-  /** Pre-allocated buffer for ML feature vector (11 features, reused every frame) */
-  private _mlFeatures = new Float32Array(11)
-  /** Previous frame's fused probability — fed into ML feature vector (1-frame lag) */
   private _lastFusedProb = 0.5
-  /** Previous frame's fused confidence — fed into ML feature vector (1-frame lag) */
-  private _lastFusedConf = 0.5
   /** Frame counter for phase skip cadence (0, 1, 2, 0, 1, 2, ...) */
   private _phaseFrameCounter = 0
 
@@ -251,6 +268,7 @@ export class AlgorithmEngine {
   private _ctHistoryFilled = false
   private static readonly CT_WINDOW = 10
   private _contentType: ContentType = 'unknown'
+  private _instantContentType: ContentType = 'unknown'
   private _ctSilenceThresholdDb = -65
   private _ctIsCompressed = false
   private _ctCompressionRatio = 1
@@ -364,6 +382,7 @@ export class AlgorithmEngine {
     }
 
     const instantType = detectContentType(spectrum, crestFactor, temporalMetrics)
+    this._instantContentType = instantType
 
     // Majority-vote smoothing via circular buffer — O(1) write, O(window) scan
     this._ctHistoryBuf[this._ctHistoryPos] = instantType
@@ -417,6 +436,7 @@ export class AlgorithmEngine {
     this._ctHistoryBuf.fill('unknown')
     this._ctHistoryPos = 0
     this._ctHistoryFilled = false
+    this._instantContentType = 'unknown'
   }
 
   /** Allocate buffers for the given FFT size. */
@@ -437,7 +457,6 @@ export class AlgorithmEngine {
     this._combCacheHash = 0
     this._combCacheCount = 0
     this._combCacheResult = null
-    this._mlEngine.warmup() // Non-blocking async ONNX load
   }
 
   /**
@@ -518,16 +537,18 @@ export class AlgorithmEngine {
     // Peak-to-median ratio
     const ptmrResult = calculatePTMR(spectrum, binIndex)
 
-    // Use the worker's smoothed authoritative content type (majority-vote pipeline)
-    // instead of calling detectContentType() again per-peak. This ensures MSD frame
-    // thresholds and ML one-hot features are consistent with fusion and UI.
-    const contentType = this._contentType
+    // Return the latest unsmoothed content type as a scoring fallback while the
+    // authoritative majority-vote state warms up. MSD keeps using the smoothed
+    // state so an early music fallback does not add feedback-detection latency.
+    const contentType = this._contentType !== 'unknown'
+      ? this._contentType
+      : this._instantContentType
 
     // MSD: write this peak's magnitude to pool (builds history across frames)
     this.msdPool?.write(binIndex, spectrum[binIndex])
 
     // Compute MSD from pooled sparse history (matches feedbackDetector.ts per-bin tracking)
-    const msdMinFrames = getMsdMinFrames(contentType)
+    const msdMinFrames = getMsdMinFrames(this._contentType)
     let msdResult: MSDResult | null = null
     if (this.msdPool) {
       const raw = this.msdPool.getMSD(binIndex, msdMinFrames)
@@ -544,6 +565,9 @@ export class AlgorithmEngine {
           meanMagnitudeDb: spectrum[binIndex],
         }
       }
+    }
+    if (!msdResult) {
+      msdResult = detectorMsdFallback(peak, spectrum, binIndex)
     }
 
     // Compression detection
@@ -586,21 +610,6 @@ export class AlgorithmEngine {
     // Phase coherence for this specific peak bin
     const phaseResult = this.phaseBuffer?.calculateCoherence(binIndex) ?? null
 
-    // ML meta-model: fill pre-allocated feature vector (zero-alloc hot path)
-    const f = this._mlFeatures
-    f[0] = msdResult?.feedbackScore ?? 0.5
-    f[1] = phaseResult?.feedbackScore ?? 0.5
-    f[2] = spectralResult?.feedbackScore ?? 0.5
-    f[3] = combResult?.hasPattern ? combResult.confidence : 0
-    f[4] = ihrResult?.feedbackScore ?? 0.5
-    f[5] = ptmrResult?.feedbackScore ?? 0.5
-    f[6] = this._lastFusedProb
-    f[7] = this._lastFusedConf
-    f[8] = contentType === 'speech' ? 1 : 0
-    f[9] = contentType === 'music' ? 1 : 0
-    f[10] = contentType === 'compressed' ? 1 : 0
-    const mlResult = this._mlEngine.predictCached(f)
-
     const algorithmScores: AlgorithmScores = {
       msd: msdResult,
       phase: phaseResult,
@@ -609,19 +618,16 @@ export class AlgorithmEngine {
       compression: compressionResult,
       ihr: ihrResult,
       ptmr: ptmrResult,
-      ml: mlResult,
     }
 
     return { algorithmScores, contentType }
   }
 
   /**
-   * Feed back the fusion result from the current frame so the ML model
-   * can use it as input for the next frame's prediction (1-frame lag).
+   * Feed back the fusion result from the current frame for adaptive phase skipping.
    */
-  updateLastFusion(probability: number, confidence: number): void {
+  updateLastFusion(probability: number): void {
     this._lastFusedProb = probability
-    this._lastFusedConf = confidence
   }
 
   /**
@@ -646,10 +652,6 @@ export class AlgorithmEngine {
     this.specMax = -Infinity
     this.rmsDb = -100
     this._lastFusedProb = 0.5
-    this._lastFusedConf = 0.5
-    this._mlEngine.dispose()
-    this._mlEngine = new MLInferenceEngine()
-    this._mlEngine.warmup()
     this._resetContentTypeTracking()
     this._contentType = 'unknown'
     this._ctIsCompressed = false

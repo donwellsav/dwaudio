@@ -6,7 +6,6 @@ import type { WorkerInboundMessage, WorkerOutboundMessage } from '@/lib/dsp/dspW
 import { logWarn } from '@/lib/utils/logger'
 import type {
   DSPWorkerCallbacks,
-  PendingCollectionRequest,
   PendingHistorySyncRequest,
   PendingPeakFrame,
   WorkerInitSnapshot,
@@ -17,6 +16,7 @@ const RESTART_DELAY_MS = 500
 // Keep a short queue so we smooth over brief worker stalls without letting
 // stale peak frames build seconds of extra wall-clock latency.
 const MAX_PENDING_PEAKS = 4
+const MAX_PENDING_PEAK_AGE_MS = 250
 // Dev-only profiler — JSON.stringify on every tracksUpdate is measurable (~150 ms/sec)
 // in dev builds. Opt-in via ?profile=tracks so normal dev sessions don't pay it.
 const SHOULD_PROFILE_TRACK_PAYLOAD =
@@ -37,12 +37,12 @@ export interface DSPWorkerHandlerRefs extends PeakPoolRefs {
   isReadyRef: MutableRefObject<boolean>
   busyRef: MutableRefObject<boolean>
   pendingPeakQueueRef: MutableRefObject<PendingPeakFrame[]>
+  droppedFramesRef: MutableRefObject<number>
   crashedRef: MutableRefObject<boolean>
   permanentlyDeadRef: MutableRefObject<boolean>
   restartCountRef: MutableRefObject<number>
   restartTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
   lastInitRef: MutableRefObject<WorkerInitSnapshot | null>
-  pendingCollectionRef: MutableRefObject<PendingCollectionRequest | null>
   pendingHistorySyncRef: MutableRefObject<PendingHistorySyncRequest | null>
   specUpdatePoolRef: MutableRefObject<Float32Array[]>
   outboundMessagesRef: MutableRefObject<number>
@@ -50,6 +50,63 @@ export interface DSPWorkerHandlerRefs extends PeakPoolRefs {
   tracksUpdatesRef: MutableRefObject<number>
   lastTracksPayloadBytesRef: MutableRefObject<number>
   maxTracksPayloadBytesRef: MutableRefObject<number>
+}
+
+function scoreDetectedPeak(peak: DetectedPeak): number {
+  let score = 0
+
+  if (peak.msdIsHowl) score += 6
+  if (peak.msdFastConfirm) score += 5
+  if (peak.isHighlyPersistent) score += 3
+  else if (peak.isPersistent) score += 1.5
+  if (peak.isSubHarmonicRoot) score += 1
+  if (peak.harmonicOfHz != null) score -= 4
+
+  score += Math.max(0, Math.min(24, peak.prominenceDb)) / 6
+  score += Math.max(0, Math.min(120, peak.qEstimate ?? 0)) / 40
+  score += Math.max(0, Math.min(30, peak.phpr ?? 0)) / 10
+  score += Math.max(0, Math.min(400, peak.confirmLatencyMs ?? peak.sustainedMs ?? 0)) / 400
+
+  return score
+}
+
+function comparePeakPriority(
+  aPeak: DetectedPeak,
+  aQueuedAtMs: number,
+  bPeak: DetectedPeak,
+  bQueuedAtMs: number,
+): number {
+  const byScore = scoreDetectedPeak(bPeak) - scoreDetectedPeak(aPeak)
+  if (Math.abs(byScore) > 0.001) return byScore
+
+  const byTimestamp = bPeak.timestamp - aPeak.timestamp
+  if (byTimestamp !== 0) return byTimestamp
+
+  return aQueuedAtMs - bQueuedAtMs
+}
+
+function comparePendingPeakPriority(a: PendingPeakFrame, b: PendingPeakFrame): number {
+  return comparePeakPriority(a.peak, a.queuedAtMs, b.peak, b.queuedAtMs)
+}
+
+function findBestPendingPeakIndex(queue: PendingPeakFrame[]): number {
+  let bestIndex = 0
+  for (let i = 1; i < queue.length; i++) {
+    if (comparePendingPeakPriority(queue[i], queue[bestIndex]) < 0) {
+      bestIndex = i
+    }
+  }
+  return bestIndex
+}
+
+function findWeakestPendingPeakIndex(queue: PendingPeakFrame[]): number {
+  let weakestIndex = 0
+  for (let i = 1; i < queue.length; i++) {
+    if (comparePendingPeakPriority(queue[i], queue[weakestIndex]) > 0) {
+      weakestIndex = i
+    }
+  }
+  return weakestIndex
 }
 
 export function createDSPWorker(): Worker {
@@ -64,6 +121,7 @@ function writePendingPeakFrame(
   spectrum: Float32Array,
   sampleRate: number,
   fftSize: number,
+  queuedAtMs: number,
   timeDomain?: Float32Array,
 ): PendingPeakFrame {
   let pending = existing
@@ -74,6 +132,7 @@ function writePendingPeakFrame(
       spectrum: new Float32Array(spectrum.length),
       sampleRate,
       fftSize,
+      queuedAtMs,
       timeDomain: timeDomain ? new Float32Array(timeDomain.length) : undefined,
     }
   } else {
@@ -82,6 +141,7 @@ function writePendingPeakFrame(
 
   pending.sampleRate = sampleRate
   pending.fftSize = fftSize
+  pending.queuedAtMs = queuedAtMs
   pending.spectrum.set(spectrum)
 
   if (timeDomain) {
@@ -103,7 +163,33 @@ export function enqueuePendingPeak(
   sampleRate: number,
   fftSize: number,
   timeDomain?: Float32Array,
-): boolean {
+): number {
+  let droppedCount = 0
+  const queuedAtMs = Date.now()
+  if (Number.isFinite(peak.timestamp)) {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const queuedTimestamp = queue[i].peak.timestamp
+      if (Number.isFinite(queuedTimestamp) && peak.timestamp - queuedTimestamp > MAX_PENDING_PEAK_AGE_MS) {
+        queue.splice(i, 1)
+        droppedCount++
+      }
+    }
+  }
+
+  const existingIndex = queue.findIndex((pending) => pending.peak.binIndex === peak.binIndex)
+  if (existingIndex !== -1) {
+    queue[existingIndex] = writePendingPeakFrame(
+      queue[existingIndex],
+      peak,
+      spectrum,
+      sampleRate,
+      fftSize,
+      queuedAtMs,
+      timeDomain,
+    )
+    return droppedCount
+  }
+
   if (queue.length < MAX_PENDING_PEAKS) {
     queue.push(
       writePendingPeakFrame(
@@ -112,24 +198,28 @@ export function enqueuePendingPeak(
         spectrum,
         sampleRate,
         fftSize,
+        queuedAtMs,
         timeDomain,
       ),
     )
-    return false
+    return droppedCount
   }
 
-  const recycled = queue.shift() ?? null
-  queue.push(
-    writePendingPeakFrame(
-      recycled,
+  const weakestIndex = findWeakestPendingPeakIndex(queue)
+  const weakest = queue[weakestIndex]
+  droppedCount++
+  if (comparePeakPriority(peak, queuedAtMs, weakest.peak, weakest.queuedAtMs) < 0) {
+    queue[weakestIndex] = writePendingPeakFrame(
+      weakest,
       peak,
       spectrum,
       sampleRate,
       fftSize,
+      queuedAtMs,
       timeDomain,
-    ),
-  )
-  return true
+    )
+  }
+  return droppedCount
 }
 
 export function preparePeakTransfer(
@@ -218,10 +308,18 @@ function flushBufferedPeak(refs: DSPWorkerHandlerRefs) {
     return
   }
 
-  const buffered = refs.pendingPeakQueueRef.current.shift()
-  if (!buffered) {
-    return
+  const now = Date.now()
+  for (let i = refs.pendingPeakQueueRef.current.length - 1; i >= 0; i--) {
+    if (now - refs.pendingPeakQueueRef.current[i].queuedAtMs > MAX_PENDING_PEAK_AGE_MS) {
+      refs.pendingPeakQueueRef.current.splice(i, 1)
+      refs.droppedFramesRef.current++
+    }
   }
+
+  if (refs.pendingPeakQueueRef.current.length === 0) return
+  const bestIndex = findBestPendingPeakIndex(refs.pendingPeakQueueRef.current)
+  const buffered = refs.pendingPeakQueueRef.current.splice(bestIndex, 1)[0]
+
   refs.busyRef.current = true
 
   const transferList: ArrayBuffer[] = [buffered.spectrum.buffer as ArrayBuffer]
@@ -252,10 +350,7 @@ function recycleReturnedBuffers(
     refs.busyRef.current = false
   }
 
-  if (
-    message.spectrum.buffer.byteLength > 0 &&
-    message.spectrum.length === refs.poolFftSizeRef.current
-  ) {
+  if (message.spectrum.buffer.byteLength > 0) {
     if (message.source === 'spectrumUpdate') {
       refs.specUpdatePoolRef.current.push(message.spectrum)
     } else {
@@ -270,16 +365,6 @@ function recycleReturnedBuffers(
   if (isPeakReturn) {
     flushBufferedPeak(refs)
   }
-}
-
-function replayPendingCollection(worker: Worker, refs: DSPWorkerHandlerRefs) {
-  if (!refs.pendingCollectionRef.current) {
-    return
-  }
-
-  const { sessionId, fftSize, sampleRate } = refs.pendingCollectionRef.current
-  refs.pendingCollectionRef.current = null
-  worker.postMessage({ type: 'enableCollection', sessionId, fftSize, sampleRate })
 }
 
 function replayPendingFeedbackHistory(worker: Worker, refs: DSPWorkerHandlerRefs) {
@@ -306,7 +391,6 @@ export function createDSPWorkerMessageHandler(
         refs.crashedRef.current = false
         refs.permanentlyDeadRef.current = false
         refs.restartCountRef.current = 0
-        replayPendingCollection(worker, refs)
         replayPendingFeedbackHistory(worker, refs)
         flushBufferedPeak(refs)
         refs.callbacksRef.current.onReady?.()
@@ -332,6 +416,14 @@ export function createDSPWorkerMessageHandler(
           algorithmMode: message.algorithmMode,
           isCompressed: message.isCompressed,
           compressionRatio: message.compressionRatio,
+          lastFusionVerdict: message.lastFusionVerdict,
+          lastFusionConfidence: message.lastFusionConfidence,
+          lastFeedbackProbability: message.lastFeedbackProbability,
+          lastReportDecision: message.lastReportDecision,
+          lastReportGate: message.lastReportGate,
+          lastReportGateReason: message.lastReportGateReason,
+          lastReportFrequencyHz: message.lastReportFrequencyHz,
+          lastReportTimestamp: message.lastReportTimestamp,
         })
         flushBufferedPeak(refs)
         break
@@ -347,22 +439,6 @@ export function createDSPWorkerMessageHandler(
         break
       case 'returnBuffers':
         recycleReturnedBuffers(refs, message)
-        break
-      case 'snapshotBatch':
-        if (message.batch) {
-          refs.callbacksRef.current.onSnapshotBatch?.(message.batch)
-        }
-        break
-      case 'collectionStats':
-        break
-      case 'roomEstimate':
-        refs.callbacksRef.current.onRoomEstimate?.(message.estimate)
-        break
-      case 'roomMeasurementProgress':
-        refs.callbacksRef.current.onRoomMeasurementProgress?.(
-          message.elapsedMs,
-          message.stablePeaks,
-        )
         break
       case 'error':
         refs.busyRef.current = false

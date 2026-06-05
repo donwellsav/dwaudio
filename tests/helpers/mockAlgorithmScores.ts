@@ -235,6 +235,5 @@ export function buildScores(input: ScoreInput = {}): AlgorithmScores {
         : null,
     ihr: input.ihr != null ? buildIHRResult(input.ihr) : null,
     ptmr: input.ptmr != null ? buildPTMRResult(input.ptmr) : null,
-    ml: null,
   }
 }

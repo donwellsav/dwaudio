@@ -8,7 +8,7 @@
  * Extracted from algorithmFusion.ts for maintainability.
  */
 
-import type { AlgorithmMode, ContentType, DetectorSettings, MSDResult } from '@/types/advisory'
+import type { Algorithm, AlgorithmMode, ContentType, DetectorSettings, MSDResult } from '@/types/advisory'
 import { MSD_CONSTANTS } from './constants'
 import type { PhaseCoherenceResult } from './phaseCoherence'
 import { PHASE_CONSTANTS } from './phaseCoherence'
@@ -23,18 +23,6 @@ export type { AlgorithmMode } from '@/types/advisory'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** ML model score result — output of the 7th fusion algorithm */
-export interface MLScoreResult {
-  /** Probability that this peak is feedback [0, 1] */
-  feedbackScore: number
-  /** Model confidence / calibration quality [0, 1] */
-  modelConfidence: number
-  /** True if the model is loaded and produced this score */
-  isAvailable: boolean
-  /** Model version string for tracking */
-  modelVersion: string
-}
-
 export interface AlgorithmScores {
   msd: MSDResult | null
   phase: PhaseCoherenceResult | null
@@ -45,8 +33,6 @@ export interface AlgorithmScores {
   ihr: InterHarmonicResult | null
   /** Peak-to-median ratio — high PTMR = narrow spectral peak (feedback) */
   ptmr: PTMRResult | null
-  /** ML meta-model FP filter — 7th fusion algorithm (null if model not loaded) */
-  ml: MLScoreResult | null
 }
 
 export interface FusedDetectionResult {
@@ -60,14 +46,12 @@ export interface FusedDetectionResult {
 
 export interface FusionConfig {
   mode: AlgorithmMode
-  enabledAlgorithms?: string[]
+  enabledAlgorithms?: Algorithm[]
   customWeights?: Partial<typeof FUSION_WEIGHTS.DEFAULT>
   msdMinFrames: number
   phaseThreshold: number
   enableCompressionDetection: boolean
   feedbackThreshold: number
-  /** When false, ML algorithm is excluded from all mode branches including Auto. */
-  mlEnabled?: boolean
 }
 
 export interface MINDSResult {
@@ -80,7 +64,7 @@ export interface MINDSResult {
 
 export type FusionRuntimeSettings = Pick<
   DetectorSettings,
-  'mode' | 'algorithmMode' | 'enabledAlgorithms' | 'mlEnabled'
+  'mode' | 'algorithmMode' | 'enabledAlgorithms'
 >
 
 // ── Calibration ─────────────────────────────────────────────────────────────
@@ -132,14 +116,14 @@ export class AgreementPersistenceTracker {
 const combStabilityTracker = new CombStabilityTracker()
 
 /** Pre-allocated buffer for effective scores in fuseAlgorithmResults().
- *  Avoids per-call heap allocation (~500 calls/sec). Max 7 algorithms + 1 spare. */
-const _effScores = new Float64Array(8)
+ *  Avoids per-call heap allocation (~500 calls/sec). Max 6 deterministic algorithms. */
+const _effScores = new Float64Array(7)
 
 /** Pre-allocated mutable weights object — avoids object spread per fusion call (~500/sec).
  *  Only read within the synchronous fuseAlgorithmResults(); no concurrent access in Worker. */
-const _weights = { msd: 0, phase: 0, spectral: 0, comb: 0, ihr: 0, ptmr: 0, ml: 0 }
+const _weights = { msd: 0, phase: 0, spectral: 0, comb: 0, ihr: 0, ptmr: 0 }
 // Pre-allocated Set + algorithm list — reused per call to avoid GC pressure (~500 calls/sec)
-const _ALL_ALGORITHMS = ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml'] as const
+const _ALL_ALGORITHMS = ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr'] as const
 const _active = new Set<string>()
 const MAX_EFFECTIVE_SCORE_STDDEV = 0.5
 const STRONG_SIGNAL_THRESHOLD = 0.7
@@ -156,11 +140,28 @@ const STRONG_CORROBORATION_POSSIBLE_CONFIDENCE_THRESHOLD = 0.18
 const PHASE_DOMINANT_MUSIC_MSD_MAX = 0.15
 const PHASE_DOMINANT_MUSIC_PHASE_MIN = 0.95
 const PHASE_DOMINANT_MUSIC_GATE_PENALTY = 0.60
+const RICH_HARMONIC_MUSIC_HARMONICS_MIN = 3
+const RICH_HARMONIC_MUSIC_IHR_SCORE_MAX = 0.35
+const RICH_HARMONIC_MUSIC_GATE_PENALTY = 0.45
+const RICH_HARMONIC_MUSIC_PROBABILITY_CAP = 0.34
 const MUSIC_COMB_EFFECT_PHASE_MIN = 0.75
 const MUSIC_COMB_EFFECT_SPECTRAL_MIN = 0.65
 const MUSIC_COMB_EFFECT_IHR_MAX = 0.55
 const MUSIC_COMB_EFFECT_PTMR_MAX = 0.65
 const MUSIC_COMB_EFFECT_GATE_PENALTY = 0.48
+const MUSIC_TONAL_SOURCE_PHASE_MIN = 0.75
+const MUSIC_TONAL_SOURCE_SPECTRAL_MIN = 0.65
+const MUSIC_TONAL_SOURCE_IHR_MAX = 0.60
+const MUSIC_TONAL_SOURCE_PTMR_MAX = 0.75
+const MUSIC_TONAL_SOURCE_GATE_PENALTY = 0.50
+const MUSIC_TONAL_SOURCE_PROBABILITY_CAP = 0.34
+const UNKNOWN_TONAL_SOURCE_MSD_MIN = 0.45
+const UNKNOWN_TONAL_SOURCE_PHASE_MIN = 0.75
+const UNKNOWN_TONAL_SOURCE_SPECTRAL_MIN = 0.65
+const UNKNOWN_TONAL_SOURCE_IHR_MAX = 0.60
+const UNKNOWN_TONAL_SOURCE_PTMR_MAX = 0.75
+const UNKNOWN_TONAL_SOURCE_GATE_PENALTY = 0.50
+const UNKNOWN_TONAL_SOURCE_PROBABILITY_CAP = 0.34
 const TONAL_SOURCE_MSD_MIN = 0.80
 const TONAL_SOURCE_PHASE_MIN = 0.40
 const TONAL_SOURCE_SPECTRAL_MIN = 0.40
@@ -184,6 +185,7 @@ const COMPRESSED_VOICED_SOURCE_SPECTRAL_MIN = 0.80
 const COMPRESSED_VOICED_SOURCE_IHR_MAX = 0.50
 const COMPRESSED_VOICED_SOURCE_PTMR_MAX = 0.70
 const COMPRESSED_VOICED_SOURCE_GATE_PENALTY = 0.75
+const HARMONIC_SERIES_COMB_SPACING_TOLERANCE = 0.04
 
 // ── Fusion Weights ──────────────────────────────────────────────────────────
 
@@ -193,40 +195,36 @@ const COMPRESSED_VOICED_SOURCE_GATE_PENALTY = 0.75
 // PTMR (peak shape) — the two novel algorithms measuring unique properties.
 export const FUSION_WEIGHTS = {
   DEFAULT: {
-    msd: 0.27,
-    phase: 0.23,
-    spectral: 0.11,
-    comb: 0.07,
-    ihr: 0.12,
-    ptmr: 0.10,
-    ml: 0.10,
+    msd: 0.30,
+    phase: 0.26,
+    spectral: 0.12,
+    comb: 0.08,
+    ihr: 0.13,
+    ptmr: 0.11,
   },
   // SPEECH MSD reduced from 0.40 to 0.33 (effective 42.1% → ~34.7%)
   // Three-model consensus: 0.40 caused false positives on sustained vowels.
   // Gemini: 'Ummmm' scored 0.710. ChatGPT: 'Wooooo!' scored 0.720.
   // Redistributed to phase (+0.04) and ptmr (+0.03) for better discrimination.
-  // ML weight (~10%) redistributed proportionally from all existing algorithms.
   SPEECH: {
-    msd: 0.30,
-    phase: 0.22,
-    spectral: 0.09,
-    comb: 0.04,
-    ihr: 0.09,
-    ptmr: 0.16,
-    ml: 0.10,
+    msd: 0.33,
+    phase: 0.24,
+    spectral: 0.10,
+    comb: 0.05,
+    ihr: 0.10,
+    ptmr: 0.18,
   },
   // MUSIC MSD reduced from 0.15 to 0.08. DAFx-16 paper reports 22% accuracy
   // on rock music. Giving MSD 15% of the vote means it's wrong 78% of the
   // time but still influencing 15% of the decision. At 0.08, it's a weak
   // corroborator, not a lead vote.
   MUSIC: {
-    msd: 0.07,
-    phase: 0.32,
-    spectral: 0.09,
-    comb: 0.07,
-    ihr: 0.22,
-    ptmr: 0.13,
-    ml: 0.10,
+    msd: 0.08,
+    phase: 0.36,
+    spectral: 0.10,
+    comb: 0.08,
+    ihr: 0.24,
+    ptmr: 0.14,
   },
   // COMPRESSED phase reduced from 0.38 to 0.30 (effective 41.3% → ~33%)
   // Three-model consensus: single-feature conviction risk. Phase at 41.3%
@@ -234,18 +232,17 @@ export const FUSION_WEIGHTS = {
   // pitch-corrected worship content (Gemini).
   // Redistributed to spectral/ihr/ptmr for broader corroboration.
   COMPRESSED: {
-    msd: 0.11,
-    phase: 0.27,
-    spectral: 0.16,
-    comb: 0.07,
-    ihr: 0.16,
-    ptmr: 0.13,
-    ml: 0.10,
+    msd: 0.12,
+    phase: 0.30,
+    spectral: 0.18,
+    comb: 0.08,
+    ihr: 0.18,
+    ptmr: 0.14,
   },
 } as const
 
 export const DEFAULT_FUSION_CONFIG: FusionConfig = {
-  mode: 'combined',
+  mode: 'auto',
   msdMinFrames: MSD_CONSTANTS.MIN_FRAMES_SPEECH,
   phaseThreshold: PHASE_CONSTANTS.HIGH_COHERENCE,
   enableCompressionDetection: true,
@@ -266,7 +263,6 @@ export function buildFusionConfig(
     msdMinFrames: settings?.mode
       ? getMsdMinFramesForMode(settings.mode)
       : DEFAULT_FUSION_CONFIG.msdMinFrames,
-    mlEnabled: settings?.mlEnabled ?? true,
   }
 }
 
@@ -295,6 +291,19 @@ export function fuseAlgorithmResults(
 ): FusedDetectionResult {
   const reasons: string[] = []
   const contributingAlgorithms: string[] = []
+  const richHarmonicMusicLike =
+    scores.ihr?.isMusicLike === true &&
+    (scores.ihr?.harmonicsFound ?? 0) >= RICH_HARMONIC_MUSIC_HARMONICS_MIN
+  const harmonicSeriesCombPattern =
+    richHarmonicMusicLike &&
+    scores.comb?.hasPattern === true &&
+    typeof peakFrequencyHz === 'number' &&
+    Number.isFinite(peakFrequencyHz) &&
+    peakFrequencyHz > 0 &&
+    typeof scores.comb.fundamentalSpacing === 'number' &&
+    Number.isFinite(scores.comb.fundamentalSpacing) &&
+    Math.abs(scores.comb.fundamentalSpacing - peakFrequencyHz) / peakFrequencyHz <=
+      HARMONIC_SERIES_COMB_SPACING_TOLERANCE
 
   // Zero-allocation: copy preset fields into module-level _weights object
   // instead of object spread (~500 calls/sec). Synchronous — no concurrent access risk.
@@ -309,7 +318,6 @@ export function fuseAlgorithmResults(
   _weights.comb = preset.comb
   _weights.ihr = preset.ihr
   _weights.ptmr = preset.ptmr
-  _weights.ml = preset.ml
 
   if (config.customWeights) {
     const cw = config.customWeights
@@ -319,7 +327,6 @@ export function fuseAlgorithmResults(
     if (cw.comb !== undefined) _weights.comb = cw.comb
     if (cw.ihr !== undefined) _weights.ihr = cw.ihr
     if (cw.ptmr !== undefined) _weights.ptmr = cw.ptmr
-    if (cw.ml !== undefined) _weights.ml = cw.ml
   }
 
   const weights = _weights
@@ -328,26 +335,16 @@ export function fuseAlgorithmResults(
   // Safe because fuseAlgorithmResults runs synchronously in a single worker thread.
   _active.clear()
   switch (config.mode) {
-    case 'msd':
-      _active.add('msd').add('ihr').add('ptmr').add('ml')
-      break
-    case 'phase':
-      _active.add('phase').add('ihr').add('ptmr').add('ml')
-      break
     case 'auto':
       if (scores.msd && scores.msd.framesAnalyzed >= config.msdMinFrames) {
         _active.add('msd')
       }
-      _active.add('phase').add('spectral').add('comb').add('ihr').add('ptmr').add('ml')
+      _active.add('phase').add('spectral').add('comb').add('ihr').add('ptmr')
       break
     case 'custom':
       for (const a of (config.enabledAlgorithms ?? _ALL_ALGORITHMS)) _active.add(a)
       break
-    default: // 'combined', 'all'
-      for (const a of _ALL_ALGORITHMS) _active.add(a)
-      break
   }
-  if (config.mlEnabled === false) _active.delete('ml')
   const active = _active
 
   let weightedSum  = 0
@@ -398,7 +395,7 @@ export function fuseAlgorithmResults(
   // Only the base weight is added to totalWeight so other algorithms are NOT
   // diluted. This gives comb a bonus boost without penalizing MSD/phase/etc.
   const cst = trackCombTracker ?? combStabilityTracker
-  if (active.has('comb') && scores.comb && scores.comb.hasPattern) {
+  if (active.has('comb') && scores.comb && scores.comb.hasPattern && !harmonicSeriesCombPattern) {
     // Feed spacing into temporal tracker
     if (scores.comb.fundamentalSpacing != null) {
       cst.push(scores.comb.fundamentalSpacing)
@@ -431,6 +428,9 @@ export function fuseAlgorithmResults(
   } else {
     // No comb pattern this frame — reset tracker to avoid stale history
     cst.reset()
+    if (harmonicSeriesCombPattern) {
+      reasons.push('Comb-like harmonic series ignored as musical overtones')
+    }
   }
 
   if (active.has('ihr') && scores.ihr) {
@@ -455,16 +455,6 @@ export function fuseAlgorithmResults(
     }
   }
 
-  // ML meta-model: 7th algorithm for false positive reduction.
-  // Only contributes when model is loaded and available (graceful degradation).
-  if (active.has('ml') && scores.ml?.isAvailable) {
-    weightedSum += scores.ml.feedbackScore * weights.ml
-    totalWeight += weights.ml
-    _effScores[effCount++] = scores.ml.feedbackScore
-    contributingAlgorithms.push('ML')
-    reasons.push(`ML: ${(scores.ml.feedbackScore * 100).toFixed(0)}% (${scores.ml.modelVersion})`)
-  }
-
   let feedbackProbability = totalWeight > 0
     ? Math.min(weightedSum / totalWeight, 1)
     : 0
@@ -472,7 +462,7 @@ export function fuseAlgorithmResults(
   // IHR penalty gate: rich harmonic content (>= 3 harmonics) reduces probability
   // by 35%. This converts IHR from a weak linear contributor to a discriminative
   // veto. Musical instruments have rich harmonic series; feedback is a singular tone.
-  if (scores.ihr?.isMusicLike === true && (scores.ihr?.harmonicsFound ?? 0) >= 3) {
+  if (richHarmonicMusicLike) {
     feedbackProbability *= (gateOverrides?.ihrGateOverride ?? 0.65)
   }
 
@@ -482,12 +472,16 @@ export function fuseAlgorithmResults(
     feedbackProbability *= (gateOverrides?.ptmrGateOverride ?? 0.80)
   }
 
-  const noCombPattern = scores.comb?.hasPattern !== true
+  const noCombPattern = scores.comb?.hasPattern !== true || harmonicSeriesCombPattern
   const msdScore = scores.msd?.feedbackScore ?? 0
   const phaseScore = scores.phase?.feedbackScore ?? 0
   const spectralScore = scores.spectral?.feedbackScore ?? 0
   const ihrScore = scores.ihr?.feedbackScore ?? 1
   const ptmrScore = scores.ptmr?.feedbackScore ?? 1
+  const coreConsensus =
+    msdScore >= CORE_CONSENSUS_MSD_THRESHOLD &&
+    phaseScore >= CORE_CONSENSUS_PHASE_THRESHOLD &&
+    spectralScore >= CORE_CONSENSUS_SPECTRAL_THRESHOLD
 
   // Narrow phase-only music gate: a zero-MSD, high-phase tonal source is
   // often a stable musical pitch rather than acoustic feedback.
@@ -502,6 +496,19 @@ export function fuseAlgorithmResults(
   }
 
   if (
+    noCombPattern &&
+    richHarmonicMusicLike &&
+    !coreConsensus &&
+    ihrScore <= RICH_HARMONIC_MUSIC_IHR_SCORE_MAX
+  ) {
+    feedbackProbability = Math.min(
+      feedbackProbability * RICH_HARMONIC_MUSIC_GATE_PENALTY,
+      RICH_HARMONIC_MUSIC_PROBABILITY_CAP,
+    )
+    reasons.push('Rich harmonic music gate: harmonic series retained as music')
+  }
+
+  if (
     contentType === 'music' &&
     scores.comb?.hasPattern === true &&
     phaseScore >= MUSIC_COMB_EFFECT_PHASE_MIN &&
@@ -511,6 +518,39 @@ export function fuseAlgorithmResults(
   ) {
     feedbackProbability *= MUSIC_COMB_EFFECT_GATE_PENALTY
     reasons.push('Music comb-effect gate: modulation pattern suspicion')
+  }
+
+  if (
+    contentType === 'music' &&
+    noCombPattern &&
+    !coreConsensus &&
+    phaseScore >= MUSIC_TONAL_SOURCE_PHASE_MIN &&
+    spectralScore >= MUSIC_TONAL_SOURCE_SPECTRAL_MIN &&
+    ihrScore <= MUSIC_TONAL_SOURCE_IHR_MAX &&
+    ptmrScore <= MUSIC_TONAL_SOURCE_PTMR_MAX
+  ) {
+    feedbackProbability = Math.min(
+      feedbackProbability * MUSIC_TONAL_SOURCE_GATE_PENALTY,
+      MUSIC_TONAL_SOURCE_PROBABILITY_CAP,
+    )
+    reasons.push('Music tonal-source gate: harmonic/shape evidence not clean enough')
+  }
+
+  if (
+    contentType === 'unknown' &&
+    noCombPattern &&
+    !coreConsensus &&
+    msdScore >= UNKNOWN_TONAL_SOURCE_MSD_MIN &&
+    phaseScore >= UNKNOWN_TONAL_SOURCE_PHASE_MIN &&
+    spectralScore >= UNKNOWN_TONAL_SOURCE_SPECTRAL_MIN &&
+    ihrScore <= UNKNOWN_TONAL_SOURCE_IHR_MAX &&
+    ptmrScore <= UNKNOWN_TONAL_SOURCE_PTMR_MAX
+  ) {
+    feedbackProbability = Math.min(
+      feedbackProbability * UNKNOWN_TONAL_SOURCE_GATE_PENALTY,
+      UNKNOWN_TONAL_SOURCE_PROBABILITY_CAP,
+    )
+    reasons.push('Startup tonal-source gate: waiting for clean feedback shape')
   }
 
   // Sustained speech/synth sources can look extremely stable without being
@@ -603,10 +643,6 @@ export function fuseAlgorithmResults(
 
   let verdict: FusedDetectionResult['verdict']
   const possibleFeedbackThreshold = Math.max(config.feedbackThreshold * 0.6, 0.35)
-  const coreConsensus =
-    (scores.msd?.feedbackScore ?? 0) >= CORE_CONSENSUS_MSD_THRESHOLD &&
-    (scores.phase?.feedbackScore ?? 0) >= CORE_CONSENSUS_PHASE_THRESHOLD &&
-    (scores.spectral?.feedbackScore ?? 0) >= CORE_CONSENSUS_SPECTRAL_THRESHOLD
   const shapeOrStabilityCorroboration =
     (scores.msd?.feedbackScore ?? 0) >= STRONG_SHAPE_OR_STABILITY_THRESHOLD ||
     (scores.ptmr?.feedbackScore ?? 0) >= STRONG_SHAPE_OR_STABILITY_THRESHOLD ||

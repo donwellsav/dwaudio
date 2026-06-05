@@ -75,7 +75,11 @@ describe('useAudioDevices', () => {
   })
 
   it('refreshes labels after permission reveals named microphones', async () => {
-    enumerateDevicesMock.mockResolvedValueOnce([makeDevice('mic-1', '')])
+    enumerateDevicesMock.mockResolvedValueOnce([
+      makeDevice('', ''),
+      makeDevice('mic-1', ''),
+      makeDevice('mic-1', ''),
+    ])
 
     const { result } = renderHook(() => useAudioDevices())
 
@@ -117,5 +121,23 @@ describe('useAudioDevices', () => {
 
     expect(result.current.selectedDeviceId).toBe('')
     expect(storageMocks.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not crash when mediaDevices is unavailable', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: undefined,
+    })
+    storageMocks.load.mockReturnValue('saved-device')
+
+    const { result } = renderHook(() => useAudioDevices())
+
+    await act(async () => {
+      await expect(result.current.refresh()).resolves.toEqual([])
+    })
+
+    expect(result.current.devices).toEqual([])
+    expect(result.current.selectedDeviceId).toBe('saved-device')
+    expect(enumerateDevicesMock).not.toHaveBeenCalled()
   })
 })

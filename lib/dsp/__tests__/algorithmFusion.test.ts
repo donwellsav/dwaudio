@@ -482,7 +482,6 @@ describe('fuseAlgorithmResults', () => {
       compression: null,
       ihr: null,
       ptmr: null,
-      ml: null,
     }
   }
 
@@ -524,7 +523,6 @@ describe('fuseAlgorithmResults', () => {
         isFeedbackLike: true,
         feedbackScore: 0.85,
       },
-      ml: null,
     }
   }
 
@@ -638,7 +636,6 @@ describe('confidence formula', () => {
       ptmr: {
         ptmrDb: 25, isFeedbackLike: score > 0.5, feedbackScore: score,
       },
-      ml: null,
     }
   }
 
@@ -709,7 +706,6 @@ describe('verdict boundaries', () => {
       ptmr: {
         ptmrDb: 25, isFeedbackLike: score > 0.5, feedbackScore: score,
       },
-      ml: null,
     }
   }
 
@@ -727,7 +723,6 @@ describe('verdict boundaries', () => {
       compression: null,
       ihr: null,
       ptmr: null,
-      ml: null,
     }
 
     const result = fuseAlgorithmResults(empty, 'unknown')
@@ -856,6 +851,89 @@ describe('verdict boundaries', () => {
     expect(result.reasons).toContain('Phase-dominant music gate: missing MSD support')
   })
 
+  it('rich harmonic music with high phase and spectral energy stays below recommendation threshold', () => {
+    const scores = buildScores({ msd: 0.55, phase: 0.9, spectral: 0.75, ihr: 0.15, ptmr: 0.65 })
+    scores.ihr = {
+      ...scores.ihr!,
+      harmonicsFound: 4,
+      isFeedbackLike: false,
+      isMusicLike: true,
+    }
+
+    const result = fuseAlgorithmResults(scores, 'music')
+
+    expect(result.feedbackProbability).toBeLessThan(0.35)
+    expect(result.verdict).not.toBe('POSSIBLE_FEEDBACK')
+    expect(result.verdict).not.toBe('FEEDBACK')
+    expect(result.reasons).toContain('Rich harmonic music gate: harmonic series retained as music')
+  })
+
+  it('rich harmonic sources stay quiet even when content type is still unknown', () => {
+    const scores = buildScores({ msd: 0.55, phase: 0.9, spectral: 0.75, ihr: 0.15, ptmr: 0.65 })
+    scores.ihr = {
+      ...scores.ihr!,
+      harmonicsFound: 4,
+      isFeedbackLike: false,
+      isMusicLike: true,
+    }
+
+    const result = fuseAlgorithmResults(scores, 'unknown')
+
+    expect(result.feedbackProbability).toBeLessThan(0.35)
+    expect(result.verdict).not.toBe('POSSIBLE_FEEDBACK')
+    expect(result.verdict).not.toBe('FEEDBACK')
+    expect(result.reasons).toContain('Rich harmonic music gate: harmonic series retained as music')
+  })
+
+  it('music-mode sustained tonal material needs clean feedback shape before escalating', () => {
+    const result = fuseAlgorithmResults(
+      buildScores({ msd: 0.7, phase: 0.9, spectral: 0.85, ihr: 0.5, ptmr: 0.7, msdFrames: 20 }),
+      'music',
+    )
+
+    expect(result.verdict).not.toBe('POSSIBLE_FEEDBACK')
+    expect(result.verdict).not.toBe('FEEDBACK')
+    expect(result.reasons).toContain('Music tonal-source gate: harmonic/shape evidence not clean enough')
+  })
+
+  it('startup unknown tonal music needs clean feedback shape before escalating', () => {
+    const result = fuseAlgorithmResults(
+      buildScores({ msd: 0.7, phase: 0.9, spectral: 0.85, ihr: 0.5, ptmr: 0.7, msdFrames: 20 }),
+      'unknown',
+    )
+
+    expect(result.verdict).not.toBe('POSSIBLE_FEEDBACK')
+    expect(result.verdict).not.toBe('FEEDBACK')
+    expect(result.reasons).toContain('Startup tonal-source gate: waiting for clean feedback shape')
+  })
+
+  it('music-mode clean feedback shape still escalates', () => {
+    const result = fuseAlgorithmResults(
+      buildScores({ msd: 0.9, phase: 0.9, spectral: 0.8, ihr: 0.9, ptmr: 0.9, msdFrames: 20 }),
+      'music',
+    )
+
+    expect(result.feedbackProbability).toBeGreaterThanOrEqual(DEFAULT_FUSION_CONFIG.feedbackThreshold)
+    expect(result.verdict).toBe('FEEDBACK')
+    expect(result.reasons).not.toContain('Music tonal-source gate: harmonic/shape evidence not clean enough')
+  })
+
+  it('core feedback consensus overrides the rich harmonic music gate', () => {
+    const scores = buildScores({ msd: 0.9, phase: 0.9, spectral: 0.85, ihr: 0.15, ptmr: 0.9 })
+    scores.ihr = {
+      ...scores.ihr!,
+      harmonicsFound: 4,
+      isFeedbackLike: false,
+      isMusicLike: true,
+    }
+
+    const result = fuseAlgorithmResults(scores, 'music')
+
+    expect(result.feedbackProbability).toBeGreaterThanOrEqual(0.35)
+    expect(['POSSIBLE_FEEDBACK', 'FEEDBACK']).toContain(result.verdict)
+    expect(result.reasons).not.toContain('Rich harmonic music gate: harmonic series retained as music')
+  })
+
   it('compressed phase-dominant tonal sources no longer escalate to FEEDBACK', () => {
     const result = fuseAlgorithmResults(
       buildScores({ msd: 0.7, phase: 0.95, spectral: 0.85, ihr: 0.5, ptmr: 0.7, compressed: true }),
@@ -912,7 +990,6 @@ describe('content-weight interaction', () => {
       ptmr: {
         ptmrDb: 25, isFeedbackLike: true, feedbackScore: 0.85,
       },
-      ml: null,
     }
   }
 
@@ -973,21 +1050,22 @@ describe('Fusion confidence uses transformed scores', () => {
   it('inactive algorithms do not affect confidence', () => {
     const scores = buildScores({ msd: 0.8, phase: 0.7, spectral: 0.6, ihr: 0.5, ptmr: 0.5 })
 
-    // MSD-only mode: only MSD, IHR, PTMR, ML active
-    const msdOnly = fuseAlgorithmResults(scores, 'unknown', {
+    // Custom mode can isolate an MSD-oriented subset.
+    const msdSubset = fuseAlgorithmResults(scores, 'unknown', {
       ...DEFAULT_FUSION_CONFIG,
-      mode: 'msd',
+      mode: 'custom',
+      enabledAlgorithms: ['msd', 'ihr', 'ptmr'],
     })
 
-    // Combined mode: all algorithms active
-    const combined = fuseAlgorithmResults(scores, 'unknown', {
+    // Auto mode: all deterministic algorithms active once MSD is ready.
+    const auto = fuseAlgorithmResults(scores, 'unknown', {
       ...DEFAULT_FUSION_CONFIG,
-      mode: 'combined',
+      mode: 'auto',
     })
 
-    // Different modes should produce different confidence values
+    // Different algorithm sets should produce different confidence values
     // because different algorithm sets contribute
-    expect(msdOnly.confidence).not.toBeCloseTo(combined.confidence, 2)
+    expect(msdSubset.confidence).not.toBeCloseTo(auto.confidence, 2)
   })
 
   it('confidence never exceeds probability', () => {
@@ -1095,7 +1173,6 @@ describe('AgreementPersistenceTracker', () => {
         isFeedbackLike: false,
         feedbackScore: 0,
       },
-      ml: null,
     }
     const tracker = new AgreementPersistenceTracker()
     for (let i = 0; i < 6; i++) tracker.update(0.9)

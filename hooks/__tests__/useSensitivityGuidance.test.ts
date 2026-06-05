@@ -16,7 +16,6 @@ describe('useSensitivityGuidance', () => {
       enabled: false,
       isRunning: true,
       activeAdvisoryCount: 0,
-      prolongedSilence: true,
       sensitivityDb: 30,
     })).toEqual({ direction: 'none', urgency: 'none' })
   })
@@ -26,12 +25,11 @@ describe('useSensitivityGuidance', () => {
       enabled: true,
       isRunning: true,
       activeAdvisoryCount: 3,
-      prolongedSilence: false,
       sensitivityDb: 18,
     })).toEqual({ direction: 'down', urgency: 'warning' })
   })
 
-  it('raises upward guidance after prolonged silence', () => {
+  it('does not treat ordinary signal without advisories as missed feedback', () => {
     const { result } = renderHook(() => useSensitivityGuidance({
       enabled: true,
       isRunning: true,
@@ -46,6 +44,6 @@ describe('useSensitivityGuidance', () => {
       vi.advanceTimersByTime(2000)
     })
 
-    expect(result.current).toEqual({ direction: 'up', urgency: 'hint' })
+    expect(result.current).toEqual({ direction: 'none', urgency: 'none' })
   })
 })

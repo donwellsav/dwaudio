@@ -225,8 +225,6 @@ function resolveRecommendationContext(
 ): RecommendationContext {
   return {
     recurrenceCount: recommendationContext?.recurrenceCount ?? 0,
-    learnedCutDb: recommendationContext?.learnedCutDb,
-    successfulCutCount: recommendationContext?.successfulCutCount,
   }
 }
 
@@ -237,17 +235,7 @@ function resolveBaseCutDepth(
 ): number {
   const presetConfig = EQ_PRESETS[preset]
   const context = resolveRecommendationContext(recommendationContext)
-  const recurrenceDepth = calculateCutDepth(severity, preset, context.recurrenceCount)
-
-  const learnedDepth =
-    context.learnedCutDb !== undefined && (context.successfulCutCount ?? 0) >= 1
-      ? context.learnedCutDb
-      : undefined
-
-  const effectiveDepth =
-    learnedDepth !== undefined
-      ? Math.min(recurrenceDepth, learnedDepth)
-      : recurrenceDepth
+  const effectiveDepth = calculateCutDepth(severity, preset, context.recurrenceCount)
 
   return clamp(effectiveDepth, presetConfig.maxCut, 0)
 }

@@ -41,7 +41,8 @@ export class AdvisoryManager {
   private advisoriesByBand = new Map<number, string>() // GEQ band index → advisory ID
   private trackToAdvisoryId = new Map<string, string>()
   private bandClearedAt = new Map<number, number>()
-  private lastAdvisoryCreatedAt = 0
+  private reportGateMissStartedAt = new Map<string, number>()
+  private lastAdvisoryCreatedAt: number | null = null
 
   // ── Lookup methods ────────────────────────────────────────────────────────
 
@@ -87,6 +88,31 @@ export class AdvisoryManager {
     this.advisories.delete(existingId)
     this.removeTrackMappingsForAdvisory(existingId)
     return existingId
+  }
+
+  /**
+   * Debounced clear used when the detector still sees the peak but classifier
+   * confidence briefly drops below the reporting gate.
+   */
+  clearForTrackAfterReportGateMiss(trackId: string, timestamp: number, graceMs: number): string | null {
+    const existingId = this.trackToAdvisoryId.get(trackId)
+    if (!existingId) {
+      this.reportGateMissStartedAt.delete(trackId)
+      return null
+    }
+
+    const startedAt = this.reportGateMissStartedAt.get(trackId)
+    if (startedAt === undefined) {
+      this.reportGateMissStartedAt.set(trackId, timestamp)
+      return null
+    }
+
+    if (timestamp - startedAt < graceMs) {
+      return null
+    }
+
+    this.reportGateMissStartedAt.delete(trackId)
+    return this.clearForTrack(trackId)
   }
 
   // ── Clear advisory by frequency (from clearPeak message) ──────────────────
@@ -137,6 +163,7 @@ export class AdvisoryManager {
     settings: DetectorSettings,
   ): AdvisoryAction[] {
     const actions: AdvisoryAction[] = []
+    this.reportGateMissStartedAt.delete(track.id)
     const mappedExistingId = this.trackToAdvisoryId.get(track.id)
     const existingAdvisory = mappedExistingId ? this.advisories.get(mappedExistingId) : undefined
     if (mappedExistingId && !existingAdvisory) {
@@ -151,7 +178,8 @@ export class AdvisoryManager {
       // ── New advisory checks ───────────────────────────────────────────
 
       // Check 0: global rate limiter — safety-critical severities bypass
-      if (peak.timestamp - this.lastAdvisoryCreatedAt < ADVISORY_RATE_LIMIT_MS
+      if (this.lastAdvisoryCreatedAt !== null
+          && peak.timestamp - this.lastAdvisoryCreatedAt < ADVISORY_RATE_LIMIT_MS
           && classification.severity !== 'RUNAWAY' && classification.severity !== 'GROWING') {
         return actions // empty = skip
       }
@@ -193,6 +221,9 @@ export class AdvisoryManager {
             clusterCount: (dup.clusterCount ?? 1) + 1,
             clusterMinHz,
             clusterMaxHz,
+            firstSeenAt: peak.firstSeenAt ?? track.firstSeenAt ?? dup.firstSeenAt,
+            confirmedAt: peak.confirmedAt ?? track.confirmedAt ?? dup.confirmedAt,
+            confirmLatencyMs: peak.confirmLatencyMs ?? track.confirmLatencyMs ?? dup.confirmLatencyMs,
             advisory: dup.advisory ? { ...dup.advisory, peq: updatedPeq } : dup.advisory,
           }
           this.advisories.set(dup.id, updatedAdvisory)
@@ -230,6 +261,9 @@ export class AdvisoryManager {
       qEstimate: track.qEstimate,
       bandwidthHz: track.bandwidthHz,
       phpr: track.phpr,
+      firstSeenAt: peak.firstSeenAt ?? track.firstSeenAt,
+      confirmedAt: peak.confirmedAt ?? track.confirmedAt,
+      confirmLatencyMs: peak.confirmLatencyMs ?? track.confirmLatencyMs,
       velocityDbPerSec: track.velocityDbPerSec,
       stabilityCentsStd: track.features.stabilityCentsStd,
       harmonicityScore: track.features.harmonicityScore,
@@ -288,7 +322,7 @@ export class AdvisoryManager {
 
   // ── Housekeeping ──────────────────────────────────────────────────────────
 
-  /** Set a band cooldown (e.g. from decay analysis detecting room mode). */
+  /** Set a band cooldown after an operator clears a nearby advisory. */
   setBandCooldown(bandIndex: number, timestamp: number): void {
     this.bandClearedAt.set(bandIndex, timestamp)
   }
@@ -305,7 +339,8 @@ export class AdvisoryManager {
     this.advisoriesByBand.clear()
     this.trackToAdvisoryId.clear()
     this.bandClearedAt.clear()
-    this.lastAdvisoryCreatedAt = 0
+    this.reportGateMissStartedAt.clear()
+    this.lastAdvisoryCreatedAt = null
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -342,6 +377,7 @@ export class AdvisoryManager {
     for (const [trackId, mappedAdvisoryId] of this.trackToAdvisoryId) {
       if (mappedAdvisoryId === advisoryId) {
         this.trackToAdvisoryId.delete(trackId)
+        this.reportGateMissStartedAt.delete(trackId)
       }
     }
   }
@@ -362,7 +398,10 @@ export class AdvisoryManager {
       }
       this.advisories.delete(oldestId)
       for (const [tid, aid] of this.trackToAdvisoryId) {
-        if (aid === oldestId) this.trackToAdvisoryId.delete(tid)
+        if (aid === oldestId) {
+          this.trackToAdvisoryId.delete(tid)
+          this.reportGateMissStartedAt.delete(tid)
+        }
       }
     }
     return oldestId

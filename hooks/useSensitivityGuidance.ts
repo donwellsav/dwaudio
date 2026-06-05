@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import type { FaderGuidance } from '@/components/analyzer/faderTypes'
 
 interface SensitivityGuidanceParams {
@@ -15,7 +15,6 @@ interface DerivedSensitivityGuidanceParams {
   enabled: boolean
   isRunning: boolean
   activeAdvisoryCount: number
-  prolongedSilence: boolean
   sensitivityDb: number
 }
 
@@ -23,12 +22,10 @@ export function deriveSensitivityGuidance({
   enabled,
   isRunning,
   activeAdvisoryCount,
-  prolongedSilence,
   sensitivityDb,
 }: DerivedSensitivityGuidanceParams): FaderGuidance {
   if (!enabled || !isRunning) return { direction: 'none', urgency: 'none' }
   if (activeAdvisoryCount >= 3) return { direction: 'down', urgency: 'warning' }
-  if (prolongedSilence && sensitivityDb > 20) return { direction: 'up', urgency: 'hint' }
 
   if (sensitivityDb > 35) {
     return {
@@ -50,40 +47,13 @@ export function deriveSensitivityGuidance({
 export function useSensitivityGuidance({
   enabled = true,
   isRunning,
-  inputLevel,
   activeAdvisoryCount,
   sensitivityDb,
 }: SensitivityGuidanceParams): FaderGuidance {
-  const [prolongedSilence, setProlongedSilence] = useState(false)
-  const noDetectionSecsRef = useRef(0)
-
-  useEffect(() => {
-    if (!enabled || !isRunning) {
-      noDetectionSecsRef.current = 0
-      const timeoutId = window.setTimeout(() => {
-        setProlongedSilence(false)
-      }, 0)
-      return () => window.clearTimeout(timeoutId)
-    }
-
-    const intervalId = setInterval(() => {
-      if (activeAdvisoryCount > 0 || inputLevel < -45) {
-        noDetectionSecsRef.current = 0
-      } else {
-        noDetectionSecsRef.current += 1
-      }
-
-      setProlongedSilence(noDetectionSecsRef.current >= 2)
-    }, 1000)
-
-    return () => clearInterval(intervalId)
-  }, [enabled, isRunning, activeAdvisoryCount, inputLevel])
-
   return useMemo(() => deriveSensitivityGuidance({
     enabled,
     isRunning,
     activeAdvisoryCount,
-    prolongedSilence,
     sensitivityDb,
-  }), [enabled, isRunning, activeAdvisoryCount, prolongedSilence, sensitivityDb])
+  }), [enabled, isRunning, activeAdvisoryCount, sensitivityDb])
 }

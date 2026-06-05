@@ -30,6 +30,7 @@ export function drawIndicatorLines(
   fontSize: number,
   showDragHint: boolean = false,
   theme: CanvasTheme = DARK_CANVAS_THEME,
+  thresholdLineY: number | null = null,
 ) {
   // Noise floor
   if (spectrum?.noiseFloorDb !== null && spectrum?.noiseFloorDb !== undefined) {
@@ -59,9 +60,14 @@ export function drawIndicatorLines(
     ctx.restore()
   }
 
-  // Effective threshold
-  if (showThresholdLine && spectrum?.effectiveThresholdDb != null) {
-    const threshY = ((range.dbMax - spectrum.effectiveThresholdDb) / (range.dbMax - range.dbMin)) * plotHeight
+  // Sensitivity threshold
+  const threshY = thresholdLineY ?? (
+    spectrum?.effectiveThresholdDb != null
+      ? ((range.dbMax - spectrum.effectiveThresholdDb) / (range.dbMax - range.dbMin)) * plotHeight
+      : null
+  )
+
+  if (showThresholdLine && threshY != null) {
     ctx.strokeStyle = VIZ_COLORS.THRESHOLD
     ctx.globalAlpha = 0.5
     ctx.lineWidth = 1.5

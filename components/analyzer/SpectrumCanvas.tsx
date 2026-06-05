@@ -6,17 +6,18 @@ import { useAnimationFrame } from '@/hooks/useAnimationFrame'
 import { logPositionToFreq, clamp } from '@/lib/utils/mathHelpers'
 import { formatFrequency } from '@/lib/utils/pitchUtils'
 import { CANVAS_SETTINGS } from '@/lib/dsp/constants'
+import { getSensitivityGraphY } from '@/lib/fader/faderMath'
 import { smoothSpectrumForDisplay, type DisplaySpectrumSmoothingScratch } from '@/lib/canvas/drawing/spectrumSmoothing'
 import { thresholdDraggedStorage } from '@/lib/storage/dwaStorage'
 import { OVERLAY_ACCENT, GROWING_COLOR } from '@/lib/canvas/canvasTokens'
 import { getSeverityColor } from '@/lib/utils/advisoryDisplay'
 import { logError } from '@/lib/utils/logger'
 import type { SpectrumData, Advisory, SpectrumSmoothingMode } from '@/types/advisory'
-import type { RoomMode } from '@/lib/dsp/acousticUtils'
 import type { EarlyWarning } from '@/hooks/audioAnalyzerTypes'
+import { formatSpectrumStatusDescription } from '@/components/analyzer/spectrumCanvasStatus'
 import {
-  type DbRange, type CanvasTheme, calcPadding, drawGrid, drawFreqZones, drawRoomModeLines, drawIndicatorLines, drawSpectrum,
-  drawFreqRangeOverlay, drawNotchOverlays, drawMarkers, drawAxisLabels, drawPlaceholder,
+  type DbRange, type CanvasTheme, calcPadding, drawGrid, drawFreqZones, drawIndicatorLines, drawSpectrum,
+  drawFreqRangeOverlay, drawNotchOverlays, drawMarkers, drawAxisLabels, drawIdleCanvas,
   drawLevelMeter, drawLevelGlow, cachedMeasureText,
   DARK_CANVAS_THEME, LIGHT_CANVAS_THEME,
 } from '@/lib/canvas/spectrumDrawing'
@@ -33,7 +34,6 @@ export interface SpectrumDisplayConfig {
   spectrumLineWidth?: number
   canvasTargetFps?: number
   showFreqZones?: boolean
-  showRoomModeLines?: boolean
   showThresholdLine?: boolean
   spectrumWarmMode?: boolean
   spectrumSmoothingMode?: SpectrumSmoothingMode
@@ -62,7 +62,6 @@ interface SpectrumCanvasProps {
   earlyWarning?: EarlyWarning | null
   clearedIds?: Set<string>
   isFrozen?: boolean
-  roomModes?: RoomMode[] | null
   /** Grouped visual display settings */
   display?: SpectrumDisplayConfig
   /** Grouped frequency range / threshold settings */
@@ -71,9 +70,9 @@ interface SpectrumCanvasProps {
   onThresholdChange?: (db: number) => void
 }
 
-export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, advisories, lifecycle, earlyWarning, clearedIds, isFrozen = false, roomModes, display = {}, range = {}, onFreqRangeChange, onThresholdChange }: SpectrumCanvasProps) {
+export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, advisories, lifecycle, earlyWarning, clearedIds, isFrozen = false, display = {}, range = {}, onFreqRangeChange, onThresholdChange }: SpectrumCanvasProps) {
   const { isRunning, isStarting = false, error, onStart } = lifecycle
-  const { graphFontSize = 11, rtaDbMin: rtaDbMinProp, rtaDbMax: rtaDbMaxProp, spectrumLineWidth: spectrumLineWidthProp, canvasTargetFps, showFreqZones = false, showRoomModeLines = false, showThresholdLine = false, spectrumWarmMode = false, spectrumSmoothingMode = 'raw' } = display
+  const { graphFontSize = 11, rtaDbMin: rtaDbMinProp, rtaDbMax: rtaDbMaxProp, spectrumLineWidth: spectrumLineWidthProp, canvasTargetFps, showFreqZones = false, showThresholdLine = false, spectrumWarmMode = false, spectrumSmoothingMode = 'raw' } = display
   const { minFrequency = 20, maxFrequency = 20000, feedbackThresholdDb } = range
   const rtaDbMin = rtaDbMinProp ?? CANVAS_SETTINGS.RTA_DB_MIN
   const rtaDbMax = rtaDbMaxProp ?? CANVAS_SETTINGS.RTA_DB_MAX
@@ -143,20 +142,41 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
   const lastSpectrumRef = useRef<SpectrumData | null>(null)
   const dirtyRef = useRef(true) // Start dirty to ensure first frame draws
 
-  // Track whether analysis has ever started; once true the placeholder is gone for good
+  // Track whether analysis has ever started; once true the idle start overlay is gone for good.
   const [hasEverStarted, setHasEverStarted] = useState(false)
   useEffect(() => {
     if (isRunning) setHasEverStarted(true)
   }, [isRunning])
 
-  const showPlaceholder = !hasEverStarted
+  const showIdleStartOverlay = !hasEverStarted
+
+  const syncIdleCanvas = useCallback((canvas: HTMLCanvasElement, width = dimensionsRef.current.width, height = dimensionsRef.current.height) => {
+    if (width === 0 || height === 0) return
+
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.floor(width * dpr)
+    canvas.height = Math.floor(height * dpr)
+    canvas.style.width = `${width}px`
+    canvas.style.height = `${height}px`
+
+    drawIdleCanvas(canvas, graphFontSize, rtaDbMin, rtaDbMax, canvasThemeRef.current, {
+      showThresholdLine,
+      feedbackThresholdDb,
+    })
+
+    const padding = calcPadding(width, height)
+    const plotWidth = width - padding.left - padding.right
+    const plotHeight = height - padding.top - padding.bottom
+    paddingRef.current = { left: padding.left, top: padding.top, plotWidth, plotHeight }
+    effectiveThreshYRef.current = showThresholdLine && feedbackThresholdDb != null
+      ? getSensitivityGraphY({ value: feedbackThresholdDb, plotHeight })
+      : null
+  }, [feedbackThresholdDb, graphFontSize, rtaDbMax, rtaDbMin, showThresholdLine])
 
   const handleKeyDown = useSpectrumCanvasInteractions({
     canvasRef,
     onFreqRangeChange,
     onThresholdChange,
-    rtaDbMin,
-    rtaDbMax,
     dragRef,
     threshDragRef,
     showDragHintRef,
@@ -191,13 +211,8 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
 
           const canvas = canvasRef.current
           if (canvas && !hasEverStarted) {
-            // Pre-analysis: size canvas + draw placeholder directly in observer
-            // (RAF loop isn't running yet so we must handle it here)
-            canvas.width = Math.floor(width * dpr)
-            canvas.height = Math.floor(height * dpr)
-            canvas.style.width = `${width}px`
-            canvas.style.height = `${height}px`
-            drawPlaceholder(canvas, graphFontSize, rtaDbMin, rtaDbMax, canvasThemeRef.current)
+            // Pre-analysis: draw directly because the live RAF loop has not started yet.
+            syncIdleCanvas(canvas, width, height)
           }
           // During analysis: the render callback syncs canvas dimensions
           // atomically with the redraw, preventing flash from observer clearing
@@ -209,21 +224,19 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
 
     observer.observe(container)
     return () => observer.disconnect()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEverStarted])
+  }, [hasEverStarted, syncIdleCanvas])
 
-  // Redraw when theme changes — placeholder in idle, dirty flag in running
+  // Redraw when theme changes — idle canvas before start, dirty flag while running.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     if (!hasEverStarted) {
-      drawPlaceholder(canvas, graphFontSize, rtaDbMin, rtaDbMax, canvasThemeRef.current)
+      syncIdleCanvas(canvas)
     } else {
       gradientRef.current = null
       dirtyRef.current = true
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only on theme change
-  }, [resolvedTheme])
+  }, [resolvedTheme, hasEverStarted, syncIdleCanvas])
 
   const render = useCallback((deltaTimeMs: number) => {
     // Convert RAF delta (ms) to seconds for frame-rate-independent peak hold decay
@@ -288,14 +301,13 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
     drawGrid(ctx, plotWidth, plotHeight, range, canvasThemeRef.current)
     drawLevelGlow(ctx, plotWidth, plotHeight, spectrum, canvasThemeRef.current === DARK_CANVAS_THEME)
     drawFreqZones(ctx, plotWidth, plotHeight, range, showFreqZones, canvasThemeRef.current)
-    drawRoomModeLines(ctx, plotWidth, plotHeight, range, roomModes ?? null, showRoomModeLines, canvasThemeRef.current)
-    drawIndicatorLines(ctx, plotWidth, plotHeight, range, spectrum, showThresholdLine, feedbackThresholdDb, fontSize, showDragHintRef.current, canvasThemeRef.current)
+    const sensitivityThresholdY = showThresholdLine && feedbackThresholdDb != null
+      ? getSensitivityGraphY({ value: feedbackThresholdDb, plotHeight })
+      : null
+    drawIndicatorLines(ctx, plotWidth, plotHeight, range, spectrum, showThresholdLine, feedbackThresholdDb, fontSize, showDragHintRef.current, canvasThemeRef.current, sensitivityThresholdY)
 
-    // Track threshold line Y for drag detection (in canvas coords relative to plot area)
-    if (showThresholdLine && spectrum?.effectiveThresholdDb != null) {
-      const dbSpan = range.dbMax - range.dbMin
-      effectiveThreshYRef.current = ((range.dbMax - spectrum.effectiveThresholdDb) / dbSpan) * plotHeight
-    }
+    // Track threshold line Y for drag detection (in canvas coords relative to plot area).
+    effectiveThreshYRef.current = sensitivityThresholdY
 
     const displayFreqDb = spectrum && spectrumSmoothingMode === 'perceptual'
       ? smoothSpectrumForDisplay(spectrum.freqDb, spectrum.sampleRate, spectrum.fftSize, smoothingScratchRef)
@@ -428,7 +440,7 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
 
     drawAxisLabels(ctx, padding, plotWidth, plotHeight, range, fontSize, width, height, canvasThemeRef.current)
 
-  }, [spectrumRef, graphFontSize, earlyWarning, rtaDbMin, rtaDbMax, spectrumLineWidthProp, showThresholdLine, feedbackThresholdDb, showFreqZones, showRoomModeLines, roomModes, spectrumWarmMode, spectrumSmoothingMode])
+  }, [spectrumRef, graphFontSize, earlyWarning, rtaDbMin, rtaDbMax, spectrumLineWidthProp, showThresholdLine, feedbackThresholdDb, showFreqZones, spectrumWarmMode, spectrumSmoothingMode])
 
   useAnimationFrame(render, isRunning || hasEverStarted, canvasTargetFps)
 
@@ -437,10 +449,28 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
     peakHoldRef.current = null
     dirtyRef.current = true
   }, [spectrumSmoothingMode])
-  useEffect(() => { dirtyRef.current = true }, [graphFontSize, earlyWarning, rtaDbMin, rtaDbMax, spectrumLineWidthProp, showThresholdLine, feedbackThresholdDb, showFreqZones, showRoomModeLines, roomModes, spectrumWarmMode])
+  useEffect(() => {
+    dirtyRef.current = true
+    if (!hasEverStarted && canvasRef.current) {
+      syncIdleCanvas(canvasRef.current)
+    }
+  }, [graphFontSize, earlyWarning, rtaDbMin, rtaDbMax, spectrumLineWidthProp, showThresholdLine, feedbackThresholdDb, showFreqZones, spectrumWarmMode, hasEverStarted, syncIdleCanvas])
   useEffect(() => { dirtyRef.current = true }, [advisories, clearedIds])
 
   const isKeyboardInteractive = Boolean(onFreqRangeChange || onThresholdChange)
+  const activeAdvisoryCount = advisories.filter((advisory) => !advisory.resolved).length
+  const spectrumStatusDescription = formatSpectrumStatusDescription({
+    isRunning,
+    minFrequency,
+    maxFrequency,
+    rtaDbMin,
+    rtaDbMax,
+    activeAdvisoryCount,
+    totalAdvisoryCount: advisories.length,
+    isFrozen,
+    isKeyboardInteractive,
+    canAdjustThreshold: Boolean(onThresholdChange),
+  })
   const ariaValueText = onFreqRangeChange
     ? onThresholdChange && feedbackThresholdDb != null
       ? `${minFrequency} Hz to ${maxFrequency} Hz, threshold ${feedbackThresholdDb} dB`
@@ -463,20 +493,10 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
       <canvas ref={canvasRef} className="w-full h-full" role="img" aria-label="Real-time audio frequency spectrum display" aria-describedby={descId} />
       {/* Screen reader description — summarizes RTA state for assistive technology */}
       <div id={descId} className="sr-only">
-        {isRunning
-          ? `Spectrum analyzer active. Displaying frequencies from ${minFrequency} Hz to ${maxFrequency} Hz, ${rtaDbMin} to ${rtaDbMax} dB range.${
-              advisories.length > 0
-                ? ` ${advisories.filter(a => !a.resolved).length} active feedback detections. Use the Issues panel for details and EQ recommendations.`
-                : ' No feedback detected.'
-            }${isFrozen ? ' Display is frozen.' : ''}${
-              isKeyboardInteractive
-                ? ` Keyboard: Left and Right arrows adjust frequency range${onThresholdChange ? '; Up and Down arrows adjust threshold' : ''}. Hold Shift for larger steps.`
-                : ''
-            }`
-          : 'Spectrum analyzer stopped. Press Enter or click Start to begin analysis.'}
+        {spectrumStatusDescription}
       </div>
       <SpectrumCanvasOverlay
-        showPlaceholder={showPlaceholder}
+        showIdleStartOverlay={showIdleStartOverlay}
         isStarting={isStarting}
         error={error}
         isRunning={isRunning}
@@ -485,5 +505,3 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
     </div>
   )
 })
-
-

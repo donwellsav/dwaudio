@@ -2,29 +2,25 @@
  * Exhaustive tests for the derivation function.
  *
  * These tests prove that deriveDetectorSettings() produces outputs that
- * match the current system's behavior for all 8 modes × 7 rooms.
+ * match the current local analyzer behavior.
  *
  * Values are sourced from:
  *   - OPERATION_MODES in lib/dsp/constants.ts (lines 417-632)
- *   - ROOM_PRESETS in lib/dsp/constants.ts (lines 709-766)
  *   - DEFAULT_SETTINGS in lib/dsp/constants.ts (fresh-start compatibility snapshot)
  *   - Mode baselines in lib/settings/modeBaselines.ts
- *   - Environment templates in lib/settings/environmentTemplates.ts
  *
- * The one intentional behavioral change: room presets now apply relative
- * offsets instead of absolute thresholds. This is tested explicitly.
+ * Room/environment data has been removed from the local-only fork.
  */
 
 import { describe, expect, it } from 'vitest'
-import { OPERATION_MODES, ROOM_PRESETS } from '@/lib/dsp/constants'
+import { OPERATION_MODES } from '@/lib/dsp/constants'
 import { DEFAULT_DIAGNOSTICS, DEFAULT_DISPLAY_PREFS, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES } from '@/lib/settings/defaults'
 import { deriveDetectorSettings } from '@/lib/settings/deriveSettings'
-import { ENVIRONMENT_TEMPLATES } from '@/lib/settings/environmentTemplates'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
-import type { ModeId, RoomTemplateId } from '@/types/settings'
+import { DEFAULT_SMOOTHING_TIME_CONSTANT } from '@/types/advisory'
+import type { ModeId } from '@/types/settings'
 
-const ALL_MODES: ModeId[] = ['speech', 'worship', 'liveMusic', 'theater', 'monitors', 'ringOut', 'broadcast', 'outdoor']
-const ALL_ROOMS: RoomTemplateId[] = ['none', 'small', 'medium', 'large', 'arena', 'worship', 'custom']
+const ALL_MODES: ModeId[] = ['speech', 'worship', 'liveMusic', 'theater', 'monitors', 'broadcast', 'outdoor']
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
@@ -35,29 +31,6 @@ function deriveForMode(modeId: ModeId) {
     DEFAULT_LIVE_OVERRIDES,
     DEFAULT_DISPLAY_PREFS,
     DEFAULT_DIAGNOSTICS,
-    'none',
-  )
-}
-
-function deriveForModeAndRoom(modeId: ModeId, roomId: RoomTemplateId) {
-  const template = ENVIRONMENT_TEMPLATES[roomId]
-  const env = {
-    ...DEFAULT_ENVIRONMENT,
-    templateId: roomId,
-    feedbackOffsetDb: template.feedbackOffsetDb,
-    ringOffsetDb: template.ringOffsetDb,
-    treatment: template.treatment,
-    roomRT60: template.roomRT60,
-    roomVolume: template.roomVolume,
-    dimensionsM: { length: template.lengthM, width: template.widthM, height: template.heightM },
-  }
-  return deriveDetectorSettings(
-    MODE_BASELINES[modeId],
-    env,
-    DEFAULT_LIVE_OVERRIDES,
-    DEFAULT_DISPLAY_PREFS,
-    DEFAULT_DIAGNOSTICS,
-    'none',
   )
 }
 
@@ -103,7 +76,6 @@ describe('deriveDetectorSettings — display passthrough', () => {
     expect(derived.showAlgorithmScores).toBe(DEFAULT_DISPLAY_PREFS.showAlgorithmScores)
     expect(derived.showPeqDetails).toBe(DEFAULT_DISPLAY_PREFS.showPeqDetails)
     expect(derived.showFreqZones).toBe(DEFAULT_DISPLAY_PREFS.showFreqZones)
-    expect(derived.showRoomModeLines).toBe(DEFAULT_DISPLAY_PREFS.showRoomModeLines)
     expect(derived.spectrumWarmMode).toBe(DEFAULT_DISPLAY_PREFS.spectrumWarmMode)
     expect(derived.spectrumSmoothingMode).toBe(DEFAULT_DISPLAY_PREFS.spectrumSmoothingMode)
     expect(derived.rtaDbMin).toBe(DEFAULT_DISPLAY_PREFS.rtaDbMin)
@@ -116,7 +88,6 @@ describe('deriveDetectorSettings — display passthrough', () => {
     expect(derived.faderLinkRatio).toBe(DEFAULT_DISPLAY_PREFS.faderLinkRatio)
     expect(derived.faderLinkCenterGainDb).toBe(DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb)
     expect(derived.faderLinkCenterSensDb).toBe(DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb)
-    expect(derived.swipeLabeling).toBe(DEFAULT_DISPLAY_PREFS.swipeLabeling)
   })
 
   it('custom display prefs override defaults', () => {
@@ -127,7 +98,6 @@ describe('deriveDetectorSettings — display passthrough', () => {
       DEFAULT_LIVE_OVERRIDES,
       customDisplay,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.graphFontSize).toBe(22)
     expect(derived.showAlgorithmScores).toBe(true)
@@ -143,11 +113,11 @@ describe('deriveDetectorSettings — diagnostics', () => {
 
     expect(derived.algorithmMode).toBe(DEFAULT_DIAGNOSTICS.algorithmMode)
     expect(derived.enabledAlgorithms).toEqual(DEFAULT_DIAGNOSTICS.enabledAlgorithms)
-    expect(derived.mlEnabled).toBe(DEFAULT_DIAGNOSTICS.mlEnabled)
     expect(derived.thresholdMode).toBe(DEFAULT_DIAGNOSTICS.thresholdMode)
     expect(derived.noiseFloorAttackMs).toBe(DEFAULT_DIAGNOSTICS.noiseFloorAttackMs)
     expect(derived.noiseFloorReleaseMs).toBe(DEFAULT_DIAGNOSTICS.noiseFloorReleaseMs)
     expect(derived.maxTracks).toBe(DEFAULT_DIAGNOSTICS.maxTracks)
+    expect(derived.smoothingTimeConstant).toBe(DEFAULT_SMOOTHING_TIME_CONSTANT)
     // trackTimeoutMs resolves 'mode-default' sentinel to mode baseline value
     expect(derived.trackTimeoutMs).toBe(MODE_BASELINES.speech.defaultTrackTimeoutMs)
     expect(derived.harmonicToleranceCents).toBe(DEFAULT_DIAGNOSTICS.harmonicToleranceCents)
@@ -157,7 +127,7 @@ describe('deriveDetectorSettings — diagnostics', () => {
   it('diagnostics overrides take precedence over baseline', () => {
     const diag = {
       ...DEFAULT_DIAGNOSTICS,
-      confidenceThresholdOverride: 0.9,
+      confidenceThresholdOverride: 0.75,
       growthRateThresholdOverride: 5.0,
       smoothingTimeConstantOverride: 0.8,
     }
@@ -167,9 +137,8 @@ describe('deriveDetectorSettings — diagnostics', () => {
       DEFAULT_LIVE_OVERRIDES,
       DEFAULT_DISPLAY_PREFS,
       diag,
-      'none',
     )
-    expect(derived.confidenceThreshold).toBe(0.9)
+    expect(derived.confidenceThreshold).toBe(0.75)
     expect(derived.growthRateThreshold).toBe(5.0)
     expect(derived.smoothingTimeConstant).toBe(0.8)
   })
@@ -182,53 +151,20 @@ describe('deriveDetectorSettings — diagnostics', () => {
   })
 })
 
-// ─── Environment offset math ────────────────────────────────────────────────
+// ─── Environment data is limited to local mains-hum gate ─────────────────────
 
-describe('deriveDetectorSettings — environment offsets', () => {
-  it.each(ALL_MODES)('mode "%s" with room=none has zero offset (matches baseline)', (modeId) => {
-    const derived = deriveForModeAndRoom(modeId, 'none')
-    const baseline = MODE_BASELINES[modeId]
+describe('deriveDetectorSettings — environment mains-hum gate', () => {
+  it('carries mains-hum settings into DetectorSettings', () => {
+    const derived = deriveDetectorSettings(
+      MODE_BASELINES.speech,
+      { mainsHumEnabled: false, mainsHumFundamental: 60 },
+      DEFAULT_LIVE_OVERRIDES,
+      DEFAULT_DISPLAY_PREFS,
+      DEFAULT_DIAGNOSTICS,
+    )
 
-    expect(derived.feedbackThresholdDb).toBe(baseline.feedbackThresholdDb)
-    expect(derived.ringThresholdDb).toBe(baseline.ringThresholdDb)
-  })
-
-  // Verify that speech mode + each room produces the same absolute values
-  // as the old ROOM_PRESETS, since offsets were computed from speech baseline
-  it.each(ALL_ROOMS.filter(r => r !== 'none'))('speech + %s matches old ROOM_PRESETS thresholds', (roomId) => {
-    const derived = deriveForModeAndRoom('speech', roomId)
-    const oldPreset = ROOM_PRESETS[roomId]
-
-    expect(derived.feedbackThresholdDb).toBe(oldPreset.feedbackThresholdDb)
-    expect(derived.ringThresholdDb).toBe(oldPreset.ringThresholdDb)
-  })
-
-  // The key behavioral change: non-speech modes now get relative offsets
-  it('liveMusic + small room uses relative offset (behavioral change)', () => {
-    const derived = deriveForModeAndRoom('liveMusic', 'small')
-    const lmBaseline = MODE_BASELINES.liveMusic
-    const smallTemplate = ENVIRONMENT_TEMPLATES.small
-
-    // New: baseline.feedbackThresholdDb + offset
-    const expected = lmBaseline.feedbackThresholdDb + smallTemplate.feedbackOffsetDb
-    expect(derived.feedbackThresholdDb).toBe(expected)
-
-    // Old behavior would have been ROOM_PRESETS.small.feedbackThresholdDb = 22 (absolute)
-    // New behavior is relative: 42 + (-5) = 37
-    expect(derived.feedbackThresholdDb).not.toBe(ROOM_PRESETS.small.feedbackThresholdDb)
-  })
-
-  it('room template metadata passes through', () => {
-    const derived = deriveForModeAndRoom('speech', 'small')
-    const smallTemplate = ENVIRONMENT_TEMPLATES.small
-
-    expect(derived.roomPreset).toBe('small')
-    expect(derived.roomTreatment).toBe(smallTemplate.treatment)
-    expect(derived.roomRT60).toBe(smallTemplate.roomRT60)
-    expect(derived.roomVolume).toBe(smallTemplate.roomVolume)
-    expect(derived.roomLengthM).toBe(smallTemplate.lengthM)
-    expect(derived.roomWidthM).toBe(smallTemplate.widthM)
-    expect(derived.roomHeightM).toBe(smallTemplate.heightM)
+    expect(derived.mainsHumEnabled).toBe(false)
+    expect(derived.mainsHumFundamental).toBe(60)
   })
 })
 
@@ -243,7 +179,6 @@ describe('deriveDetectorSettings — live overrides', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     // baseline + env(0) + live(5)
     expect(derived.feedbackThresholdDb).toBe(MODE_BASELINES.speech.feedbackThresholdDb + 5)
@@ -257,30 +192,20 @@ describe('deriveDetectorSettings — live overrides', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.feedbackThresholdDb).toBe(MODE_BASELINES.speech.feedbackThresholdDb - 10)
   })
 
-  it('sensitivity + environment compose correctly', () => {
-    const template = ENVIRONMENT_TEMPLATES.arena
-    const env = {
-      ...DEFAULT_ENVIRONMENT,
-      templateId: 'arena' as const,
-      feedbackOffsetDb: template.feedbackOffsetDb,
-      ringOffsetDb: template.ringOffsetDb,
-    }
+  it('sensitivity offset composes from mode baseline only', () => {
     const live = { ...DEFAULT_LIVE_OVERRIDES, sensitivityOffsetDb: -3 }
     const derived = deriveDetectorSettings(
       MODE_BASELINES.speech,
-      env,
+      DEFAULT_ENVIRONMENT,
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
-    // baseline + arena offset + live offset
-    const expected = MODE_BASELINES.speech.feedbackThresholdDb + template.feedbackOffsetDb + (-3)
+    const expected = MODE_BASELINES.speech.feedbackThresholdDb - 3
     expect(derived.feedbackThresholdDb).toBe(expected)
   })
 
@@ -295,7 +220,6 @@ describe('deriveDetectorSettings — live overrides', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.minFrequency).toBe(500)
     expect(derived.maxFrequency).toBe(4000)
@@ -315,7 +239,6 @@ describe('deriveDetectorSettings — live overrides', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.eqPreset).toBe('heavy')
   })
@@ -333,7 +256,6 @@ describe('deriveDetectorSettings — live overrides', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.autoGainEnabled).toBe(true)
     expect(derived.autoGainTargetDb).toBe(-12)
@@ -351,79 +273,48 @@ describe('deriveDetectorSettings — edge cases', () => {
       live,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'none',
     )
     expect(derived.feedbackThresholdDb).toBe(1)
   })
 
-  it('ringThresholdDb never goes below 1', () => {
-    const env = { ...DEFAULT_ENVIRONMENT, ringOffsetDb: -100 }
+  it('broadcast mode uses mode-specific autoGainTargetDb when live is at default', () => {
     const derived = deriveDetectorSettings(
-      MODE_BASELINES.ringOut,
-      env,
-      DEFAULT_LIVE_OVERRIDES,
-      DEFAULT_DISPLAY_PREFS,
-      DEFAULT_DIAGNOSTICS,
-      'none',
-    )
-    expect(derived.ringThresholdDb).toBe(1)
-  })
-
-  it('mic calibration profile passes through', () => {
-    const derived = deriveDetectorSettings(
-      MODE_BASELINES.speech,
+      MODE_BASELINES.broadcast,
       DEFAULT_ENVIRONMENT,
       DEFAULT_LIVE_OVERRIDES,
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      'ecm8000',
     )
-    expect(derived.micCalibrationProfile).toBe('ecm8000')
-  })
-
-  it('ringOut mode uses mode-specific autoGainTargetDb when live is at default', () => {
-    const derived = deriveDetectorSettings(
-      MODE_BASELINES.ringOut,
-      DEFAULT_ENVIRONMENT,
-      DEFAULT_LIVE_OVERRIDES,
-      DEFAULT_DISPLAY_PREFS,
-      DEFAULT_DIAGNOSTICS,
-      'none',
-    )
-    // ringOut baseline has defaultAutoGainTargetDb defined
-    expect(derived.autoGainTargetDb).toBe(MODE_BASELINES.ringOut.defaultAutoGainTargetDb)
+    expect(derived.autoGainTargetDb).toBe(MODE_BASELINES.broadcast.defaultAutoGainTargetDb)
   })
 })
 
-// ─── Full matrix: 8 modes × 7 rooms ────────────────────────────────────────
+// ─── Full mode matrix ────────────────────────────────────────────────────────
 
-describe('deriveDetectorSettings — full mode × room matrix', () => {
+describe('deriveDetectorSettings — full mode matrix', () => {
   for (const modeId of ALL_MODES) {
-    for (const roomId of ALL_ROOMS) {
-      it(`${modeId} × ${roomId} produces valid DetectorSettings`, () => {
-        const derived = deriveForModeAndRoom(modeId, roomId)
+    it(`${modeId} produces valid DetectorSettings`, () => {
+      const derived = deriveForMode(modeId)
 
-        // All key fields must be numbers
-        expect(typeof derived.feedbackThresholdDb).toBe('number')
-        expect(typeof derived.ringThresholdDb).toBe('number')
-        expect(typeof derived.minFrequency).toBe('number')
-        expect(typeof derived.maxFrequency).toBe('number')
-        expect(typeof derived.sustainMs).toBe('number')
-        expect(typeof derived.clearMs).toBe('number')
-        expect(typeof derived.confidenceThreshold).toBe('number')
+      // All key fields must be numbers
+      expect(typeof derived.feedbackThresholdDb).toBe('number')
+      expect(typeof derived.ringThresholdDb).toBe('number')
+      expect(typeof derived.minFrequency).toBe('number')
+      expect(typeof derived.maxFrequency).toBe('number')
+      expect(typeof derived.sustainMs).toBe('number')
+      expect(typeof derived.clearMs).toBe('number')
+      expect(typeof derived.confidenceThreshold).toBe('number')
 
-        // Thresholds are positive
-        expect(derived.feedbackThresholdDb).toBeGreaterThanOrEqual(1)
-        expect(derived.ringThresholdDb).toBeGreaterThanOrEqual(1)
+      // Thresholds are positive
+      expect(derived.feedbackThresholdDb).toBeGreaterThanOrEqual(1)
+      expect(derived.ringThresholdDb).toBeGreaterThanOrEqual(1)
 
-        // Frequency range makes sense
-        expect(derived.minFrequency).toBeLessThan(derived.maxFrequency)
+      // Frequency range makes sense
+      expect(derived.minFrequency).toBeLessThan(derived.maxFrequency)
 
-        // Mode identity preserved
-        expect(derived.mode).toBe(modeId)
-        expect(derived.roomPreset).toBe(roomId)
-      })
-    }
+      // Mode identity preserved
+      expect(derived.mode).toBe(modeId)
+    })
   }
 })
 
@@ -434,7 +325,7 @@ describe('Diagnostics override fields', () => {
 
   it('sustainMsOverride takes precedence over baseline', () => {
     const diag = { ...DEFAULT_DIAGNOSTICS, sustainMsOverride: 999 }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
     expect(derived.sustainMs).toBe(999)
   })
 
@@ -444,47 +335,74 @@ describe('Diagnostics override fields', () => {
   })
 
   it('clearMsOverride takes precedence over baseline', () => {
-    const diag = { ...DEFAULT_DIAGNOSTICS, clearMsOverride: 5000 }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
-    expect(derived.clearMs).toBe(5000)
+    const diag = { ...DEFAULT_DIAGNOSTICS, clearMsOverride: 1250 }
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
+    expect(derived.clearMs).toBe(1250)
+  })
+
+  it('clamps stale persisted timing overrides to the expert control range', () => {
+    const diag = {
+      ...DEFAULT_DIAGNOSTICS,
+      sustainMsOverride: 5000,
+      clearMsOverride: 50,
+    }
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
+
+    expect(derived.sustainMs).toBe(2000)
+    expect(derived.clearMs).toBe(100)
+  })
+
+  it('clamps stale persisted detection overrides to the expert control range', () => {
+    const diag = {
+      ...DEFAULT_DIAGNOSTICS,
+      confidenceThresholdOverride: 1.5,
+      growthRateThresholdOverride: 0,
+      smoothingTimeConstantOverride: 1.2,
+      ringThresholdDbOverride: 99,
+      prominenceDbOverride: -5,
+    }
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
+
+    expect(derived.confidenceThreshold).toBe(0.8)
+    expect(derived.growthRateThreshold).toBe(0.5)
+    expect(derived.smoothingTimeConstant).toBe(0.95)
+    expect(derived.ringThresholdDb).toBe(12)
+    expect(derived.prominenceDb).toBe(4)
   })
 
   it('prominenceDbOverride takes precedence over baseline', () => {
     const diag = { ...DEFAULT_DIAGNOSTICS, prominenceDbOverride: 15 }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
     expect(derived.prominenceDb).toBe(15)
   })
 
   it('aWeightingOverride takes precedence over baseline', () => {
     const diag = { ...DEFAULT_DIAGNOSTICS, aWeightingOverride: false }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
     expect(derived.aWeightingEnabled).toBe(false)
   })
 
   it('ignoreWhistleOverride takes precedence over baseline', () => {
     const diag = { ...DEFAULT_DIAGNOSTICS, ignoreWhistleOverride: false }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
     expect(derived.ignoreWhistle).toBe(false)
   })
 
   it('fftSizeOverride takes precedence over baseline', () => {
     const diag = { ...DEFAULT_DIAGNOSTICS, fftSizeOverride: 16384 as const }
-    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
     expect(derived.fftSize).toBe(16384)
   })
 
-  it('ringThresholdDbOverride takes precedence over baseline + environment', () => {
-    const diag = { ...DEFAULT_DIAGNOSTICS, ringThresholdDbOverride: 42 }
-    const env = { ...DEFAULT_ENVIRONMENT, ringOffsetDb: 10 }
-    const derived = deriveDetectorSettings(baseline, env, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag, 'none')
-    // Override should win regardless of env offset
-    expect(derived.ringThresholdDb).toBe(42)
+  it('ringThresholdDbOverride takes precedence over baseline', () => {
+    const diag = { ...DEFAULT_DIAGNOSTICS, ringThresholdDbOverride: 9 }
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, diag)
+    expect(derived.ringThresholdDb).toBe(9)
   })
 
-  it('ringThresholdDb uses baseline + env when override absent', () => {
-    const env = { ...DEFAULT_ENVIRONMENT, ringOffsetDb: 3 }
-    const derived = deriveDetectorSettings(baseline, env, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, DEFAULT_DIAGNOSTICS, 'none')
-    expect(derived.ringThresholdDb).toBe(baseline.ringThresholdDb + 3)
+  it('ringThresholdDb uses baseline when override absent', () => {
+    const derived = deriveDetectorSettings(baseline, DEFAULT_ENVIRONMENT, DEFAULT_LIVE_OVERRIDES, DEFAULT_DISPLAY_PREFS, DEFAULT_DIAGNOSTICS)
+    expect(derived.ringThresholdDb).toBe(baseline.ringThresholdDb)
   })
 
   it('all overrides absent → all values from baseline', () => {

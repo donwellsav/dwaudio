@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useTheme } from 'next-themes'
 import type { FaderMode } from '@/components/analyzer/faderTypes'
 import { meterBg, applyMeterStops } from '@/lib/canvas/canvasTokens'
+import { DEFAULT_DISPLAY_PREFS } from '@/lib/settings/defaults'
 
 interface UseFaderMeterCanvasParams {
   mode: FaderMode
@@ -133,7 +134,8 @@ export function useFaderMeterCanvas({
         }
       }
 
-      const defaultRatio = (50 - 25) / 48
+      const defaultDb = DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb
+      const defaultRatio = (50 - defaultDb) / 48
       const defaultY = height * (1 - defaultRatio)
       ctx.strokeStyle = 'rgba(100,180,255,0.35)'
       ctx.lineWidth = 1.5
@@ -145,7 +147,7 @@ export function useFaderMeterCanvas({
       ctx.font = `bold ${labelSize + 1}px monospace`
       ctx.textAlign = 'right'
       ctx.textBaseline = 'middle'
-      ctx.fillText('25', width * 0.48, defaultY)
+      ctx.fillText(String(defaultDb), width * 0.48, defaultY)
       return
     }
 

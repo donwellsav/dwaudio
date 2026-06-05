@@ -11,21 +11,12 @@ import type { DwaSessionState } from '@/types/settings'
 function makeSession(
   overrides: Partial<{
     modeId: DwaSessionState['modeId']
-    feedbackOffsetDb: number
     sensitivityOffsetDb: number
   }> = {},
 ): DwaSessionState {
   return {
     modeId: overrides.modeId ?? 'speech',
     environment: {
-      templateId: 'generic-hall',
-      treatment: 'typical',
-      feedbackOffsetDb: overrides.feedbackOffsetDb ?? 0,
-      ringOffsetDb: 0,
-      provenance: 'template',
-      roomRT60: 1.2,
-      roomVolume: 200,
-      displayUnit: 'meters',
       mainsHumEnabled: true,
       mainsHumFundamental: 'auto',
     },
@@ -41,11 +32,6 @@ function makeSession(
       showAlgorithmScores: false,
       showPeakMarkers: false,
       verboseLogging: false,
-    },
-    micCalibrationProfile: {
-      profileId: 'flat',
-      label: 'Flat',
-      corrections: [],
     },
   } as unknown as DwaSessionState
 }
@@ -67,8 +53,8 @@ describe('useThresholdChange', () => {
   })
 
   it('computes correct sensitivity offset delta from absolute dB threshold', () => {
-    // speech baseline = 20 dB, feedbackOffsetDb = 0, sensitivityOffsetDb = 0
-    // effective = 20 + 0 + 0 = 20
+    // speech baseline = 20 dB, sensitivityOffsetDb = 0
+    // effective = 20 + 0 = 20
     // dragging to 30 dB → delta = 30 - 20 = 10 → new offset = 0 + 10 = 10
     const session = makeSession({ modeId: 'speech' })
     const setSensitivityOffset = vi.fn()
@@ -86,7 +72,7 @@ describe('useThresholdChange', () => {
   })
 
   it('does NOT call setSensitivityOffset when delta is 0', () => {
-    // speech: effective = 20 + 0 + 0 = 20 → drag to 20 → delta = 0
+    // speech: effective = 20 + 0 = 20 → drag to 20 → delta = 0
     const session = makeSession({ modeId: 'speech' })
     const setSensitivityOffset = vi.fn()
 
@@ -99,13 +85,12 @@ describe('useThresholdChange', () => {
     expect(setSensitivityOffset).not.toHaveBeenCalled()
   })
 
-  it('accounts for feedbackOffsetDb and sensitivityOffsetDb in the delta', () => {
-    // speech baseline = 20, feedbackOffsetDb = 3, sensitivityOffsetDb = 2
-    // effective = 20 + 3 + 2 = 25
-    // drag to 35 → delta = 35 - 25 = 10 → new offset = 2 + 10 = 12
+  it('accounts for sensitivityOffsetDb in the delta', () => {
+    // speech baseline = 20, sensitivityOffsetDb = 2
+    // effective = 20 + 2 = 22
+    // drag to 35 → delta = 35 - 22 = 13 → new offset = 2 + 13 = 15
     const session = makeSession({
       modeId: 'speech',
-      feedbackOffsetDb: 3,
       sensitivityOffsetDb: 2,
     })
     const setSensitivityOffset = vi.fn()
@@ -117,7 +102,7 @@ describe('useThresholdChange', () => {
     result.current(35)
 
     expect(setSensitivityOffset).toHaveBeenCalledTimes(1)
-    expect(setSensitivityOffset).toHaveBeenCalledWith(12)
+    expect(setSensitivityOffset).toHaveBeenCalledWith(15)
   })
 
   it('handles negative delta (dragging threshold lower)', () => {

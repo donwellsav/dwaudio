@@ -1,16 +1,14 @@
 'use client'
 
 import { createContext, useContext } from 'react'
-import type { DetectorSettings, MicCalibrationProfile, OperationMode } from '@/types/advisory'
+import type { DetectorSettings, OperationMode } from '@/types/advisory'
 import type {
   DiagnosticsProfile,
   DisplayPrefs,
   DwaSessionState,
-  EnvironmentSelection,
   FocusRange,
   LiveOverrides,
   ModeId,
-  RoomTemplateId,
 } from '@/types/settings'
 
 // ── Context value ───────────────────────────────────────────────────────────
@@ -34,9 +32,7 @@ export interface SettingsContextValue {
   // ── Semantic actions ───────────────────────────────────────────────────
   /** Set operation mode — applies full baseline, resets live overrides */
   setMode: (modeId: ModeId) => void
-  /** Set environment — applies room template or custom offsets */
-  setEnvironment: (env: Partial<EnvironmentSelection> & { templateId?: RoomTemplateId | string }) => void
-  /** Set live sensitivity offset (dB above baseline + environment) */
+  /** Set live sensitivity offset (dB above mode baseline) */
   setSensitivityOffset: (db: number) => void
   /** Set input gain (dB) */
   setInputGain: (db: number) => void
@@ -46,8 +42,6 @@ export interface SettingsContextValue {
   setFocusRange: (range: FocusRange) => void
   /** Set EQ recommendation style */
   setEqStyle: (style: LiveOverrides['eqStyle']) => void
-  /** Set mic calibration profile */
-  setMicProfile: (profile: MicCalibrationProfile) => void
   /** Update display preferences (partial merge) */
   updateDisplay: (partial: Partial<DisplayPrefs>) => void
   /** Update diagnostics profile (partial merge) */

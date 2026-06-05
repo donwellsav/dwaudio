@@ -3,7 +3,7 @@
  *
  * Canvas rendering cannot use CSS `var()` directly — these constants
  * centralize the hardcoded hex values that were previously scattered
- * across SingleFader, InputMeterSlider, VerticalGainFader, and GEQBarView.
+ * across SingleFader, InputMeterSlider, and GEQBarView.
  */
 
 // ── Meter background ─────────────────────────────────────────────────────────

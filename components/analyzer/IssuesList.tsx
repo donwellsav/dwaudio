@@ -6,17 +6,15 @@ import { X } from 'lucide-react'
 import { getSeverityText, getSeverityColor } from '@/lib/utils/advisoryDisplay'
 import { summarizeShelfRecommendations } from '@/lib/utils/recommendationDisplay'
 import type { Advisory } from '@/types/advisory'
-import { useCompanion } from '@/hooks/useCompanion'
-import { useAdvisoryData } from '@/contexts/AdvisoryContext'
 import { useIssueAnnouncement } from '@/hooks/useIssueAnnouncement'
 import {
   useIssuesListEntries,
   useStableIssueEntries,
 } from '@/hooks/useIssuesListEntries'
-import { useSwipeHintState } from '@/hooks/useSwipeHintState'
 import { IssueCard } from './IssueCard'
 import { IssuesEmptyState } from './IssuesEmptyState'
 import { SEVERITY_ICON } from '@/components/analyzer/issueCardConfig'
+import type { SpectrumStatus } from '@/hooks/audioAnalyzerTypes'
 
 interface IssuesListProps {
   advisories: Advisory[]
@@ -27,17 +25,58 @@ interface IssuesListProps {
   touchFriendly?: boolean
   isRunning?: boolean
   onStart?: () => void
-  onFalsePositive?: (advisoryId: string) => void
-  falsePositiveIds?: ReadonlySet<string>
-  onConfirmFeedback?: (advisoryId: string) => void
-  confirmedIds?: ReadonlySet<string>
   isLowSignal?: boolean
-  swipeLabeling?: boolean
+  spectrumStatus?: SpectrumStatus | null
+  noiseFloorDb?: number | null
   showAlgorithmScores?: boolean
   showPeqDetails?: boolean
-  onStartRingOut?: () => void
   onDismiss?: (id: string) => void
 }
+
+interface TonalIssueSummaryProps {
+  summary: string
+}
+
+const TonalIssueSummary = memo(function TonalIssueSummary({
+  summary,
+}: TonalIssueSummaryProps) {
+  const [isDismissed, setIsDismissed] = useState(false)
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setIsDismissed(true)
+    }, 10_000)
+
+    return () => window.clearTimeout(timerId)
+  }, [])
+
+  if (isDismissed) return null
+
+  return (
+    <div className="rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5">
+      <div className="flex items-center gap-2">
+        <div className="font-mono text-dwa-sm font-bold tracking-[0.15em] uppercase text-blue-400">
+          Broad Tonal Note
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsDismissed(true)}
+          aria-label="Dismiss broad tonal note"
+          title="Dismiss broad tonal note"
+          className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-blue-300/70 hover:text-blue-200 hover:bg-blue-500/10 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      <p
+        className="mt-0.5 text-dwa-sm font-mono text-blue-300/80 leading-snug"
+        title={summary}
+      >
+        {summary}
+      </p>
+    </div>
+  )
+})
 
 export const IssuesList = memo(function IssuesList({
   advisories,
@@ -48,47 +87,16 @@ export const IssuesList = memo(function IssuesList({
   touchFriendly,
   isRunning,
   onStart,
-  onFalsePositive,
-  falsePositiveIds,
-  onConfirmFeedback,
-  confirmedIds,
   isLowSignal,
-  swipeLabeling,
+  spectrumStatus,
+  noiseFloorDb,
   showAlgorithmScores,
   showPeqDetails,
-  onStartRingOut,
   onDismiss,
 }: IssuesListProps) {
-  const companion = useCompanion()
-  const {
-    settings: companionSettings,
-    sendExplicitAdvisory,
-    autoSendAdvisories,
-  } = companion
-  const { companionState } = useAdvisoryData()
-
-  useEffect(() => {
-    autoSendAdvisories(advisories)
-  }, [
-    advisories,
-    autoSendAdvisories,
-    companionSettings.enabled,
-    companionSettings.autoSend,
-    companionSettings.minConfidence,
-    companionSettings.pairingCode,
-  ])
-
   const latestEntries = useIssuesListEntries(advisories, dismissedIds, maxIssues)
   const sortedEntries = useStableIssueEntries(latestEntries)
   const liveAnnouncement = useIssueAnnouncement(sortedEntries)
-  const { showSwipeHint, dismissSwipeHint } = useSwipeHintState(!!swipeLabeling)
-
-  // Auto-dismiss swipe peek after animation completes (0.6s delay + 1.2s animation ≈ 2s)
-  useEffect(() => {
-    if (!showSwipeHint || !swipeLabeling || sortedEntries.length === 0) return
-    const timerId = setTimeout(dismissSwipeHint, 2000)
-    return () => clearTimeout(timerId)
-  }, [showSwipeHint, swipeLabeling, sortedEntries.length, dismissSwipeHint])
 
   const hasResolved = useMemo(
     () => sortedEntries.some((entry) => entry.advisory.resolved),
@@ -106,26 +114,6 @@ export const IssuesList = memo(function IssuesList({
     }
     return null
   }, [sortedEntries])
-  const [dismissedTonalSummary, setDismissedTonalSummary] = useState<string | null>(null)
-  const showTonalIssueSummary =
-    tonalIssueSummary !== null && dismissedTonalSummary !== tonalIssueSummary
-
-  useEffect(() => {
-    if (tonalIssueSummary === null) {
-      setDismissedTonalSummary(null)
-    }
-  }, [tonalIssueSummary])
-
-  useEffect(() => {
-    if (!showTonalIssueSummary || tonalIssueSummary === null) return
-
-    const timerId = setTimeout(() => {
-      setDismissedTonalSummary(tonalIssueSummary)
-    }, 10_000)
-
-    return () => clearTimeout(timerId)
-  }, [showTonalIssueSummary, tonalIssueSummary])
-
   return (
     <div className="flex flex-col gap-1.5">
       <div className="sr-only" aria-live="polite" aria-atomic="true" role="status">
@@ -136,34 +124,14 @@ export const IssuesList = memo(function IssuesList({
         <IssuesEmptyState
           isRunning={isRunning}
           isLowSignal={isLowSignal}
+          spectrumStatus={spectrumStatus}
+          noiseFloorDb={noiseFloorDb}
           onStart={onStart}
-          onStartRingOut={onStartRingOut}
         />
       ) : (
         <>
-          {showTonalIssueSummary && tonalIssueSummary ? (
-            <div className="rounded border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5">
-              <div className="flex items-center gap-2">
-                <div className="font-mono text-dwa-sm font-bold tracking-[0.15em] uppercase text-blue-400">
-                  Broad Tonal Note
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDismissedTonalSummary(tonalIssueSummary)}
-                  aria-label="Dismiss broad tonal note"
-                  title="Dismiss broad tonal note"
-                  className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-blue-300/70 hover:text-blue-200 hover:bg-blue-500/10 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              </div>
-              <p
-                className="mt-0.5 text-dwa-sm font-mono text-blue-300/80 leading-snug"
-                title={tonalIssueSummary}
-              >
-                {tonalIssueSummary}
-              </p>
-            </div>
+          {tonalIssueSummary ? (
+            <TonalIssueSummary key={tonalIssueSummary} summary={tonalIssueSummary} />
           ) : null}
 
           {sortedEntries.length > 1 ? (
@@ -187,28 +155,16 @@ export const IssuesList = memo(function IssuesList({
             </div>
           ) : null}
 
-          {sortedEntries.map(({ advisory, occurrenceCount }, index) => (
+          {sortedEntries.map(({ advisory, occurrenceCount, isHeld }) => (
             <IssueCard
               key={advisory.id}
               advisory={advisory}
               occurrenceCount={occurrenceCount}
+              isHeld={isHeld}
               touchFriendly={touchFriendly}
-              onFalsePositive={onFalsePositive}
-              isFalsePositive={falsePositiveIds?.has(advisory.id) ?? false}
-              onConfirmFeedback={onConfirmFeedback}
-              isConfirmed={confirmedIds?.has(advisory.id) ?? false}
-              swipeLabeling={swipeLabeling}
               showAlgorithmScores={showAlgorithmScores}
               showPeqDetails={showPeqDetails}
               onDismiss={onDismiss}
-              onSendToMixer={
-                companionSettings.enabled &&
-                (advisory.label === 'ACOUSTIC_FEEDBACK' || advisory.label === 'POSSIBLE_RING')
-                  ? sendExplicitAdvisory
-                  : undefined
-              }
-              companionState={companionState.get(advisory.id)}
-              peekSwipe={index === 0 && showSwipeHint && !!swipeLabeling}
             />
           ))}
 
@@ -253,4 +209,3 @@ const SeverityLegend = memo(function SeverityLegend() {
     </div>
   )
 })
-

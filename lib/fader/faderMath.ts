@@ -23,6 +23,18 @@ interface FaderStepParams extends FaderValueParams {
   direction: 1 | -1
 }
 
+interface SensitivityGraphYParams {
+  value: number
+  plotHeight: number
+}
+
+interface SensitivityGraphDragParams {
+  startValue: number
+  startY: number
+  currentY: number
+  plotHeight: number
+}
+
 export function getFaderBounds({ mode, min, max }: FaderBoundsParams) {
   if (mode === 'sensitivity') {
     return {
@@ -66,6 +78,36 @@ export function getFaderThumbBottom({ mode, value, min, max }: FaderValueParams)
   }
 
   return ((value - min) / (max - min)) * 100
+}
+
+export function getSensitivityGraphY({ value, plotHeight }: SensitivityGraphYParams) {
+  const safeHeight = Math.max(1, plotHeight)
+  const clampedValue = clampFaderValue({
+    mode: 'sensitivity',
+    value,
+    min: SENSITIVITY_FADER_MIN,
+    max: SENSITIVITY_FADER_MAX,
+  })
+
+  return ((SENSITIVITY_FADER_MAX - clampedValue) / (SENSITIVITY_FADER_MAX - SENSITIVITY_FADER_MIN)) * safeHeight
+}
+
+export function getSensitivityGraphDragValue({
+  startValue,
+  startY,
+  currentY,
+  plotHeight,
+}: SensitivityGraphDragParams) {
+  const safeHeight = Math.max(1, plotHeight)
+  const valueSpan = SENSITIVITY_FADER_MAX - SENSITIVITY_FADER_MIN
+  const deltaValue = ((currentY - startY) / safeHeight) * valueSpan
+
+  return clampFaderValue({
+    mode: 'sensitivity',
+    value: Math.round(startValue - deltaValue),
+    min: SENSITIVITY_FADER_MIN,
+    max: SENSITIVITY_FADER_MAX,
+  })
 }
 
 export function stepFaderValue({ mode, value, direction, min, max }: FaderStepParams) {

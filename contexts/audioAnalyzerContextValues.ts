@@ -20,24 +20,16 @@ type EngineContextStateFields = Pick<
   | 'selectedDeviceId'
   | 'handleDeviceChange'
   | 'dspWorker'
-  | 'roomEstimate'
-  | 'roomMeasuring'
-  | 'roomProgress'
-  | 'startRoomMeasurement'
-  | 'stopRoomMeasurement'
-  | 'clearRoomEstimate'
 >
 
 type LayeredContextActions = Pick<
   AnalyzerContextState['layered'],
   | 'setMode'
-  | 'setEnvironment'
   | 'setSensitivityOffset'
   | 'setInputGain'
   | 'setAutoGain'
   | 'setFocusRange'
   | 'setEqStyle'
-  | 'setMicProfile'
   | 'updateDisplay'
   | 'updateDiagnostics'
   | 'updateLiveOverrides'
@@ -79,12 +71,6 @@ export function createEngineContextValue(state: EngineContextStateFields): Engin
     selectedDeviceId: state.selectedDeviceId,
     handleDeviceChange: state.handleDeviceChange,
     dspWorker: state.dspWorker,
-    roomEstimate: state.roomEstimate,
-    roomMeasuring: state.roomMeasuring,
-    roomProgress: state.roomProgress,
-    startRoomMeasurement: state.startRoomMeasurement,
-    stopRoomMeasurement: state.stopRoomMeasurement,
-    clearRoomEstimate: state.clearRoomEstimate,
   }
 }
 
@@ -97,13 +83,11 @@ export function createSettingsContextValue(state: SettingsContextStateFields): S
     session: state.layeredSession,
     displayPrefs: state.layeredDisplay,
     setMode: state.layered.setMode,
-    setEnvironment: state.layered.setEnvironment,
     setSensitivityOffset: state.layered.setSensitivityOffset,
     setInputGain: state.layered.setInputGain,
     setAutoGain: state.layered.setAutoGain,
     setFocusRange: state.layered.setFocusRange,
     setEqStyle: state.layered.setEqStyle,
-    setMicProfile: state.layered.setMicProfile,
     updateDisplay: state.layered.updateDisplay,
     updateDiagnostics: state.layered.updateDiagnostics,
     updateLiveOverrides: state.layered.updateLiveOverrides,

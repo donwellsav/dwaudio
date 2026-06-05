@@ -18,8 +18,6 @@ export const AdvancedNoiseFloorSection = memo(function AdvancedNoiseFloorSection
   settings,
   actions,
 }: AdvancedSectionProps) {
-  const modeDefaults = deriveDefaultDetectorSettings(settings.mode)
-
   return (
     <Section
       title="Noise Floor"
@@ -93,10 +91,10 @@ export const AdvancedPeakDetectionSection = memo(function AdvancedPeakDetectionS
             value={settings.thresholdMode}
             onValueChange={(value) => actions.updateDiagnosticField('thresholdMode', value as DiagnosticsProfile['thresholdMode'])}
           >
-            <SelectTrigger className="h-8 text-sm">
+            <SelectTrigger size="sm" className="h-7 w-full px-2 text-dwa-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent size="compact">
               <SelectItem value="absolute">Absolute - Fixed dB</SelectItem>
               <SelectItem value="relative">Relative - Above Noise</SelectItem>
               <SelectItem value="hybrid">Hybrid (Recommended)</SelectItem>
@@ -190,7 +188,7 @@ export const AdvancedDspSection = memo(function AdvancedDspSection({
       showTooltip={settings.showTooltips}
       tooltip="FFT resolution, spectral smoothing, and frequency analysis parameters."
     >
-      <div className="space-y-3">
+      <div className="space-y-1">
         <Section
           title="FFT Size"
           color="blue"
@@ -201,10 +199,10 @@ export const AdvancedDspSection = memo(function AdvancedDspSection({
             value={settings.fftSize.toString()}
             onValueChange={(value) => actions.updateDiagnosticField('fftSizeOverride', parseFftSize(value))}
           >
-            <SelectTrigger className="h-8 text-sm">
+            <SelectTrigger size="sm" className="h-7 w-full px-2 text-dwa-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent size="compact">
               <SelectItem value="4096">4096 - Fast</SelectItem>
               <SelectItem value="8192">8192 - Balanced</SelectItem>
               <SelectItem value="16384">16384 - High Res</SelectItem>

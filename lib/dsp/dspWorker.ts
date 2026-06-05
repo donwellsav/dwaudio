@@ -4,7 +4,6 @@
  * Delegates DSP computation to focused modules:
  *   - AlgorithmEngine (workerFft.ts): FFT, MSD, phase, amplitude analysis
  *   - AdvisoryManager (advisoryManager.ts): advisory lifecycle, dedup, pruning
- *   - DecayAnalyzer (decayAnalyzer.ts): room-mode decay analysis
  *
  * This file owns:
  *   - Worker message dispatch (onmessage / postMessage)
@@ -15,13 +14,12 @@
  */
 
 import { TrackManager } from './trackManager'
-import { classifyTrackWithAlgorithms, shouldReportIssue } from './classifier'
+import { classifyTrackWithAlgorithms, getReportGateDecision } from './classifier'
 import { generateEQAdvisory, analyzeSpectralTrends } from './eqAdvisor'
 import { fuseAlgorithmResults, buildFusionConfig, CombStabilityTracker, AgreementPersistenceTracker } from './advancedDetection'
-import type { CombPatternResult, FusionConfig } from './advancedDetection'
+import type { CombPatternResult, FusedDetectionResult, FusionConfig } from './advancedDetection'
 import { AlgorithmEngine } from './workerFft'
 import { AdvisoryManager } from './advisoryManager'
-import { DecayAnalyzer } from './decayAnalyzer'
 import type {
   Advisory,
   AlgorithmMode,
@@ -29,11 +27,9 @@ import type {
   DetectedPeak,
   DetectorSettings,
   RecommendationContext,
+  ReportGateId,
   TrackSummary,
 } from '@/types/advisory'
-import type { RoomDimensionEstimate } from '@/types/calibration'
-import type { SnapshotWorkerInbound, SnapshotWorkerOutbound, MarkerAlgorithmScores, UserFeedback } from '@/types/data'
-import { SnapshotCollector } from '@/lib/data/snapshotCollector'
 import { DEFAULT_SETTINGS } from './constants'
 import type { WorkerRuntimeSettings } from '@/lib/settings/runtimeSettings'
 import {
@@ -77,11 +73,6 @@ export type WorkerInboundMessage =
   | {
       type: 'reset'
     }
-  | {
-      type: 'userFeedback'
-      frequencyHz: number
-      feedback: UserFeedback
-    }
   // Periodic spectrum feed for content-type detection (independent of peak backpressure)
   | {
       type: 'spectrumUpdate'
@@ -90,26 +81,27 @@ export type WorkerInboundMessage =
       sampleRate: number
       fftSize: number
     }
-  // Room dimension estimation
-  | { type: 'startRoomMeasurement' }
-  | { type: 'stopRoomMeasurement' }
-  // Snapshot collection messages (free tier only)
-  | SnapshotWorkerInbound
+
+interface WorkerReportGateStatus {
+  lastFusionVerdict?: FusedDetectionResult['verdict']
+  lastFusionConfidence?: number
+  lastFeedbackProbability?: number
+  lastReportDecision?: 'reported' | 'blocked'
+  lastReportGate?: ReportGateId
+  lastReportGateReason?: string
+  lastReportFrequencyHz?: number
+  lastReportTimestamp?: number
+}
 
 export type WorkerOutboundMessage =
   | { type: 'advisory'; advisory: Advisory }
   | { type: 'advisoryCleared'; advisoryId: string }
-  | { type: 'tracksUpdate'; tracks: TrackSummary[]; contentType?: ContentType; algorithmMode?: AlgorithmMode; isCompressed?: boolean; compressionRatio?: number }
+  | ({ type: 'tracksUpdate'; tracks: TrackSummary[]; contentType?: ContentType; algorithmMode?: AlgorithmMode; isCompressed?: boolean; compressionRatio?: number } & WorkerReportGateStatus)
   | { type: 'combPatternUpdate'; pattern: CombPatternResult | null }
   | { type: 'returnBuffers'; spectrum: Float32Array; timeDomain?: Float32Array; source?: 'peak' | 'spectrumUpdate' }
   | { type: 'contentTypeUpdate'; contentType: ContentType; isCompressed: boolean; compressionRatio: number }
   | { type: 'ready' }
   | { type: 'error'; message: string }
-  // Room dimension estimation responses
-  | { type: 'roomEstimate'; estimate: RoomDimensionEstimate }
-  | { type: 'roomMeasurementProgress'; elapsedMs: number; stablePeaks: number }
-  // Snapshot collection responses
-  | SnapshotWorkerOutbound
 
 // ─── Worker state ────────────────────────────────────────────────────────────
 
@@ -117,6 +109,7 @@ let settings: DetectorSettings = { ...DEFAULT_SETTINGS }
 let sampleRate = 48000
 let fftSize = 8192
 let peakProcessCount = 0
+const REPORT_GATE_CLEAR_GRACE_MS = 1200
 
 // ─── Cached FusionConfig (rebuilt only on settings change, not per-peak) ─────
 let _cachedFusionConfig: FusionConfig | null = null
@@ -135,6 +128,25 @@ let lastCompressionRatio = 1
 let lastCombPattern: CombPatternResult | null = null
 let feedbackHotspotSummaries: FeedbackHotspotSummary[] = []
 let lastTracksUpdateFrameId = -1
+let lastFusionVerdict: FusedDetectionResult['verdict'] | undefined = undefined
+let lastFusionConfidence: number | undefined = undefined
+let lastFeedbackProbability: number | undefined = undefined
+let lastReportDecision: 'reported' | 'blocked' | undefined = undefined
+let lastReportGate: ReportGateId | undefined = undefined
+let lastReportGateReason: string | undefined = undefined
+let lastReportFrequencyHz: number | undefined = undefined
+let lastReportTimestamp: number | undefined = undefined
+
+function clearReportGateStatus(): void {
+  lastFusionVerdict = undefined
+  lastFusionConfidence = undefined
+  lastFeedbackProbability = undefined
+  lastReportDecision = undefined
+  lastReportGate = undefined
+  lastReportGateReason = undefined
+  lastReportFrequencyHz = undefined
+  lastReportTimestamp = undefined
+}
 
 function findFeedbackHistorySummary(frequencyHz: number): FeedbackHotspotSummary | null {
   let bestMatch: FeedbackHotspotSummary | null = null
@@ -162,8 +174,6 @@ function buildRecommendationContext(frequencyHz: number): RecommendationContext 
 
   return {
     recurrenceCount: hotspot.occurrences,
-    learnedCutDb: hotspot.learnedCutDb,
-    successfulCutCount: hotspot.successfulCutCount,
   }
 }
 
@@ -206,35 +216,15 @@ function publishTracksUpdate(force: boolean = false): void {
     algorithmMode: settings?.algorithmMode ?? 'auto',
     isCompressed: lastIsCompressed,
     compressionRatio: lastCompressionRatio,
+    lastFusionVerdict,
+    lastFusionConfidence,
+    lastFeedbackProbability,
+    lastReportDecision,
+    lastReportGate,
+    lastReportGateReason,
+    lastReportFrequencyHz,
+    lastReportTimestamp,
   } satisfies WorkerOutboundMessage)
-}
-
-// ─── Snapshot collection (free tier only) ────────────────────────────────────
-// SnapshotCollector is statically imported (line 32) but only instantiated when
-// the main thread sends 'enableCollection'. Dynamic import() was removed because
-// it silently fails in Webpack worker contexts (PR #89).
-
-let snapshotCollector: SnapshotCollector | null = null
-
-// ─── Room dimension estimation ───────────────────────────────────────────────
-// Accumulates stable peaks during measurement mode, then runs inverse solver.
-
-import { estimateRoomDimensions } from './acousticUtils'
-import { ROOM_ESTIMATION } from './constants'
-
-interface RoomMeasurementState {
-  active: boolean
-  startedAt: number
-  /** Map of frequency (quantized to 1Hz) → { firstSeen, lastSeen, qEstimate } */
-  stablePeaks: Map<number, { firstSeen: number; lastSeen: number; q: number }>
-  lastEstimate: RoomDimensionEstimate | null
-}
-
-const roomMeasurement: RoomMeasurementState = {
-  active: false,
-  startedAt: 0,
-  stablePeaks: new Map(),
-  lastEstimate: null,
 }
 
 // ─── Module instances ────────────────────────────────────────────────────────
@@ -242,7 +232,6 @@ const roomMeasurement: RoomMeasurementState = {
 const trackManager = new TrackManager()
 const algorithmEngine = new AlgorithmEngine()
 const advisoryManager = new AdvisoryManager()
-const decayAnalyzer = new DecayAnalyzer()
 
 /** Per-track comb stability trackers — prevents cross-peak contamination. */
 const combTrackers = new Map<string, CombStabilityTracker>()
@@ -335,13 +324,13 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       combTrackers.clear()
       agreementTrackers.clear()
       advisoryManager.reset()
-      decayAnalyzer.reset()
       classificationLabelHistory.clear()
       peakProcessCount = 0
       cachedShelves = null
       cachedShelvesFrameId = -1
       lastCombPattern = null
       lastTracksUpdateFrameId = -1
+      clearReportGateStatus()
 
       self.postMessage({ type: 'ready' } satisfies WorkerOutboundMessage)
       break
@@ -368,7 +357,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       trackManager.clear()
       algorithmEngine.reset()
       advisoryManager.reset()
-      decayAnalyzer.reset()
       combTrackers.clear()
       agreementTrackers.clear()
       classificationLabelHistory.clear()
@@ -376,78 +364,9 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       cachedShelves = null
       cachedShelvesFrameId = -1
       _cachedFusionConfig = null
-      snapshotCollector?.reset()
       publishCombPattern(null)
       lastTracksUpdateFrameId = -1
-      break
-    }
-
-    // ── Snapshot collection (free tier only) ──────────────────────────────
-
-    case 'enableCollection': {
-      try {
-        // Always create a new instance — re-enable may carry new sessionId,
-        // fftSize, or sampleRate (e.g., device change, session restart).
-        if (snapshotCollector) {
-          snapshotCollector.reset()
-        }
-        snapshotCollector = new SnapshotCollector(msg.sessionId, msg.fftSize, msg.sampleRate)
-        const stats = snapshotCollector.getStats()
-        self.postMessage({
-          type: 'collectionStats',
-          bufferSize: stats.bufferSize,
-          taggedEvents: stats.taggedEvents,
-          bytesCollected: stats.bytesCollected,
-        } satisfies WorkerOutboundMessage)
-      } catch (err) {
-        snapshotCollector = null
-        self.postMessage({
-          type: 'error',
-          message: `SnapshotCollector init failed: ${err instanceof Error ? err.message : String(err)}`,
-        } satisfies WorkerOutboundMessage)
-      }
-      break
-    }
-
-    case 'disableCollection': {
-      snapshotCollector = null
-      break
-    }
-
-    case 'userFeedback': {
-      if (snapshotCollector) {
-        snapshotCollector.applyUserFeedback(msg.frequencyHz, msg.feedback)
-      }
-      break
-    }
-
-    case 'getSnapshotBatch': {
-      if (snapshotCollector?.hasPendingBatches) {
-        const batch = snapshotCollector.extractBatch()
-        self.postMessage({ type: 'snapshotBatch', batch } satisfies WorkerOutboundMessage)
-      } else {
-        self.postMessage({ type: 'snapshotBatch', batch: null } satisfies WorkerOutboundMessage)
-      }
-      break
-    }
-
-    case 'startRoomMeasurement': {
-      roomMeasurement.active = true
-      roomMeasurement.startedAt = Date.now()
-      roomMeasurement.stablePeaks.clear()
-      roomMeasurement.lastEstimate = null
-      break
-    }
-
-    case 'stopRoomMeasurement': {
-      roomMeasurement.active = false
-      // Send final estimate if we have one
-      if (roomMeasurement.lastEstimate) {
-        self.postMessage({
-          type: 'roomEstimate',
-          estimate: roomMeasurement.lastEstimate,
-        } satisfies WorkerOutboundMessage)
-      }
+      clearReportGateStatus()
       break
     }
 
@@ -516,7 +435,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
         // Periodic pruning (every 50 frames) — prevents unbounded growth
         if (peakProcessCount % 50 === 0) {
           const now = peak.timestamp
-          decayAnalyzer.pruneExpired(now)
           advisoryManager.pruneBandCooldowns(now)
 
           // Prune classification label history and comb trackers for dead tracks
@@ -532,19 +450,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
           }
         }
 
-        // Room-mode decay analysis (when room physics active)
-        if (peakProcessCount % 50 === 0 && settings?.roomPreset != null && settings.roomPreset !== 'none') {
-          const rt60 = settings?.roomRT60 ?? 1.2
-          const cooldowns = decayAnalyzer.analyzeDecays(spectrum, rt60, peak.timestamp)
-          for (const cd of cooldowns) {
-            advisoryManager.setBandCooldown(cd.bandIndex, cd.timestamp)
-          }
-        }
-      }
-
-      // ── Snapshot collection (must run BEFORE finally transfers buffers) ──
-      if (snapshotCollector) {
-        snapshotCollector.recordFrame(spectrum)
       }
 
       // Compute algorithm scores for this peak
@@ -552,61 +457,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       _peakFreqScratch.length = 0
       for (let i = 0; i < activeTracks.length; i++) {
         _peakFreqScratch.push(activeTracks[i].trueFrequencyHz)
-      }
-
-      // ── Room dimension measurement accumulation ──────────────────────────
-      if (roomMeasurement.active) {
-        const now = Date.now()
-        const elapsed = now - roomMeasurement.startedAt
-
-        // Accumulate stable low-frequency peaks with sufficient Q
-        for (const t of activeTracks) {
-          if (t.trueFrequencyHz > ROOM_ESTIMATION.MAX_FREQUENCY_HZ) continue
-          if ((t.qEstimate ?? 0) < ROOM_ESTIMATION.MIN_Q) continue
-
-          const key = Math.round(t.trueFrequencyHz)
-          const existing = roomMeasurement.stablePeaks.get(key)
-          if (existing) {
-            existing.lastSeen = now
-            existing.q = Math.max(existing.q, t.qEstimate ?? 0)
-          } else {
-            roomMeasurement.stablePeaks.set(key, { firstSeen: now, lastSeen: now, q: t.qEstimate ?? 0 })
-          }
-        }
-
-        // Filter to peaks that have persisted long enough
-        const stableFreqs: number[] = []
-        for (const [freq, info] of roomMeasurement.stablePeaks) {
-          if (info.lastSeen - info.firstSeen >= ROOM_ESTIMATION.MIN_PERSISTENCE_MS) {
-            stableFreqs.push(freq)
-          }
-        }
-
-        // Send progress every ~500ms (every 25 frames at 50fps)
-        if (peakProcessCount % 25 === 0) {
-          self.postMessage({
-            type: 'roomMeasurementProgress',
-            elapsedMs: elapsed,
-            stablePeaks: stableFreqs.length,
-          } satisfies WorkerOutboundMessage)
-        }
-
-        // Attempt estimation once we have enough data
-        if (stableFreqs.length >= ROOM_ESTIMATION.MIN_PEAKS && elapsed >= 3000) {
-          const estimate = estimateRoomDimensions(stableFreqs)
-          if (estimate) {
-            roomMeasurement.lastEstimate = estimate
-            self.postMessage({
-              type: 'roomEstimate',
-              estimate,
-            } satisfies WorkerOutboundMessage)
-          }
-        }
-
-        // Auto-stop after accumulation window
-        if (elapsed >= ROOM_ESTIMATION.ACCUMULATION_WINDOW_MS) {
-          roomMeasurement.active = false
-        }
       }
 
       const algorithmResult = algorithmEngine.computeScores(
@@ -663,8 +513,8 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
         { combSweepOverride: settings.combSweepOverride, ihrGateOverride: settings.ihrGateOverride, ptmrGateOverride: settings.ptmrGateOverride }
       )
 
-      // Feed fusion result back to AlgorithmEngine for ML's next-frame input
-      algorithmEngine.updateLastFusion(fusionResult.feedbackProbability, fusionResult.confidence)
+      // Feed fusion probability back to the algorithm engine for adaptive phase skipping.
+      algorithmEngine.updateLastFusion(fusionResult.feedbackProbability)
 
       // Classify track with full algorithm context
       const classification = classifyTrackWithAlgorithms(
@@ -684,9 +534,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
         else if (smoothedLabel === 'POSSIBLE_RING') classification.severity = 'POSSIBLE_RING'
       }
 
-      // ── Mark ALL classified peaks for snapshot collection ──
-      // Collect before the reporting gate — ML model needs ring, feedback,
-      // instruments, and false positives alike to learn the boundaries.
       const isHarmonic = advisoryManager.isHarmonicOfExisting(track.trueFrequencyHz, settings)
       if (isHarmonic) {
         classification.confidence = Math.min(classification.confidence, 0.35)
@@ -696,37 +543,24 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
         classification.reasons = [...classification.reasons, 'Harmonic of existing advisory']
       }
 
-      if (snapshotCollector) {
-        // Extract intermediate algorithm scores for ML training data (v1.1+)
-        const markerScores: MarkerAlgorithmScores = {
-          msd: algorithmScores.msd?.feedbackScore ?? null,
-          phase: algorithmScores.phase?.feedbackScore ?? null,
-          spectral: algorithmScores.spectral?.feedbackScore ?? null,
-          comb: algorithmScores.comb?.confidence ?? null,
-          ihr: algorithmScores.ihr?.feedbackScore ?? null,
-          ptmr: algorithmScores.ptmr?.feedbackScore ?? null,
-          ml: algorithmScores.ml?.feedbackScore ?? null,
-          fusedProbability: fusionResult.feedbackProbability,
-          fusedConfidence: fusionResult.confidence,
-          modelVersion: algorithmScores.ml?.modelVersion ?? null,
-        }
-        snapshotCollector.markFeedbackEvent(
-          track.trueFrequencyHz,
-          track.trueAmplitudeDb,
-          classification.severity,
-          classification.confidence,
-          contentType,
-          markerScores
-        )
-        if (snapshotCollector.hasPendingBatches) {
-          const batch = snapshotCollector.extractBatch()
-          self.postMessage({ type: 'snapshotBatch', batch } satisfies WorkerOutboundMessage)
-        }
-      }
+      const reportGate = getReportGateDecision(classification, settings)
+      lastFusionVerdict = fusionResult.verdict
+      lastFusionConfidence = fusionResult.confidence
+      lastFeedbackProbability = fusionResult.feedbackProbability
+      lastReportDecision = reportGate.shouldReport ? 'reported' : 'blocked'
+      lastReportGate = reportGate.gate
+      lastReportGateReason = reportGate.reason
+      lastReportFrequencyHz = track.trueFrequencyHz
+      lastReportTimestamp = peak.timestamp
 
       // Gate on reporting threshold
-      if (!shouldReportIssue(classification, settings)) {
-        const clearedId = advisoryManager.clearForTrack(track.id)
+      if (!reportGate.shouldReport) {
+        const graceMs = Math.max(settings.clearMs ?? 0, REPORT_GATE_CLEAR_GRACE_MS)
+        const clearedId = advisoryManager.clearForTrackAfterReportGateMiss(
+          track.id,
+          peak.timestamp,
+          graceMs,
+        )
         if (clearedId) {
           self.postMessage({ type: 'advisoryCleared', advisoryId: clearedId } satisfies WorkerOutboundMessage)
         }
@@ -769,7 +603,6 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
             comb: algorithmScores.comb?.confidence ?? null,
             ihr: algorithmScores.ihr?.feedbackScore ?? null,
             ptmr: algorithmScores.ptmr?.feedbackScore ?? null,
-            ml: algorithmScores.ml?.feedbackScore ?? null,
             fusedProbability: fusionResult.feedbackProbability,
           }
           // Attach ±1 octave spectral profile around detection for smarter notch decisions
@@ -818,11 +651,8 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
     case 'clearPeak': {
       const { binIndex, frequencyHz, timestamp } = msg
 
-      // Clear from track manager and record for decay analysis
-      const lastAmplitude = trackManager.clearTrack(binIndex, timestamp)
-      if (lastAmplitude !== null) {
-        decayAnalyzer.recordDecay(binIndex, lastAmplitude, timestamp, frequencyHz)
-      }
+      // Clear from track manager; advisoryManager handles the user clear cooldown.
+      trackManager.clearTrack(binIndex, timestamp)
       trackManager.pruneInactiveTracks(timestamp)
 
       // Prune combTrackers for tracks that no longer exist
@@ -842,6 +672,7 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
         self.postMessage({ type: 'advisoryCleared', advisoryId: clearedId } satisfies WorkerOutboundMessage)
       }
 
+      clearReportGateStatus()
       publishTracksUpdate(true)
       break
     }

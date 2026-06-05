@@ -95,7 +95,7 @@ export const InputMeterSlider = memo(function InputMeterSlider({
       {handleToggleAutoGain ? (
         <button
           onClick={handleToggleAutoGain}
-          className={`flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-bold uppercase tracking-wider transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${autoGainButtonClassName}`}
+          className={`min-h-7 md:min-h-6 flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-bold uppercase tracking-wider transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${autoGainButtonClassName}`}
           title={autoGainTitle}
           aria-label={autoGainLabel}
         >

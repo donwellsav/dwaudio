@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, type MutableRefObject, type RefObject } from 'react'
 import { CANVAS_SETTINGS } from '@/lib/dsp/constants'
+import { getSensitivityGraphDragValue } from '@/lib/fader/faderMath'
 import { thresholdDraggedStorage } from '@/lib/storage/dwaStorage'
 import { clamp, freqToLogPosition, logPositionToFreq, roundFreqToNice } from '@/lib/utils/mathHelpers'
 
@@ -33,8 +34,6 @@ interface UseSpectrumCanvasInteractionsParams {
   canvasRef: RefObject<HTMLCanvasElement | null>
   onFreqRangeChange?: (min: number, max: number) => void
   onThresholdChange?: (db: number) => void
-  rtaDbMin: number
-  rtaDbMax: number
   dragRef: MutableRefObject<DragTarget>
   threshDragRef: MutableRefObject<{ active: boolean; startY: number; startDb: number }>
   showDragHintRef: MutableRefObject<boolean>
@@ -146,8 +145,6 @@ export function useSpectrumCanvasInteractions({
   canvasRef,
   onFreqRangeChange,
   onThresholdChange,
-  rtaDbMin,
-  rtaDbMax,
   dragRef,
   threshDragRef,
   showDragHintRef,
@@ -219,9 +216,12 @@ export function useSpectrumCanvasInteractions({
 
       if (threshDragRef.current.active) {
         const currentY = event.clientY - rect.top - paddingRef.current.top
-        const dbSpan = rtaDbMax - rtaDbMin
-        const deltaDb = ((threshDragRef.current.startY - currentY) / paddingRef.current.plotHeight) * dbSpan
-        const newDb = Math.round(clamp(threshDragRef.current.startDb - deltaDb, 2, 50))
+        const newDb = getSensitivityGraphDragValue({
+          startValue: threshDragRef.current.startDb,
+          startY: threshDragRef.current.startY,
+          currentY,
+          plotHeight: paddingRef.current.plotHeight,
+        })
         onThresholdChangeRef.current?.(newDb)
         dirtyRef.current = true
         return
@@ -316,8 +316,6 @@ export function useSpectrumCanvasInteractions({
     onThresholdChange,
     onThresholdChangeRef,
     paddingRef,
-    rtaDbMax,
-    rtaDbMin,
     showDragHintRef,
     threshDragRef,
   ])

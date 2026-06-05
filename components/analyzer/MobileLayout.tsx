@@ -11,8 +11,7 @@ import {
   MobilePortraitLayout,
 } from '@/components/analyzer/MobileLayoutSections'
 import { MobileSidecarFader } from '@/components/analyzer/MobileSidecarFader'
-import { SettingsPanel, type DataCollectionTabProps } from '@/components/analyzer/settings/SettingsPanel'
-import type { CalibrationTabProps } from '@/components/analyzer/settings/CalibrationTab'
+import { SettingsPanel } from '@/components/analyzer/settings/SettingsPanel'
 import { useUI } from '@/contexts/UIContext'
 import { useAnalyzerLayoutState } from '@/hooks/useAnalyzerLayoutState'
 import { useMobileFaderState } from '@/hooks/useMobileFaderState'
@@ -20,22 +19,7 @@ import { useMobileGraphState } from '@/hooks/useMobileGraphState'
 import { useMobileTabNavigation } from '@/hooks/useMobileTabNavigation'
 import { MOBILE_MAX_DISPLAYED_ISSUES } from '@/lib/dsp/constants'
 
-interface MobileLayoutProps {
-  calibration?: Omit<CalibrationTabProps, 'settings'>
-  dataCollection?: DataCollectionTabProps
-  isWizardActive?: boolean
-  onStartWizard?: () => void
-  onFinishWizard?: () => void
-  onStartRingOut?: () => void
-}
-
-export const MobileLayout = memo(function MobileLayout({
-  calibration,
-  dataCollection,
-  isWizardActive,
-  onFinishWizard,
-  onStartRingOut,
-}: MobileLayoutProps) {
+export const MobileLayout = memo(function MobileLayout() {
   const {
     isRunning,
     settings,
@@ -43,13 +27,13 @@ export const MobileLayout = memo(function MobileLayout({
     setInputGain,
     setAutoGain,
     spectrumRef,
+    spectrumStatus,
     inputLevel,
     isAutoGain,
     autoGainDb,
     autoGainLocked,
     noiseFloorDb,
     handleThresholdChange,
-    roomModes,
     spectrumDisplay,
     spectrumRange,
     spectrumLifecycle,
@@ -66,6 +50,7 @@ export const MobileLayout = memo(function MobileLayout({
     hasActiveGEQBars,
     onClearRTA,
     onClearGEQ,
+    isLowSignal,
   } = useAnalyzerLayoutState()
 
   const {
@@ -131,7 +116,6 @@ export const MobileLayout = memo(function MobileLayout({
       advisories: mobileAdvisories,
       earlyWarning,
       isFrozen,
-      roomModes,
       display: spectrumDisplay,
       range: spectrumRange,
       onFreqRangeChange: handleFreqRangeChange,
@@ -143,7 +127,6 @@ export const MobileLayout = memo(function MobileLayout({
       handleThresholdChange,
       isFrozen,
       mobileAdvisories,
-      roomModes,
       spectrumDisplay,
       spectrumRange,
       spectrumRef,
@@ -174,46 +157,36 @@ export const MobileLayout = memo(function MobileLayout({
       graphFontSize: settings.graphFontSize,
       clearedIds: geqClearedIds,
       isRunning,
+      isLowSignal,
+      spectrumStatus,
     }),
-    [geqClearedIds, isRunning, mobileAdvisories, settings.graphFontSize],
+    [geqClearedIds, isLowSignal, isRunning, mobileAdvisories, settings.graphFontSize, spectrumStatus],
   )
 
   const issuesContent = useMemo(
     () => (
       <MobileIssuesContent
-        advisories={advisories}
         mobileAdvisories={mobileAdvisories}
         earlyWarning={earlyWarning}
-        isRunning={isRunning}
-        isWizardActive={isWizardActive}
         issuesListBaseProps={issuesListBaseProps}
         onClearAll={onClearAll}
         onClearResolved={onClearResolved}
-        onFinishWizard={onFinishWizard}
-        onStartRingOut={onStartRingOut}
-        roomModes={roomModes}
       />
     ),
     [
-      advisories,
       earlyWarning,
-      isRunning,
-      isWizardActive,
       issuesListBaseProps,
       mobileAdvisories,
       onClearAll,
       onClearResolved,
-      onFinishWizard,
-      onStartRingOut,
-      roomModes,
     ],
   )
 
   const portraitSettingsContent = useMemo(
     () => (
       <>
-        <section className="rounded-lg border border-border/40 bg-card/30 p-3">
-          <h3 className="section-label mb-2">Input Gain</h3>
+        <section className="border-b border-border/40 px-2 pb-2">
+          <h3 className="section-label mb-1">Input Gain</h3>
           <InputMeterSlider
             value={settings.inputGainDb}
             onChange={(value) => setInputGain(value)}
@@ -225,11 +198,9 @@ export const MobileLayout = memo(function MobileLayout({
             onAutoGainToggle={(enabled) => setAutoGain(enabled)}
           />
         </section>
-        <div className="rounded-lg border border-border/40 bg-card/30 p-3">
+        <div className="px-2">
           <SettingsPanel
             settings={settings}
-            calibration={calibration}
-            dataCollection={dataCollection}
           />
         </div>
       </>
@@ -237,8 +208,6 @@ export const MobileLayout = memo(function MobileLayout({
     [
       autoGainDb,
       autoGainLocked,
-      calibration,
-      dataCollection,
       inputLevel,
       isAutoGain,
       setAutoGain,
@@ -250,7 +219,7 @@ export const MobileLayout = memo(function MobileLayout({
   const landscapeSettingsContent = useMemo(
     () => (
       <div className="space-y-2">
-        <section className="rounded border border-border/40 bg-card/30 p-2">
+        <section className="border-b border-border/40 px-1 pb-2">
           <h3 className="section-label mb-1 text-dwa-sm">Input Gain</h3>
           <InputMeterSlider
             value={settings.inputGainDb}
@@ -264,11 +233,9 @@ export const MobileLayout = memo(function MobileLayout({
             onAutoGainToggle={(enabled) => setAutoGain(enabled)}
           />
         </section>
-        <div className="rounded border border-border/40 bg-card/30 p-2">
+        <div className="px-1">
           <SettingsPanel
             settings={settings}
-            calibration={calibration}
-            dataCollection={dataCollection}
           />
         </div>
       </div>
@@ -276,8 +243,6 @@ export const MobileLayout = memo(function MobileLayout({
     [
       autoGainDb,
       autoGainLocked,
-      calibration,
-      dataCollection,
       inputLevel,
       isAutoGain,
       setAutoGain,
@@ -303,6 +268,7 @@ export const MobileLayout = memo(function MobileLayout({
         setAutoGain={setAutoGain}
         noiseFloorDb={noiseFloorDb}
         mobileGuidance={mobileGuidance}
+        homeValue={mobileFaderMode === 'sensitivity' ? settings.faderLinkCenterSensDb : settings.faderLinkCenterGainDb}
       />
     ),
     [
@@ -316,6 +282,8 @@ export const MobileLayout = memo(function MobileLayout({
       mobileGuidance,
       noiseFloorDb,
       setAutoGain,
+      settings.faderLinkCenterGainDb,
+      settings.faderLinkCenterSensDb,
       toggleMobileFaderMode,
     ],
   )
@@ -338,6 +306,7 @@ export const MobileLayout = memo(function MobileLayout({
         noiseFloorDb={noiseFloorDb}
         mobileGuidance={mobileGuidance}
         compact
+        homeValue={mobileFaderMode === 'sensitivity' ? settings.faderLinkCenterSensDb : settings.faderLinkCenterGainDb}
       />
     ),
     [
@@ -351,6 +320,8 @@ export const MobileLayout = memo(function MobileLayout({
       mobileGuidance,
       noiseFloorDb,
       setAutoGain,
+      settings.faderLinkCenterGainDb,
+      settings.faderLinkCenterSensDb,
       toggleMobileFaderMode,
     ],
   )
@@ -373,7 +344,6 @@ export const MobileLayout = memo(function MobileLayout({
         portraitRtaProps={portraitRtaProps}
         rtaContainerRef={rtaContainerRef}
         settingsContent={portraitSettingsContent}
-        settingsRtaProps={portraitRtaProps}
         setInlineGraphMode={setInlineGraphMode}
         sidecarFader={portraitSidecarFader}
         tabIndex={tabIndex}

@@ -19,7 +19,7 @@ export const MobileFullscreenOverlay = memo(function MobileFullscreenOverlay({
   toggleRtaFullscreen,
 }: MobileFullscreenOverlayProps) {
   return (
-    <div className="landscape:hidden lg:hidden fixed inset-0 z-50 bg-background flex flex-col">
+    <div className="landscape:hidden xl:hidden fixed inset-0 z-50 bg-background flex flex-col">
       <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-card/90">
         <span className="text-xs font-mono font-bold tracking-[0.15em] uppercase text-muted-foreground">
           Real-Time Analyzer + Graphic Equalizer

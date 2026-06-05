@@ -14,9 +14,8 @@ export function useThresholdChange(
 ) {
   return useCallback((db: number) => {
     const bl = MODE_BASELINES[session.modeId]
-    const eo = session.environment.feedbackOffsetDb
-    const ce = bl.feedbackThresholdDb + eo + session.liveOverrides.sensitivityOffsetDb
+    const ce = bl.feedbackThresholdDb + session.liveOverrides.sensitivityOffsetDb
     const d = db - ce
     if (d !== 0) setSensitivityOffset(session.liveOverrides.sensitivityOffsetDb + d)
-  }, [session.modeId, session.environment.feedbackOffsetDb, session.liveOverrides.sensitivityOffsetDb, setSensitivityOffset])
+  }, [session.modeId, session.liveOverrides.sensitivityOffsetDb, setSensitivityOffset])
 }

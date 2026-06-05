@@ -1,11 +1,7 @@
-import { headers } from 'next/headers'
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
+import { LocalServiceWorkerRegister } from '@/components/LocalServiceWorkerRegister'
 import './globals.css'
-
-const geist = Geist({ subsets: ['latin'], display: 'swap', variable: '--font-geist-sans' })
-const geistMono = Geist_Mono({ subsets: ['latin'], display: 'swap', variable: '--font-geist-mono' })
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -42,21 +38,19 @@ export const metadata: Metadata = {
   },
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const hdrs = await headers()
-  const nonce = hdrs.get('x-nonce') ?? undefined
-
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
-      <body className="font-sans antialiased" nonce={nonce} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:rounded focus:bg-primary focus:text-primary-foreground focus:text-sm focus:font-medium focus:ring-[3px] focus:ring-ring/50 focus:outline-none">
           Skip to main content
         </a>
         <ThemeProvider attribute="class" defaultTheme="dark" storageKey="dwa-theme" disableTransitionOnChange>
+          <LocalServiceWorkerRegister />
           <main id="main">{children}</main>
         </ThemeProvider>
       </body>

@@ -17,19 +17,21 @@ export default defineConfig({
       'components/**/__tests__/**/*.test.{ts,tsx}',
     ],
     environment: 'node',
+    environmentOptions: {
+      jsdom: {
+        url: 'http://localhost/',
+      },
+    },
     globals: true,
+    setupFiles: ['./tests/setup.ts'],
     coverage: {
       provider: 'v8',
       include: [
         'lib/dsp/**/*.ts',
         'lib/canvas/**/*.ts',
-        'lib/export/**/*.ts',
         'lib/storage/**/*.ts',
-        'lib/calibration/**/*.ts',
-        'lib/data/**/*.ts',
         'hooks/**/*.ts',
         'contexts/**/*.ts',
-        'app/api/**/*.ts',
       ],
       exclude: [
         '**/__tests__/**',

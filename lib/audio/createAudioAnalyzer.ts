@@ -205,6 +205,8 @@ export class AudioAnalyzer {
           isCompressed: undefined,
           compressionRatio: undefined,
           isSignalPresent: state.isSignalPresent,
+          lastConfirmLatencyMs: state.lastConfirmLatencyMs,
+          lastPeakConfirmedAt: state.lastPeakConfirmedAt,
         }
 
         this.callbacks.onSpectrum?.(spectrumData)

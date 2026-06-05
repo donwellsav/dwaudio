@@ -18,6 +18,14 @@ export interface WorkerStatusSnapshot {
   algorithmMode?: AlgorithmMode
   isCompressed?: boolean
   compressionRatio?: number
+  lastFusionVerdict?: SpectrumStatus['lastFusionVerdict']
+  lastFusionConfidence?: number
+  lastFeedbackProbability?: number
+  lastReportDecision?: SpectrumStatus['lastReportDecision']
+  lastReportGate?: SpectrumStatus['lastReportGate']
+  lastReportGateReason?: string
+  lastReportFrequencyHz?: number
+  lastReportTimestamp?: number
 }
 
 interface AnalyzerFrameState {
@@ -42,6 +50,17 @@ export function mergeFrameState(
     compressionRatio: workerStatus.compressionRatio ?? spectrum.compressionRatio,
     isSignalPresent: spectrum.isSignalPresent,
     rawPeakDb: spectrum.rawPeakDb,
+    effectiveThresholdDb: spectrum.effectiveThresholdDb,
+    lastConfirmLatencyMs: spectrum.lastConfirmLatencyMs,
+    lastPeakConfirmedAt: spectrum.lastPeakConfirmedAt,
+    lastFusionVerdict: workerStatus.lastFusionVerdict,
+    lastFusionConfidence: workerStatus.lastFusionConfidence,
+    lastFeedbackProbability: workerStatus.lastFeedbackProbability,
+    lastReportDecision: workerStatus.lastReportDecision,
+    lastReportGate: workerStatus.lastReportGate,
+    lastReportGateReason: workerStatus.lastReportGateReason,
+    lastReportFrequencyHz: workerStatus.lastReportFrequencyHz,
+    lastReportTimestamp: workerStatus.lastReportTimestamp,
   }
 
   if (
@@ -57,6 +76,17 @@ export function mergeFrameState(
     previous.spectrumStatus.compressionRatio === nextStatus.compressionRatio &&
     previous.spectrumStatus.isSignalPresent === nextStatus.isSignalPresent &&
     previous.spectrumStatus.rawPeakDb === nextStatus.rawPeakDb &&
+    previous.spectrumStatus.effectiveThresholdDb === nextStatus.effectiveThresholdDb &&
+    previous.spectrumStatus.lastConfirmLatencyMs === nextStatus.lastConfirmLatencyMs &&
+    previous.spectrumStatus.lastPeakConfirmedAt === nextStatus.lastPeakConfirmedAt &&
+    previous.spectrumStatus.lastFusionVerdict === nextStatus.lastFusionVerdict &&
+    previous.spectrumStatus.lastFusionConfidence === nextStatus.lastFusionConfidence &&
+    previous.spectrumStatus.lastFeedbackProbability === nextStatus.lastFeedbackProbability &&
+    previous.spectrumStatus.lastReportDecision === nextStatus.lastReportDecision &&
+    previous.spectrumStatus.lastReportGate === nextStatus.lastReportGate &&
+    previous.spectrumStatus.lastReportGateReason === nextStatus.lastReportGateReason &&
+    previous.spectrumStatus.lastReportFrequencyHz === nextStatus.lastReportFrequencyHz &&
+    previous.spectrumStatus.lastReportTimestamp === nextStatus.lastReportTimestamp &&
     previous.noiseFloorDb === spectrum.noiseFloorDb
   ) {
     return previous
@@ -100,6 +130,14 @@ export function useAnalyzerFrameState() {
       contentType: status.contentType,
       isCompressed: status.isCompressed,
       compressionRatio: status.compressionRatio,
+      lastFusionVerdict: status.lastFusionVerdict,
+      lastFusionConfidence: status.lastFusionConfidence,
+      lastFeedbackProbability: status.lastFeedbackProbability,
+      lastReportDecision: status.lastReportDecision,
+      lastReportGate: status.lastReportGate,
+      lastReportGateReason: status.lastReportGateReason,
+      lastReportFrequencyHz: status.lastReportFrequencyHz,
+      lastReportTimestamp: status.lastReportTimestamp,
     }
   }, [])
 

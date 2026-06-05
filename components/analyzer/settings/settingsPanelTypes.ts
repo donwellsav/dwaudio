@@ -1,1 +1,1 @@
-export type SettingsTab = 'live' | 'setup' | 'display' | 'advanced'
+export type SettingsTab = 'live' | 'display' | 'expert'

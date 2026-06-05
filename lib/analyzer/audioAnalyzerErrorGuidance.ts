@@ -3,13 +3,15 @@ interface AudioAnalyzerErrorGuidanceOptions {
   hostname?: string
 }
 
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
 export function getAudioAnalyzerErrorGuidance(
   error: string,
   options: AudioAnalyzerErrorGuidanceOptions = {},
 ): string {
   const { protocol, hostname } = options
 
-  if (protocol != null && hostname != null && protocol !== 'https:' && hostname !== 'localhost') {
+  if (protocol != null && hostname != null && protocol !== 'https:' && !LOCAL_HOSTNAMES.has(hostname)) {
     return 'Microphone requires a secure (HTTPS) connection. Ask your admin to enable HTTPS.'
   }
 

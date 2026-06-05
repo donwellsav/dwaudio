@@ -9,8 +9,6 @@ const mockStart = vi.fn(async () => {})
 const mockStop = vi.fn()
 const mockHandleDeviceChange = vi.fn()
 const mockToggleFreeze = vi.fn()
-const mockToggleFullscreen = vi.fn()
-const mockResetLayout = vi.fn()
 const mockOnClearAll = vi.fn()
 const mockOnClearGEQ = vi.fn()
 const mockOnClearRTA = vi.fn()
@@ -47,11 +45,8 @@ vi.mock('@/contexts/MeteringContext', () => ({
 
 vi.mock('@/contexts/UIContext', () => ({
   useUI: () => ({
-    isFullscreen: false,
-    toggleFullscreen: mockToggleFullscreen,
     isFrozen: false,
     toggleFreeze: mockToggleFreeze,
-    resetLayout: mockResetLayout,
   }),
 }))
 
@@ -103,8 +98,6 @@ describe('useHeaderBarState', () => {
     mockStop.mockClear()
     mockHandleDeviceChange.mockClear()
     mockToggleFreeze.mockClear()
-    mockToggleFullscreen.mockClear()
-    mockResetLayout.mockClear()
     mockOnClearAll.mockClear()
     mockOnClearGEQ.mockClear()
     mockOnClearRTA.mockClear()

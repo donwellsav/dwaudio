@@ -19,8 +19,6 @@ export interface CanvasTheme {
   peakHold: string
   freqRangeOverlay: string
   freqRangeLine: string
-  placeholder: string
-  placeholderShadow: string
   frozenBadgeBg: string
   frozenBadgeBorder: string
   frozenBadgeText: string
@@ -57,8 +55,6 @@ export const DARK_CANVAS_THEME: CanvasTheme = {
   peakHold: 'rgba(200, 210, 225, 0.25)',
   freqRangeOverlay: 'rgba(0, 0, 0, 0.45)',
   freqRangeLine: '#4B92FF',
-  placeholder: 'rgba(59, 130, 246, 0.12)',
-  placeholderShadow: 'rgba(75, 146, 255, 0.35)',
   frozenBadgeBg: 'rgba(75, 146, 255, 0.2)',
   frozenBadgeBorder: 'rgba(75, 146, 255, 0.5)',
   frozenBadgeText: '#60a5fa',
@@ -87,8 +83,6 @@ export const LIGHT_CANVAS_THEME: CanvasTheme = {
   peakHold: 'rgba(50, 60, 80, 0.30)',
   freqRangeOverlay: 'rgba(255, 255, 255, 0.45)',
   freqRangeLine: '#2563eb',
-  placeholder: 'rgba(37, 99, 235, 0.10)',
-  placeholderShadow: 'rgba(37, 99, 235, 0.25)',
   frozenBadgeBg: 'rgba(37, 99, 235, 0.15)',
   frozenBadgeBorder: 'rgba(37, 99, 235, 0.55)',
   frozenBadgeText: '#1d4ed8',
@@ -137,14 +131,6 @@ export const PEAK_HOLD_MAX_DT_SEC = 0.25
 
 /** @deprecated Use PEAK_HOLD_DECAY_DB_PER_SEC with time-based decay instead. */
 export const PEAK_HOLD_DECAY_DB = 0.5
-
-/** Frequency->dB points describing a realistic idle room noise shape */
-export const PLACEHOLDER_CURVE: [number, number][] = [
-  [20, -92], [30, -88], [50, -78], [80, -70], [120, -64],
-  [200, -58], [350, -55], [500, -54], [800, -56], [1200, -60],
-  [2000, -64], [3500, -69], [5000, -74], [8000, -80], [12000, -86],
-  [16000, -91], [20000, -95],
-]
 
 // ─── Utility Functions ──────────────────────────────────────────────────────────
 

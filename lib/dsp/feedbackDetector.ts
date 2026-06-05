@@ -9,15 +9,16 @@ import {
   isValidFftSize,
 } from '@/lib/utils/mathHelpers'
 import type { DetectedPeak, AnalysisConfig, DetectorSettings, AlgorithmMode, ContentType } from '@/types/advisory'
-import { DEFAULT_CONFIG } from '@/types/advisory'
+import { DEFAULT_CONFIG, DEFAULT_SMOOTHING_TIME_CONSTANT } from '@/types/advisory'
 import type { CombPatternResult } from './advancedDetection'
 import { MSDPool } from './msdPool'
-import { computeAWeightingTable, computeMicCalibrationTable, computeAnalysisDbBounds, aWeightingDb } from './calibrationTables'
+import { computeAWeightingTable, computeAnalysisDbBounds } from './calibrationTables'
 import { estimateQ as estimateQFn, calculatePHPR as calculatePHPRFn } from './frequencyAnalysis'
 import { PersistenceTracker } from './persistenceScoring'
 import { computeEffectiveThreshold, getMsdMinFramesForMode, classifyMsdResult, detectHarmonicRelationship, computeAdaptiveSustainMs } from './detectorUtils'
 
 const HOLD_DECAY_RATE_MULTIPLIER = 2
+const ACTIVE_PEAK_REFRESH_MS = 80
 
 export interface FeedbackDetectorCallbacks {
   onPeakDetected?: (peak: DetectedPeak) => void
@@ -52,6 +53,8 @@ export interface FeedbackDetectorState {
   msdFrameCount?: number
   isCompressed?: boolean
   compressionRatio?: number
+  lastConfirmLatencyMs?: number
+  lastPeakConfirmedAt?: number
   // Performance instrumentation (only populated when debugPerf is enabled)
   perfTimings?: PerfTimings | null
   // Computed persistence thresholds (frame-rate-independent, ms → frames at runtime)
@@ -86,6 +89,9 @@ export class FeedbackDetector {
   private deadMs: Float32Array | null = null
   private active: Uint8Array | null = null
   private activeHz: Float32Array | null = null
+  private activePeakLastDispatchMs: Float32Array | null = null
+  private candidateFirstSeenMs: Float64Array | null = null
+  private activePeakConfirmedMs: Float64Array | null = null
   private activeBins: Uint32Array | null = null
   private activeBinPos: Int32Array | null = null
   private activeCount: number = 0
@@ -105,10 +111,6 @@ export class FeedbackDetector {
   // Tracks consecutive frames where a peak persists at the same frequency
   // Feedback = persistent (vertical streak), transient = short-lived
   private _persistenceTracker: PersistenceTracker | null = null
-  /** @internal Test compatibility — exposes tracker's count buffer */
-  private get persistenceCount(): Uint16Array | null { return this._persistenceTracker?.counts ?? null }
-  /** @internal Test compatibility — exposes tracker's lastDb buffer */
-  private get persistenceLastDb(): Float32Array | null { return this._persistenceTracker?.lastDbs ?? null }
 
   // Frame-rate-independent persistence thresholds — computed from ms constants / analysisIntervalMs
   private _persistMinFrames = 5
@@ -121,11 +123,6 @@ export class FeedbackDetector {
   private aWeightingTable: Float32Array | null = null
   private aWeightingMinDb: number = 0
   private aWeightingMaxDb: number = 0
-
-  // Mic calibration compensation (ECM8000)
-  private micCalibrationTable: Float32Array | null = null
-  private micCalMinDb: number = 0
-  private micCalMaxDb: number = 0
 
   // Analysis bounds
   private startBin: number = 1
@@ -151,12 +148,8 @@ export class FeedbackDetector {
   // Harmonic detection — runtime override (set via updateSettings)
   private harmonicToleranceCents: number = HARMONIC_SETTINGS.TOLERANCE_CENTS
 
-  // Smoothing time constant for AnalyserNode (0-1) before the first settings sync.
-  private smoothingTimeConstant: number = 0.5
-
-  // Conservative bootstrap thresholds before updateSettings() applies runtime settings.
-  private ringThresholdDb: number = 3
-  private growthRateThreshold: number = 1.0
+  // Low analyser smoothing keeps feedback frequency acquisition responsive.
+  private smoothingTimeConstant: number = DEFAULT_SMOOTHING_TIME_CONSTANT
 
   // Auto-gain control — adjusts inputGainDb to keep signal in optimal detection range
   private _autoGainEnabled: boolean = false
@@ -177,6 +170,8 @@ export class FeedbackDetector {
   // Signal presence gate — prevents auto-gain from amplifying silence into phantom peaks
   private _isSignalPresent: boolean = false
   private _silenceThresholdDb: number = SIGNAL_GATE.DEFAULT_SILENCE_THRESHOLD_DB
+  private _lastConfirmLatencyMs: number | undefined = undefined
+  private _lastPeakConfirmedAt: number | undefined = undefined
 
   // Hysteresis — recently cleared bins need extra dB to re-trigger (prevents flicker duplicates)
   private _recentlyClearedBins: Map<number, number> = new Map() // bin -> cleared timestamp
@@ -416,10 +411,7 @@ export class FeedbackDetector {
       this.resetHistory()
     }
 
-    if (config.aWeightingEnabled !== undefined || config.micCalibrationProfile !== undefined) {
-      if (config.micCalibrationProfile !== undefined) {
-        this.computeMicCalibrationTable()
-      }
+    if (config.aWeightingEnabled !== undefined) {
       this.recomputeAnalysisDbBounds()
       this.noiseFloorDb = null
       this.resetHistory()
@@ -492,25 +484,9 @@ export class FeedbackDetector {
       }
     }
 
-    // Ring and growth thresholds - used in classification
-    if (settings.ringThresholdDb !== undefined) {
-      this.ringThresholdDb = settings.ringThresholdDb
-    }
-    if (settings.growthRateThreshold !== undefined) {
-      this.growthRateThreshold = settings.growthRateThreshold
-    }
-
     // A-weighting (IEC 61672-1) - applies perceptual loudness curve
     if (settings.aWeightingEnabled !== undefined) {
       mappedConfig.aWeightingEnabled = settings.aWeightingEnabled
-    }
-
-    // Room acoustics for Schroeder frequency calculation
-    if (settings.roomRT60 !== undefined) {
-      mappedConfig.roomRT60 = settings.roomRT60
-    }
-    if (settings.roomVolume !== undefined) {
-      mappedConfig.roomVolume = settings.roomVolume
     }
 
     // Confidence threshold for filtering
@@ -549,13 +525,6 @@ export class FeedbackDetector {
       mappedConfig.ignoreWhistle = settings.ignoreWhistle
     }
 
-    // Mic calibration profile — compensates for microphone frequency response.
-    // Without this mapping, CalibrationTab and mobile auto-MEMS profile changes
-    // would not propagate to the detector via the normal updateSettings() path.
-    if (settings.micCalibrationProfile !== undefined) {
-      mappedConfig.micCalibrationProfile = settings.micCalibrationProfile
-    }
-
     if (Object.keys(mappedConfig).length > 0) {
       this.updateConfig(mappedConfig)
     }
@@ -580,6 +549,8 @@ export class FeedbackDetector {
       msdFrameCount: this._msdFrameCount,
       isCompressed: this._isCompressed,
       compressionRatio: this._compressionRatio,
+      lastConfirmLatencyMs: this._lastConfirmLatencyMs,
+      lastPeakConfirmedAt: this._lastPeakConfirmedAt,
       perfTimings: this._debugPerf ? this._perfTimings : undefined,
       // Expose computed persistence thresholds for testing
       persistenceThresholds: {
@@ -656,10 +627,12 @@ export class FeedbackDetector {
       this.deadMs = new Float32Array(n)
       this.active = new Uint8Array(n)
       this.activeHz = new Float32Array(n)
+      this.activePeakLastDispatchMs = new Float32Array(n)
+      this.candidateFirstSeenMs = new Float64Array(n)
+      this.activePeakConfirmedMs = new Float64Array(n)
       this.activeBins = new Uint32Array(n)
       this.activeBinPos = new Int32Array(n)
       this.aWeightingTable = new Float32Array(n)
-      this.micCalibrationTable = new Float32Array(n)
       this._persistenceTracker = new PersistenceTracker(n)
       this._msdPool = new MSDPool(MSD_SETTINGS.POOL_SIZE, MSD_SETTINGS.HISTORY_SIZE)
     } else {
@@ -668,6 +641,7 @@ export class FeedbackDetector {
       this.deadMs!.fill(0)
       this.active!.fill(0)
       this.activeHz!.fill(0)
+      this.activePeakLastDispatchMs!.fill(0)
       this.activeBins!.fill(0)
       this._msdPool?.reset()
       this._persistenceTracker?.reset()
@@ -679,10 +653,11 @@ export class FeedbackDetector {
     }
 
     this.activeBinPos!.fill(-1)
+    this.candidateFirstSeenMs!.fill(-1)
+    this.activePeakConfirmedMs!.fill(-1)
     this.activeCount = 0
 
     this.computeAWeightingTable()
-    this.computeMicCalibrationTable()
     this.recomputeAnalysisDbBounds()
 
     this._fastConfirmCounts = new Map()
@@ -696,6 +671,9 @@ export class FeedbackDetector {
     if (this.deadMs) this.deadMs.fill(0)
     if (this.active) this.active.fill(0)
     if (this.activeHz) this.activeHz.fill(0)
+    if (this.activePeakLastDispatchMs) this.activePeakLastDispatchMs.fill(0)
+    if (this.candidateFirstSeenMs) this.candidateFirstSeenMs.fill(-1)
+    if (this.activePeakConfirmedMs) this.activePeakConfirmedMs.fill(-1)
     if (this.activeBinPos) this.activeBinPos.fill(-1)
     this.activeCount = 0
     
@@ -704,6 +682,8 @@ export class FeedbackDetector {
     this._msdFrameCount = 0
     this._fastConfirmCounts.clear()
     this._contentType = undefined
+    this._lastConfirmLatencyMs = undefined
+    this._lastPeakConfirmedAt = undefined
     
     // Reset persistence scoring
     this._persistenceTracker?.reset()
@@ -722,24 +702,10 @@ export class FeedbackDetector {
     this.aWeightingMaxDb = result.maxDb
   }
 
-  /** Delegate to extracted pure function (kept for internal callers) */
-  private aWeightingDb(fHz: number): number {
-    return aWeightingDb(fHz)
-  }
-
-  private computeMicCalibrationTable(): void {
-    const result = computeMicCalibrationTable(this.config.fftSize, this.getSampleRate(), this.config.micCalibrationProfile)
-    if (this.micCalibrationTable) this.micCalibrationTable.set(result.table)
-    this.micCalMinDb = result.minDb
-    this.micCalMaxDb = result.maxDb
-  }
-
   private recomputeAnalysisDbBounds(): void {
     const bounds = computeAnalysisDbBounds(
       this.config.aWeightingEnabled,
       this.aWeightingMinDb, this.aWeightingMaxDb,
-      this.config.micCalibrationProfile,
-      this.micCalMinDb, this.micCalMaxDb,
     )
     this.analysisMinDb = bounds.analysisMinDb
     this.analysisMaxDb = bounds.analysisMaxDb
@@ -847,7 +813,13 @@ export class FeedbackDetector {
     }
 
     // Stage 1: Read spectrum, auto-gain, silence gate
-    if (!this._measureSignalAndApplyGain(now, dt)) return
+    if (!this._measureSignalAndApplyGain(now, dt)) {
+      if (this.config.noiseFloorEnabled) {
+        this._buildPowerSpectrum()
+        this.updateNoiseFloorDb(dt)
+      }
+      return
+    }
 
     // Stage 2: Build power spectrum + prefix sums
     this._buildPowerSpectrum()
@@ -964,8 +936,8 @@ export class FeedbackDetector {
   }
 
   /**
-   * Compute power spectrum from freqDb, applying input gain, A-weighting,
-   * and mic calibration. Builds prefix sums for O(1) prominence averaging.
+   * Compute power spectrum from freqDb, applying input gain and A-weighting.
+   * Builds prefix sums for O(1) prominence averaging.
    * @internal
    */
   private _buildPowerSpectrum(): void {
@@ -978,8 +950,6 @@ export class FeedbackDetector {
 
     const useAWeighting = this.config.aWeightingEnabled && !!this.aWeightingTable
     const aTable = this.aWeightingTable
-    const useMicCalibration = this.config.micCalibrationProfile !== 'none' && !!this.micCalibrationTable
-    const micCalTable = this.micCalibrationTable
 
     // Use auto-gain when enabled, otherwise manual setting
     const inputGain = this._autoGainEnabled
@@ -1002,14 +972,9 @@ export class FeedbackDetector {
       // Apply software input gain
       db += inputGain
 
-      // Apply calibration offsets BEFORE clamping — pre-calibration clamp at
-      // -100 dB was losing precision for quiet low-frequency signals that get
-      // boosted by mic calibration (e.g. MEMS +12 dB at 20 Hz). Single clamp
-      // after calibration uses expanded bounds that account for A-weighting
-      // and mic cal extremes. LUT bounds guard (line below) handles any
-      // resulting values outside [-100, 0].
+      // Apply A-weighting before clamping. Expanded analysis bounds account
+      // for the weighting curve before the LUT guard below.
       if (useAWeighting && aTable) db += aTable[i]
-      if (useMicCalibration && micCalTable) db += micCalTable[i]
       if (db < analysisMinDb) db = analysisMinDb
       else if (db > analysisMaxDb) db = analysisMaxDb
 
@@ -1126,17 +1091,32 @@ export class FeedbackDetector {
       }
 
       if (valid) {
+        let timingMsdHint: { isHowl: boolean; fastConfirm: boolean } | null = null
+        const cachedMsd = this._msdResultCache.get(i)
+        if (cachedMsd && cachedMsd.gen === this._msdCacheGen) {
+          timingMsdHint = { isHowl: cachedMsd.isHowl, fastConfirm: cachedMsd.fastConfirm }
+        } else if (active[i] === 0) {
+          const msdResult = this.calculateMsd(i)
+          this._msdResultCache.set(i, { gen: this._msdCacheGen, ...msdResult })
+          timingMsdHint = { isHowl: msdResult.isHowl, fastConfirm: msdResult.fastConfirm }
+        }
+
+        if (active[i] === 0 && this.candidateFirstSeenMs && this.candidateFirstSeenMs[i] < 0) {
+          this.candidateFirstSeenMs[i] = now
+        }
+
         hold[i] += dt
         dead[i] = 0
-
-        const cachedMsd = this._msdResultCache.get(i)
-        const timingMsdHint = cachedMsd && cachedMsd.gen === this._msdCacheGen
-          ? { isHowl: cachedMsd.isHowl, fastConfirm: cachedMsd.fastConfirm }
-          : null
 
         const requiredSustainMs = computeAdaptiveSustainMs(sustainMs, freqHz, timingMsdHint)
         if (hold[i] >= requiredSustainMs && active[i] === 0) {
           this._registerPeak(i, now, prominence, effectiveThresholdDb)
+        } else if (
+          active[i] === 1 &&
+          this.activePeakLastDispatchMs &&
+          now - this.activePeakLastDispatchMs[i] >= ACTIVE_PEAK_REFRESH_MS
+        ) {
+          this._emitActivePeakUpdate(i, now, prominence, effectiveThresholdDb)
         }
       } else {
         hold[i] = Math.max(0, hold[i] - dt * HOLD_DECAY_RATE_MULTIPLIER)
@@ -1164,7 +1144,10 @@ export class FeedbackDetector {
                 this.activeBinPos[i] = -1
               }
             }
-                if (this.activeHz) this.activeHz[i] = 0
+            if (this.activeHz) this.activeHz[i] = 0
+            if (this.activePeakLastDispatchMs) this.activePeakLastDispatchMs[i] = 0
+            if (this.candidateFirstSeenMs) this.candidateFirstSeenMs[i] = -1
+            if (this.activePeakConfirmedMs) this.activePeakConfirmedMs[i] = -1
 
             // Reset MSD history and fast confirm for this bin
             this._msdPool!.release(i)
@@ -1184,6 +1167,9 @@ export class FeedbackDetector {
           }
         } else {
           dead[i] = 0
+          if (hold[i] <= 0 && this.candidateFirstSeenMs) {
+            this.candidateFirstSeenMs[i] = -1
+          }
         }
       }
     }
@@ -1196,8 +1182,67 @@ export class FeedbackDetector {
    * @internal
    */
   private _registerPeak(i: number, now: number, prominence: number, effectiveThresholdDb: number): void {
-    const freqDb = this.freqDb!
     const active = this.active!
+
+    // Mark active
+    active[i] = 1
+    if (this.activeBins && this.activeBinPos) {
+      const pos = this.activeCount
+      this.activeBins[pos] = i
+      this.activeBinPos[i] = pos
+      this.activeCount = pos + 1
+    }
+    if (this.activePeakLastDispatchMs) {
+      this.activePeakLastDispatchMs[i] = now
+    }
+    const firstSeenAt = this.candidateFirstSeenMs?.[i]
+    const safeFirstSeenAt = firstSeenAt != null && firstSeenAt >= 0 ? firstSeenAt : now
+    const confirmedAt = now
+    const confirmLatencyMs = Math.max(0, confirmedAt - safeFirstSeenAt)
+    if (this.activePeakConfirmedMs) {
+      this.activePeakConfirmedMs[i] = confirmedAt
+    }
+    this._lastConfirmLatencyMs = confirmLatencyMs
+    this._lastPeakConfirmedAt = confirmedAt
+    this._dispatchPeak(
+      i,
+      now,
+      prominence,
+      effectiveThresholdDb,
+      safeFirstSeenAt,
+      confirmedAt,
+    )
+  }
+
+  /**
+   * Refresh an already-confirmed peak so downstream issue cards keep tracking
+   * the current frequency/amplitude instead of waiting for clear + re-register.
+   */
+  private _emitActivePeakUpdate(i: number, now: number, prominence: number, effectiveThresholdDb: number): void {
+    if (this.activePeakLastDispatchMs) {
+      this.activePeakLastDispatchMs[i] = now
+    }
+    const firstSeenAt = this.candidateFirstSeenMs?.[i]
+    const confirmedAt = this.activePeakConfirmedMs?.[i]
+    this._dispatchPeak(
+      i,
+      now,
+      prominence,
+      effectiveThresholdDb,
+      firstSeenAt != null && firstSeenAt >= 0 ? firstSeenAt : now,
+      confirmedAt != null && confirmedAt >= 0 ? confirmedAt : now,
+    )
+  }
+
+  private _dispatchPeak(
+    i: number,
+    now: number,
+    prominence: number,
+    effectiveThresholdDb: number,
+    firstSeenAt: number,
+    confirmedAt: number,
+  ): void {
+    const freqDb = this.freqDb!
     const hold = this.holdMs!
     const ctx = this.audioContext!
     const analyser = this.analyser!
@@ -1228,15 +1273,7 @@ export class FeedbackDetector {
       isSubHarmonicRoot = result.isSubHarmonicRoot
     }
 
-    // Mark active
-    active[i] = 1
     if (this.activeHz) this.activeHz[i] = trueFrequencyHz
-    if (this.activeBins && this.activeBinPos) {
-      const pos = this.activeCount
-      this.activeBins[pos] = i
-      this.activeBinPos[i] = pos
-      this.activeCount = pos + 1
-    }
 
     // Q estimation via -3dB bandwidth
     const { qEstimate, bandwidthHz, qMeasurementMode } = this.estimateQ(i, trueAmplitudeDb, trueFrequencyHz)
@@ -1247,6 +1284,9 @@ export class FeedbackDetector {
       trueAmplitudeDb: clamp(trueAmplitudeDb, this.analysisMinDb, this.analysisMaxDb),
       prominenceDb: prominence,
       sustainedMs: hold[i],
+      firstSeenAt,
+      confirmedAt,
+      confirmLatencyMs: Math.max(0, confirmedAt - firstSeenAt),
       harmonicOfHz: harmonicRootHz,
       isSubHarmonicRoot,
       timestamp: now,
@@ -1369,7 +1409,7 @@ export class FeedbackDetector {
       const currentDb = this.freqDb[binIndex]
       const energyAboveNoise = currentDb - this.noiseFloorDb
       const minEnergyAboveNoiseDb =
-        this.config.mode === 'monitors' || this.config.mode === 'ringOut'
+        this.config.mode === 'monitors'
           ? 3
           : this.config.mode === 'speech' || this.config.mode === 'broadcast'
             ? 4
@@ -1431,6 +1471,9 @@ export class FeedbackDetector {
             }
           }
           if (this.activeHz) this.activeHz[i] = 0
+          if (this.activePeakLastDispatchMs) this.activePeakLastDispatchMs[i] = 0
+          if (this.candidateFirstSeenMs) this.candidateFirstSeenMs[i] = -1
+          if (this.activePeakConfirmedMs) this.activePeakConfirmedMs[i] = -1
 
           this._msdPool?.release(i)
           this._fastConfirmCounts.delete(i)

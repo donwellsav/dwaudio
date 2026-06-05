@@ -17,31 +17,11 @@ vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'dark' }),
 }))
 
-vi.mock('@/hooks/useCompanion', () => ({
-  useCompanion: () => ({
-    settings: { enabled: false, autoSend: false },
-    sendExplicitAdvisory: vi.fn(),
-    autoSendAdvisories: vi.fn(),
-  }),
-}))
-
-vi.mock('@/contexts/AdvisoryContext', () => ({
-  useAdvisories: () => ({ companionState: new Map() }),
-  useAdvisoryData: () => ({ companionState: new Map() }),
-}))
-
 vi.mock('@/lib/dsp/feedbackHistory', () => ({
   getFeedbackHistory: () => ({
     getOccurrenceCount: () => 1,
     getHotspots: () => [],
-    shouldRetryCompanionCut: () => null,
-    markCompanionApplied: () => {},
-    reapCompanionCuts: () => {},
   }),
-}))
-
-vi.mock('@/lib/storage/dwaStorage', () => ({
-  swipeHintStorage: { get: () => false, set: vi.fn() },
 }))
 
 vi.mock('@/contexts/SettingsContext', () => ({
@@ -102,16 +82,39 @@ describe('IssuesList', () => {
     expect(screen.getByText(/start analysis/i)).toBeDefined()
   })
 
-  it('renders ring-out button when onStartRingOut provided', () => {
-    const onStart = vi.fn()
-    const onStartRingOut = vi.fn()
-    render(<IssuesList advisories={[]} isRunning={false} onStart={onStart} onStartRingOut={onStartRingOut} />)
-    expect(screen.getByText(/ring out room/i)).toBeDefined()
-  })
-
   it('renders green all-clear state when running with no advisories', () => {
     render(<IssuesList advisories={[]} isRunning={true} />)
     expect(screen.getByText(/all clear/i)).toBeDefined()
+  })
+
+  it('renders compact analyzer status when running with no advisories', () => {
+    render(
+      <IssuesList
+        advisories={[]}
+        isRunning={true}
+        noiseFloorDb={-90}
+        spectrumStatus={{
+          peak: -18,
+          effectiveThresholdDb: -45,
+          contentType: 'music',
+          isSignalPresent: true,
+          lastConfirmLatencyMs: 84,
+          lastFusionVerdict: 'UNCERTAIN',
+          lastFeedbackProbability: 0.34,
+          lastFusionConfidence: 0.28,
+          lastReportDecision: 'blocked',
+          lastReportGate: 'fusion-uncertain',
+        }}
+      />,
+    )
+
+    expect(screen.getByText(/all clear/i)).toBeDefined()
+    expect(screen.getByText(/fusion wait/i)).toBeDefined()
+    expect(screen.getByText(/pk -18db/i)).toBeDefined()
+    expect(screen.getByText(/thr -45db/i)).toBeDefined()
+    expect(screen.getByText(/last 84ms/i)).toBeDefined()
+    expect(screen.getByText(/prob 34%/i)).toBeDefined()
+    expect(screen.getByText(/conf 28%/i)).toBeDefined()
   })
 
   it('renders low-signal warning when isLowSignal', () => {
@@ -144,20 +147,6 @@ describe('IssuesList', () => {
     render(<IssuesList advisories={[]} isRunning={true} />)
     const liveRegion = document.querySelector('[aria-live="polite"]')
     expect(liveRegion).not.toBeNull()
-  })
-
-  it('does not render Send to Mixer for relay-ineligible advisories', () => {
-    const advisories = [
-      makeAdvisory('a1', 'POSSIBLE_RING', { label: 'WHISTLE' as Advisory['label'] }),
-    ]
-
-    render(<IssuesList advisories={advisories} isRunning={true} />)
-
-    expect(
-      screen.queryByRole('button', {
-        name: /send .* eq recommendation to mixer via companion/i,
-      }),
-    ).toBeNull()
   })
 
   it('renders broad tonal issues separately from acute feedback cards', () => {

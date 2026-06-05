@@ -11,13 +11,12 @@ export {
   DARK_CANVAS_THEME, LIGHT_CANVAS_THEME,
   DB_MAJOR, DB_MINOR, DB_ALL, FREQ_LABELS,
   PEAK_HOLD_DECAY_DB_PER_SEC, PEAK_HOLD_MAX_DT_SEC, PEAK_HOLD_DECAY_DB,
-  PLACEHOLDER_CURVE,
   calcPadding,
   cachedMeasureText,
 } from './drawing/canvasTypes'
 
 // ─── Grid & Background ────────────────────────────────────────────────────────
-export { drawGrid, drawFreqZones, drawRoomModeLines, drawAxisLabels } from './drawing/drawGrid'
+export { drawGrid, drawFreqZones, drawAxisLabels } from './drawing/drawGrid'
 
 // ─── Spectrum Rendering ────────────────────────────────────────────────────────
 export { drawSpectrum, drawFreqRangeOverlay } from './drawing/drawSpectrum'
@@ -28,5 +27,5 @@ export { drawNotchOverlays, drawMarkers, drawIndicatorLines } from './drawing/dr
 // ─── Level Meters ──────────────────────────────────────────────────────────────
 export { drawLevelMeter, drawLevelGlow } from './drawing/drawMeters'
 
-// ─── Placeholder ───────────────────────────────────────────────────────────────
-export { drawPlaceholder } from './drawing/drawPlaceholder'
+// ─── Idle State ───────────────────────────────────────────────────────────────
+export { drawIdleCanvas } from './drawing/drawIdleCanvas'

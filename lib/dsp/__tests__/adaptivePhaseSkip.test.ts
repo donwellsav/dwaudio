@@ -4,7 +4,7 @@ import { AlgorithmEngine } from '../workerFft'
 describe('Adaptive Phase Skip', () => {
   function makeEngine(fusedProb = 0.5): AlgorithmEngine {
     const engine = new AlgorithmEngine()
-    engine.updateLastFusion(fusedProb, 0.9)
+    engine.updateLastFusion(fusedProb)
     return engine
   }
 

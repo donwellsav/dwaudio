@@ -68,9 +68,7 @@ If you collapse those again, you recreate the shipped silent-drift bug.
 
 The in-app help is not decorative. It now reflects actual operator guidance:
 
-- ring-out is pre-show
 - broad clusters are not always narrow-notch problems
-- room auto-detect is modal context only
 - `Perceptual` spectrum view is display-only
 
 If you change operator behavior, update the help tabs under `components/analyzer/help/`.
@@ -91,7 +89,6 @@ Do not push everything back into one generic "cut this peak" story.
 - Keep `CHANGELOG.md` branch-oriented.
 - Keep `lib/changelog.ts` product-facing.
 - Use the `docs/` folder for long-form current reference.
-- Use `docs/WIKI_SYNC.md` as the source list for a separate wiki repo.
 
 ## Validation Priorities
 
@@ -107,7 +104,6 @@ Do not push everything back into one generic "cut this peak" story.
 - speech-formant false positives
 - room-risk low-frequency buildup
 - compressed-source suppression
-- ring-out workflows
 - raw vs perceptual display invariants
 
 ## When You Should Push Back

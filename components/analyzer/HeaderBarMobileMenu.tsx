@@ -10,9 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  HelpCircle,
-  History,
-  LayoutGrid,
   Moon,
   MoreVertical,
   Pause,
@@ -33,9 +30,6 @@ interface HeaderBarMobileMenuProps {
   onToggleFreeze: () => void
   onClearDisplays: () => void
   onToggleTheme: () => void
-  onResetLayout: () => void
-  onOpenHistory: () => void
-  onOpenHelp: () => void
 }
 
 export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
@@ -46,9 +40,6 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
   onToggleFreeze,
   onClearDisplays,
   onToggleTheme,
-  onResetLayout,
-  onOpenHistory,
-  onOpenHelp,
 }: HeaderBarMobileMenuProps) {
   const isDarkTheme = isDarkResolvedTheme(resolvedTheme)
 
@@ -104,28 +95,6 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
               <Moon className="w-4 h-4" />
             )}
             {getThemeMenuLabel(resolvedTheme)}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onResetLayout}
-            className="text-sm gap-2 cursor-pointer"
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Reset Layout
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={onOpenHistory}
-            className="text-sm gap-2 cursor-pointer"
-          >
-            <History className="w-4 h-4" />
-            History
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onOpenHelp}
-            className="text-sm gap-2 cursor-pointer"
-          >
-            <HelpCircle className="w-4 h-4" />
-            Help
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

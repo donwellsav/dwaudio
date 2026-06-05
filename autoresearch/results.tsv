@@ -1,2 +1,0 @@
-timestamp	commit	loss	verdict_loss	margin_loss	fp_penalty	constraint	status	description
-2026-03-15T00:00:00	baseline	2.047418	0.556452	0.131178	0.725806	ok	keep	baseline — current weights (10/36 correct)

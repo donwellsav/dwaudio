@@ -3,7 +3,6 @@
 import { createContext, useContext } from 'react'
 import type { AudioDevice } from '@/hooks/useAudioDevices'
 import type { DSPWorkerHandle } from '@/hooks/useDSPWorker'
-import type { RoomDimensionEstimate } from '@/types/calibration'
 
 // ── Context value ───────────────────────────────────────────────────────────
 
@@ -28,21 +27,8 @@ export interface EngineContextValue {
   selectedDeviceId: string
   /** Switch device with persistence */
   handleDeviceChange: (deviceId: string) => void
-  /** DSP worker handle for data collection wiring */
+  /** DSP worker handle for local analysis wiring */
   dspWorker: DSPWorkerHandle
-  // ── Room dimension estimation ──────────────────────────────────────────
-  /** Latest room dimension estimate from inverse solver */
-  roomEstimate: RoomDimensionEstimate | null
-  /** Whether room measurement is in progress */
-  roomMeasuring: boolean
-  /** Room measurement progress */
-  roomProgress: { elapsedMs: number; stablePeaks: number }
-  /** Start room dimension measurement */
-  startRoomMeasurement: () => void
-  /** Stop room dimension measurement */
-  stopRoomMeasurement: () => void
-  /** Clear the current room estimate */
-  clearRoomEstimate: () => void
 }
 
 export const EngineContext = createContext<EngineContextValue | null>(null)

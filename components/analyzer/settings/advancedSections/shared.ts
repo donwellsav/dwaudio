@@ -2,7 +2,6 @@
 
 import type { UseAdvancedTabStateReturn } from '@/hooks/useAdvancedTabState'
 import type { Algorithm, DetectorSettings } from '@/types/advisory'
-import type { ConsentStatus } from '@/types/data'
 import type { DiagnosticsProfile } from '@/types/settings'
 
 export const AVAILABLE_ALGORITHMS: ReadonlyArray<readonly [Algorithm, string]> = [
@@ -12,30 +11,16 @@ export const AVAILABLE_ALGORITHMS: ReadonlyArray<readonly [Algorithm, string]> =
   ['comb', 'Comb'],
   ['ihr', 'IHR'],
   ['ptmr', 'PTMR'],
-  ['ml', 'ML'],
-]
-
-export const PRIVACY_SUMMARY = [
-  'Magnitude spectrum only - no audio',
-  'No device IDs or IP addresses',
-  'Random session IDs, never linked to accounts',
 ]
 
 export type AdvancedActions = Pick<
   UseAdvancedTabStateReturn,
-  'updateDisplayField' | 'updateDiagnosticField' | 'toggleAlgorithmMode' | 'toggleAlgorithm' | 'handleCollectionToggle'
+  'updateDisplayField' | 'updateDiagnosticField' | 'toggleAlgorithmMode' | 'toggleAlgorithm'
 >
 
 export interface AdvancedSectionProps {
   settings: DetectorSettings
   actions: AdvancedActions
-}
-
-export interface AdvancedDataCollectionSectionProps {
-  consentStatus: ConsentStatus
-  isCollecting?: boolean
-  showTooltips: boolean
-  handleCollectionToggle: (checked: boolean) => void
 }
 
 export function parseFftSize(value: string): 4096 | 8192 | 16384 {

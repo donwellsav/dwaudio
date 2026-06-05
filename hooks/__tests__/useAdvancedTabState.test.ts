@@ -30,26 +30,15 @@ function makeSettings(overrides: Partial<DetectorSettings> = {}): DetectorSettin
     harmonicToleranceCents: 200,
     showTooltips: true,
     aWeightingEnabled: true,
-    micCalibrationProfile: 'none',
     confidenceThreshold: 0.35,
-    roomRT60: 0.8,
-    roomVolume: 1000,
-    roomPreset: 'none',
-    roomTreatment: 'typical',
-    roomLengthM: 10,
-    roomWidthM: 10,
-    roomHeightM: 3,
-    roomDimensionsUnit: 'meters',
     mainsHumEnabled: true,
     mainsHumFundamental: 'auto',
     algorithmMode: 'auto',
-    enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml'],
-    mlEnabled: true,
+    enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr'],
     adaptivePhaseSkip: true,
     showAlgorithmScores: false,
     showPeqDetails: false,
     showFreqZones: false,
-    showRoomModeLines: false,
     spectrumWarmMode: false,
     spectrumSmoothingMode: 'raw',
     sustainMs: 500,
@@ -71,7 +60,6 @@ function makeSettings(overrides: Partial<DetectorSettings> = {}): DetectorSettin
     faderLinkRatio: 1,
     faderLinkCenterGainDb: 0,
     faderLinkCenterSensDb: 25,
-    swipeLabeling: true,
     signalTintEnabled: true,
     ...overrides,
   }
@@ -139,12 +127,12 @@ describe('useAdvancedTabState', () => {
     const { result } = renderHook(() => useAdvancedTabState({
       settings: makeSettings({
         algorithmMode: 'custom',
-        enabledAlgorithms: ['ml'],
+        enabledAlgorithms: ['ptmr'],
       }),
     }))
 
     act(() => {
-      result.current.toggleAlgorithm('ml')
+      result.current.toggleAlgorithm('ptmr')
     })
 
     const context = mockUseSettings.mock.results[0]?.value as {
@@ -152,24 +140,5 @@ describe('useAdvancedTabState', () => {
     }
 
     expect(context.updateDiagnostics).toHaveBeenCalledWith({ algorithmMode: 'auto' })
-  })
-
-  it('routes collection toggles to the right callback', () => {
-    const onEnableCollection = vi.fn()
-    const onDisableCollection = vi.fn()
-
-    const { result } = renderHook(() => useAdvancedTabState({
-      settings: makeSettings(),
-      onEnableCollection,
-      onDisableCollection,
-    }))
-
-    act(() => {
-      result.current.handleCollectionToggle(true)
-      result.current.handleCollectionToggle(false)
-    })
-
-    expect(onEnableCollection).toHaveBeenCalledTimes(1)
-    expect(onDisableCollection).toHaveBeenCalledTimes(1)
   })
 })

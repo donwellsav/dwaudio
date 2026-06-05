@@ -7,17 +7,15 @@
  *
  * Ownership layers:
  *   1. ModeBaseline      — tuned detector policy per mode
- *   2. EnvironmentSelection — venue context + acoustic offsets
+ *   2. EnvironmentSelection — local mains-hum gate state
  *   3. LiveOverrides     — operator adjustments during a show
  *   4. DisplayPrefs      — rendering / visibility / ergonomics
  *   5. DiagnosticsProfile — opt-in expert DSP controls
- *   6. Calibration       — mic profile (separate lifecycle)
  *
  * @see lib/settings/deriveSettings.ts for the derivation function
- * @see docs/CONTROLS_SETTINGS_REBUILD_SPEC_2026-03-25.md for design rationale
  */
 
-import type { Algorithm, MicCalibrationProfile, OperationMode } from '@/types/advisory'
+import type { Algorithm, OperationMode } from '@/types/advisory'
 
 // ─── Mode Baseline ────────────────────────────────────────────────────────────
 
@@ -52,59 +50,16 @@ export interface ModeBaseline {
   readonly eqPreset: 'surgical' | 'heavy'
   readonly aWeightingEnabled: boolean
   readonly defaultInputGainDb: number
-  /** Only ringOut and broadcast override this; others inherit the shared -18 dBFS target. */
+  /** Only broadcast overrides this; others inherit the shared -18 dBFS target. */
   readonly defaultAutoGainTargetDb?: number
   readonly ignoreWhistle: boolean
   /** Per-mode track inactivity timeout. Used when diagnostics.trackTimeoutMs is 'mode-default'. */
   readonly defaultTrackTimeoutMs: number
 }
 
-// ─── Environment / Room ───────────────────────────────────────────────────────
+// ─── Environment ──────────────────────────────────────────────────────────────
 
-/** Room preset template ID — matches keys from the current ROOM_PRESETS object */
-export type RoomTemplateId = 'none' | 'small' | 'medium' | 'large' | 'arena' | 'worship' | 'custom'
-
-/**
- * Frozen room template data. Offsets are relative to mode baseline —
- * not absolute threshold values. Extracted from ROOM_PRESETS in constants.ts.
- *
- * The offset math: effectiveThreshold = baseline + offset + liveOverride
- */
-export interface EnvironmentTemplate {
-  readonly templateId: RoomTemplateId
-  readonly label: string
-  readonly description: string
-  readonly lengthM: number
-  readonly widthM: number
-  readonly heightM: number
-  readonly treatment: 'untreated' | 'typical' | 'treated'
-  readonly roomRT60: number
-  readonly roomVolume: number
-  readonly schroederFreq: number
-  /** Threshold offset relative to mode baseline. Positive = more conservative. */
-  readonly feedbackOffsetDb: number
-  /** Ring threshold offset relative to mode baseline. */
-  readonly ringOffsetDb: number
-}
-
-/**
- * The user's active environment selection. May be a template or custom.
- * Offsets are always relative to the active mode baseline.
- */
 export interface EnvironmentSelection {
-  templateId: RoomTemplateId | string
-  dimensionsM?: { length: number; width: number; height: number }
-  treatment: 'untreated' | 'typical' | 'treated'
-  /** Feedback threshold offset from mode baseline (dB). Positive = more conservative. */
-  feedbackOffsetDb: number
-  /** Ring threshold offset from mode baseline (dB). */
-  ringOffsetDb: number
-  provenance: 'template' | 'measured' | 'manual'
-  /** Reverberation time — derived from dimensions + treatment, or manual entry */
-  roomRT60: number
-  /** Room volume in m³ — derived from dimensions, or manual entry */
-  roomVolume: number
-  displayUnit: 'meters' | 'feet'
   /** Whether mains hum detection gate is active. Disable in hum-free venues. */
   mainsHumEnabled: boolean
   /** Mains frequency: 'auto' detects 50/60 Hz; explicit overrides auto-detection. */
@@ -150,7 +105,6 @@ export interface DisplayPrefs {
   showAlgorithmScores: boolean
   showPeqDetails: boolean
   showFreqZones: boolean
-  showRoomModeLines: boolean
   spectrumWarmMode: boolean
   /** Display-only spectrum view. Raw is best for ring hunting; perceptual applies 1/3-octave smoothing. */
   spectrumSmoothingMode: 'raw' | 'perceptual'
@@ -163,8 +117,7 @@ export interface DisplayPrefs {
   faderLinkMode: 'unlinked' | 'linked' | 'linked-reversed'
   faderLinkRatio: number        // 0.5–2.0, sensitivity-to-gain visual ratio
   faderLinkCenterGainDb: number // Home position for gain fader (default 0)
-  faderLinkCenterSensDb: number // Home position for sensitivity fader (default 25)
-  swipeLabeling: boolean
+  faderLinkCenterSensDb: number // Home position for sensitivity fader (default 26)
   /** Enable signal-responsive background tint (severity → console color shift) */
   signalTintEnabled: boolean
 }
@@ -176,7 +129,6 @@ export interface DisplayPrefs {
  * Override fields take precedence over mode baseline when present.
  */
 export interface DiagnosticsProfile {
-  mlEnabled: boolean
   adaptivePhaseSkip?: boolean
   algorithmMode: 'auto' | 'custom'
   enabledAlgorithms: Algorithm[]
@@ -211,7 +163,7 @@ export interface DiagnosticsProfile {
 // ─── Rig Preset ───────────────────────────────────────────────────────────────
 
 /**
- * A structured rig preset that captures mode + environment + live defaults.
+ * A structured rig preset that captures mode + live defaults.
  * Schema-versioned for future migration support.
  * Display prefs and diagnostics are excluded by design.
  */
@@ -220,7 +172,6 @@ export interface RigPresetV1 {
   id: string
   name: string
   modeId: ModeId
-  environment: EnvironmentSelection
   liveDefaults: LiveOverrides
   diagnosticsProfileId?: string
   createdAt: string
@@ -238,7 +189,6 @@ export interface DwaSessionState {
   environment: EnvironmentSelection
   liveOverrides: LiveOverrides
   diagnostics: DiagnosticsProfile
-  micCalibrationProfile: MicCalibrationProfile
 }
 
 // ─── Startup Preference ───────────────────────────────────────────────────────

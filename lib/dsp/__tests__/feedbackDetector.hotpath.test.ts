@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { FeedbackDetector } from '../feedbackDetector'
 import { DEFAULT_CONFIG } from '@/types/advisory'
 import { EXP_LUT, PERSISTENCE_SCORING, PHPR_SETTINGS, MSD_SETTINGS } from '../constants'
+import { deriveFreshStartDetectorSettings } from '@/lib/settings/defaultDetectorSettings'
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -63,7 +64,6 @@ function createReadyDetector(
     ...DEFAULT_CONFIG,
     aWeightingEnabled: false, // Disable A-weighting for predictable dB values
     noiseFloorEnabled: false, // Disable noise floor so threshold is absolute
-    micCalibrationProfile: 'none' as const,
     inputGainDb: 0,
     autoGainEnabled: false,
     ...configOverrides,
@@ -77,6 +77,10 @@ function createReadyDetector(
   detector.setFftSize(FFT_SIZE)
 
   return detector
+}
+
+function getPersistenceCounts(detector: FeedbackDetector): Uint16Array | null {
+  return (detector as any)._persistenceTracker?.counts ?? null
 }
 
 /**
@@ -348,17 +352,17 @@ describe('FeedbackDetector hot path — Part A: Method-level', () => {
 
       // First call — initializes
       ;(detector as any).updatePersistence(bin, -20)
-      const count1 = (detector as any).persistenceCount[bin]
+      const count1 = getPersistenceCounts(detector)![bin]
       expect(count1).toBe(1) // First call sets to 1
 
       // Second call — same amplitude → increment
       ;(detector as any).updatePersistence(bin, -20)
-      const count2 = (detector as any).persistenceCount[bin]
+      const count2 = getPersistenceCounts(detector)![bin]
       expect(count2).toBe(2)
 
       // Third call — within tolerance (6 dB) → still increments
       ;(detector as any).updatePersistence(bin, -20 + PERSISTENCE_SCORING.AMPLITUDE_TOLERANCE_DB)
-      const count3 = (detector as any).persistenceCount[bin]
+      const count3 = getPersistenceCounts(detector)![bin]
       expect(count3).toBe(3)
     })
 
@@ -370,11 +374,11 @@ describe('FeedbackDetector hot path — Part A: Method-level', () => {
       for (let i = 0; i < 10; i++) {
         ;(detector as any).updatePersistence(bin, -20)
       }
-      expect((detector as any).persistenceCount[bin]).toBe(10)
+      expect(getPersistenceCounts(detector)![bin]).toBe(10)
 
       // Sudden amplitude jump beyond tolerance → reset to 1
       ;(detector as any).updatePersistence(bin, -20 + PERSISTENCE_SCORING.AMPLITUDE_TOLERANCE_DB + 1)
-      expect((detector as any).persistenceCount[bin]).toBe(1)
+      expect(getPersistenceCounts(detector)![bin]).toBe(1)
     })
 
     it('caps persistence at history window', () => {
@@ -387,12 +391,12 @@ describe('FeedbackDetector hot path — Part A: Method-level', () => {
         ;(detector as any).updatePersistence(bin, -20)
       }
 
-      expect((detector as any).persistenceCount[bin]).toBe(historyFrames)
+      expect(getPersistenceCounts(detector)![bin]).toBe(historyFrames)
     })
 
-    it('does nothing when persistenceCount is null', () => {
+    it('does nothing when persistence tracker is null', () => {
       const detector = new FeedbackDetector()
-      // persistenceCount is null (no buffers allocated)
+      // Persistence tracker is null (no buffers allocated)
       expect(() => {
         ;(detector as any).updatePersistence(100, -20)
       }).not.toThrow()
@@ -429,17 +433,97 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
       expect(detectedPeaks.length).toBe(0)
       expect(detector.getState().isSignalPresent).toBe(false)
     })
+
+    it('keeps measuring noise floor while signal gate is closed', () => {
+      const detector = createReadyDetector(
+        (arr) => arr.fill(-82),
+        {
+          noiseFloorEnabled: true,
+          thresholdMode: 'hybrid',
+          thresholdDb: -80,
+          relativeThresholdDb: 26,
+        },
+      )
+
+      ;(detector as any)._silenceThresholdDb = -65
+
+      for (let frame = 0; frame < 5; frame++) {
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(detector.getState().isSignalPresent).toBe(false)
+      expect(detector.getState().noiseFloorDb).toBeCloseTo(-82, 1)
+    })
   })
 
   // ── Single prominent peak ────────────────────────────────────────
 
   describe('single prominent peak detection', () => {
+    it('detects a fresh-start feedback tone through the real settings mapping under 200ms', () => {
+      const targetBin = hzToBin(1000)
+      const bedDb = -62
+      const peakDb = -38
+      const detectedPeaks: Array<{
+        binIndex: number
+        confirmLatencyMs?: number
+        effectiveThresholdDb?: number
+        trueAmplitudeDb: number
+      }> = []
+      const detector = new FeedbackDetector()
+      const freshStart = deriveFreshStartDetectorSettings()
+
+      detector.updateSettings({
+        ...freshStart,
+        aWeightingEnabled: false,
+      })
+
+      ;(detector as any).audioContext = createMockAudioContext()
+      ;(detector as any).analyser = createMockAnalyser((arr) => {
+        arr.fill(bedDb)
+        arr[targetBin - 3] = peakDb - 18
+        arr[targetBin - 2] = peakDb - 10
+        arr[targetBin - 1] = peakDb - 4
+        arr[targetBin] = peakDb
+        arr[targetBin + 1] = peakDb - 4
+        arr[targetBin + 2] = peakDb - 10
+        arr[targetBin + 3] = peakDb - 18
+      })
+      ;(detector as any).callbacks = {
+        onPeakDetected: (peak: {
+          binIndex: number
+          confirmLatencyMs?: number
+          effectiveThresholdDb?: number
+          trueAmplitudeDb: number
+        }) => detectedPeaks.push(peak),
+      }
+
+      detector.setFftSize(freshStart.fftSize)
+
+      for (let frame = 0; frame < 22; frame++) {
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(freshStart.feedbackThresholdDb).toBe(26)
+      expect(freshStart.sustainMs).toBe(180)
+      expect(detectedPeaks[0]).toBeDefined()
+      expect(detectedPeaks[0].binIndex).toBe(targetBin)
+      expect(detectedPeaks[0].confirmLatencyMs).toBeLessThanOrEqual(200)
+    })
+
     it('detects a peak at correct frequency after sustain period', () => {
       const targetBin = hzToBin(1000) // ~171
       const peakDb = -20
       const neighborDb = -60
 
-      const detectedPeaks: Array<{ trueFrequencyHz: number; binIndex: number; prominenceDb: number }> = []
+      const detectedPeaks: Array<{
+        trueFrequencyHz: number
+        binIndex: number
+        prominenceDb: number
+        sustainedMs?: number
+        firstSeenAt?: number
+        confirmedAt?: number
+        confirmLatencyMs?: number
+      }> = []
 
       const detector = createReadyDetector(
         (arr) => {
@@ -458,7 +542,15 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
       )
 
       ;(detector as any).callbacks = {
-        onPeakDetected: (peak: { trueFrequencyHz: number; binIndex: number; prominenceDb: number }) =>
+        onPeakDetected: (peak: {
+          trueFrequencyHz: number
+          binIndex: number
+          prominenceDb: number
+          sustainedMs?: number
+          firstSeenAt?: number
+          confirmedAt?: number
+          confirmLatencyMs?: number
+        }) =>
           detectedPeaks.push(peak),
       }
 
@@ -476,6 +568,10 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
       expect(peak.trueFrequencyHz).toBeLessThan(1100)
       expect(peak.binIndex).toBe(targetBin)
       expect(peak.prominenceDb).toBeGreaterThan(5)
+      expect(peak.firstSeenAt).toBe(0)
+      expect(peak.confirmedAt).toBeGreaterThanOrEqual(80)
+      expect(peak.confirmLatencyMs).toBe((peak.confirmedAt ?? 0) - (peak.firstSeenAt ?? 0))
+      expect(peak.sustainedMs).toBeGreaterThanOrEqual(100)
     })
 
     it('does not detect a peak that lacks prominence', () => {
@@ -509,6 +605,63 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
     })
   })
 
+  // ── Adaptive floor + MSD rescue ───────────────────────────────────
+
+  describe('adaptive floor with program material', () => {
+    it('confirms a narrow feedback tone just below the adaptive floor via MSD within 320ms', () => {
+      const targetBin = hzToBin(1000)
+      const bedDb = -55
+      const peakDb = -36
+      const detectedPeaks: Array<{
+        binIndex: number
+        trueAmplitudeDb: number
+        confirmLatencyMs?: number
+        effectiveThresholdDb?: number
+        msdIsHowl?: boolean
+      }> = []
+
+      const detector = createReadyDetector(
+        (arr) => {
+          arr.fill(bedDb)
+          arr[targetBin - 2] = peakDb - 12
+          arr[targetBin - 1] = peakDb - 5
+          arr[targetBin] = peakDb
+          arr[targetBin + 1] = peakDb - 5
+          arr[targetBin + 2] = peakDb - 12
+        },
+        {
+          mode: 'speech',
+          noiseFloorEnabled: true,
+          thresholdMode: 'hybrid',
+          thresholdDb: -80,
+          relativeThresholdDb: 26,
+          prominenceDb: 8,
+          sustainMs: 240,
+        },
+      )
+
+      ;(detector as any).callbacks = {
+        onPeakDetected: (peak: {
+          binIndex: number
+          trueAmplitudeDb: number
+          confirmLatencyMs?: number
+          effectiveThresholdDb?: number
+          msdIsHowl?: boolean
+        }) => detectedPeaks.push(peak),
+      }
+
+      for (let frame = 0; frame < 18; frame++) {
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(detectedPeaks.length).toBeGreaterThanOrEqual(1)
+      expect(detectedPeaks[0].binIndex).toBe(targetBin)
+      expect(detectedPeaks[0].trueAmplitudeDb).toBeLessThan(detectedPeaks[0].effectiveThresholdDb ?? -Infinity)
+      expect(detectedPeaks[0].msdIsHowl).toBe(true)
+      expect(detectedPeaks[0].confirmLatencyMs).toBeLessThanOrEqual(320)
+    })
+  })
+
   // ── Sustain timing ────────────────────────────────────────────────
 
   describe('sustain timing', () => {
@@ -532,12 +685,20 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
         onPeakDetected: (peak: unknown) => detectedPeaks.push(peak),
       }
 
-      // Run 10 frames = 200ms < 300ms sustain
+      const calculateMsdSpy = vi.spyOn(detector as any, 'calculateMsd').mockReturnValue({
+        msd: 999,
+        growthRate: 0,
+        isHowl: false,
+        fastConfirm: false,
+      })
+
+      // Run 10 frames = 200ms < 300ms sustain when no MSD fast evidence exists.
       for (let frame = 0; frame < 10; frame++) {
         ;(detector as any).analyze(frame * 20, 20)
       }
 
       expect(detectedPeaks.length).toBe(0)
+      calculateMsdSpy.mockRestore()
     })
 
     it('registers peak after sustainMs is exceeded', () => {
@@ -566,6 +727,47 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
       }
 
       expect(detectedPeaks.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('refreshes active peak frequency without waiting for clear and re-register', () => {
+      const targetBin = 400
+      let currentFrame = 0
+      const detectedPeaks: Array<{ trueFrequencyHz: number; sustainedMs: number }> = []
+
+      const detector = createReadyDetector(
+        (arr) => {
+          arr.fill(-70)
+          arr[targetBin] = -15
+          if (currentFrame < 4) {
+            arr[targetBin - 1] = -18
+            arr[targetBin + 1] = -45
+          } else {
+            arr[targetBin - 1] = -45
+            arr[targetBin + 1] = -18
+          }
+        },
+        {
+          thresholdDb: -50,
+          prominenceDb: 5,
+          sustainMs: 60,
+        },
+      )
+
+      ;(detector as any).callbacks = {
+        onPeakDetected: (peak: { trueFrequencyHz: number; sustainedMs: number }) =>
+          detectedPeaks.push(peak),
+      }
+
+      for (let frame = 0; frame < 10; frame++) {
+        currentFrame = frame
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(detectedPeaks.length).toBeGreaterThanOrEqual(2)
+      const firstPeak = detectedPeaks[0]
+      const lastPeak = detectedPeaks[detectedPeaks.length - 1]
+      expect(Math.abs(lastPeak.trueFrequencyHz - firstPeak.trueFrequencyHz)).toBeGreaterThan(1)
+      expect(lastPeak.sustainedMs).toBeGreaterThan(firstPeak.sustainedMs)
     })
 
     it('uses the reduced low-frequency sustain multiplier below 200 Hz', () => {
@@ -636,6 +838,46 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
       expect(detectedPeaks.some((peak) => peak.binIndex === targetBin)).toBe(true)
       calculateMsdSpy.mockRestore()
     })
+
+    it('uses MSD fast-confirm timing for strong above-threshold feedback peaks', () => {
+      const targetBin = 400
+      const thresholdDb = -30
+      const peakDb = -10
+      const detectedPeaks: Array<{ binIndex: number }> = []
+
+      const detector = createReadyDetector(
+        (arr) => {
+          arr.fill(-80)
+          arr[targetBin] = peakDb
+        },
+        {
+          thresholdDb,
+          prominenceDb: 5,
+          sustainMs: 240,
+        },
+      )
+
+      ;(detector as any).callbacks = {
+        onPeakDetected: (peak: { binIndex: number }) => detectedPeaks.push(peak),
+      }
+
+      const calculateMsdSpy = vi.spyOn(detector as any, 'calculateMsd').mockReturnValue({
+        msd: 0.02,
+        growthRate: 1.2,
+        isHowl: true,
+        fastConfirm: true,
+      })
+
+      // 8 frames = 160ms. Strong peaks already above threshold should still
+      // use the MSD-confirmed fast path (144ms in the mid band), instead of
+      // waiting the full 240ms base sustain window.
+      for (let frame = 0; frame < 8; frame++) {
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(detectedPeaks.some((peak) => peak.binIndex === targetBin)).toBe(true)
+      calculateMsdSpy.mockRestore()
+    })
   })
 
   // ── Persistence tracking through analyze() ────────────────────────
@@ -662,7 +904,7 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
         ;(detector as any).analyze(frame * 20, 20)
       }
 
-      const persistenceCount = (detector as any).persistenceCount as Uint16Array
+      const persistenceCount = getPersistenceCounts(detector)!
       expect(persistenceCount[targetBin]).toBeGreaterThanOrEqual(8) // ~10 frames of tracking
     })
 
@@ -687,14 +929,14 @@ describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
         ;(detector as any).analyze(frame * 20, 20)
       }
 
-      const countBefore = (detector as any).persistenceCount[targetBin] as number
+      const countBefore = getPersistenceCounts(detector)![targetBin] as number
       expect(countBefore).toBeGreaterThanOrEqual(3)
 
       // Sudden 20 dB amplitude change — exceeds AMPLITUDE_TOLERANCE_DB (6 dB)
       amplitude = -35
       ;(detector as any).analyze(5 * 20, 20)
 
-      const countAfter = (detector as any).persistenceCount[targetBin] as number
+      const countAfter = getPersistenceCounts(detector)![targetBin] as number
       // Persistence should have reset (back to 1)
       expect(countAfter).toBeLessThan(countBefore)
     })

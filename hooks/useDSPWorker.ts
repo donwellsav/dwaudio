@@ -32,7 +32,6 @@ import {
 import type {
   DSPWorkerCallbacks,
   DSPWorkerHandle,
-  PendingCollectionRequest,
   PendingHistorySyncRequest,
   PendingPeakFrame,
   WorkerInitSnapshot,
@@ -63,7 +62,6 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
   const restartCountRef = useRef(0)
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastInitRef = useRef<WorkerInitSnapshot | null>(null)
-  const pendingCollectionRef = useRef<PendingCollectionRequest | null>(null)
   const pendingHistorySyncRef = useRef<PendingHistorySyncRequest | null>(null)
   const specPoolRef = useRef<Float32Array[]>([])
   const tdPoolRef = useRef<Float32Array[]>([])
@@ -86,12 +84,12 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
       isReadyRef,
       busyRef,
       pendingPeakQueueRef,
+      droppedFramesRef,
       crashedRef,
       permanentlyDeadRef,
       restartCountRef,
       restartTimerRef,
       lastInitRef,
-      pendingCollectionRef,
       pendingHistorySyncRef,
       specPoolRef,
       tdPoolRef,
@@ -206,7 +204,7 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
           && !permanentlyDeadRef.current
           && lastInitRef.current
         ) {
-          const dropped = enqueuePendingPeak(
+          const droppedCount = enqueuePendingPeak(
             pendingPeakQueueRef.current,
             peak,
             spectrum,
@@ -214,8 +212,8 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
             fftSize,
             timeDomain,
           )
-          if (dropped) {
-            droppedFramesRef.current++
+          if (droppedCount > 0) {
+            droppedFramesRef.current += droppedCount
           }
         }
         return
@@ -283,22 +281,6 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
     postMessage({ type: 'reset' })
   }, [postMessage])
 
-  const enableCollection = useCallback<DSPWorkerHandle['enableCollection']>(
-    (sessionId, fftSize, sampleRate) => {
-      if (!isReadyRef.current) {
-        pendingCollectionRef.current = { sessionId, fftSize, sampleRate }
-        return
-      }
-
-      postMessage({ type: 'enableCollection', sessionId, fftSize, sampleRate })
-    },
-    [postMessage],
-  )
-
-  const disableCollection = useCallback(() => {
-    postMessage({ type: 'disableCollection' })
-  }, [postMessage])
-
   const syncFeedbackHistory = useCallback<DSPWorkerHandle['syncFeedbackHistory']>(
     (hotspots: FeedbackHotspotSummary[]) => {
       if (!isReadyRef.current) {
@@ -310,21 +292,6 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
     },
     [postMessage],
   )
-
-  const sendUserFeedback = useCallback<DSPWorkerHandle['sendUserFeedback']>(
-    (frequencyHz, feedback) => {
-      postMessage({ type: 'userFeedback', frequencyHz, feedback })
-    },
-    [postMessage],
-  )
-
-  const startRoomMeasurement = useCallback(() => {
-    postMessage({ type: 'startRoomMeasurement' })
-  }, [postMessage])
-
-  const stopRoomMeasurement = useCallback(() => {
-    postMessage({ type: 'stopRoomMeasurement' })
-  }, [postMessage])
 
   const terminate = useCallback(() => {
     if (restartTimerRef.current) {
@@ -371,12 +338,7 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
       clearPeak,
       reset,
       terminate,
-      enableCollection,
-      disableCollection,
       syncFeedbackHistory,
-      sendUserFeedback,
-      startRoomMeasurement,
-      stopRoomMeasurement,
     }),
     [
       init,
@@ -386,12 +348,7 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
       clearPeak,
       reset,
       terminate,
-      enableCollection,
-      disableCollection,
       syncFeedbackHistory,
-      sendUserFeedback,
-      startRoomMeasurement,
-      stopRoomMeasurement,
     ],
   )
 }

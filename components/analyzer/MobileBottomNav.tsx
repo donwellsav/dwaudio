@@ -29,7 +29,7 @@ export const MobileBottomNav = memo(function MobileBottomNav({
 }: MobileBottomNavProps) {
   return (
     <nav
-      className="landscape:hidden lg:hidden flex-shrink-0 border-t border-border/60 bg-card/90 backdrop-blur-sm"
+      className="landscape:hidden xl:hidden flex-shrink-0 border-t border-border/60 bg-card/90 backdrop-blur-sm"
       style={{ paddingBottom: 'var(--safe-bottom)' }}
     >
       <div className="flex items-stretch relative" role="tablist" onKeyDown={handleTabKeyDown}>

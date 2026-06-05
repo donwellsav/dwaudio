@@ -15,10 +15,20 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
+import { FeedbackDetector } from '@/lib/dsp/feedbackDetector'
 import { AlgorithmEngine } from '@/lib/dsp/workerFft'
-import { fuseAlgorithmResults, DEFAULT_FUSION_CONFIG } from '@/lib/dsp/advancedDetection'
-import { classifyTrackWithAlgorithms } from '@/lib/dsp/classifier'
+import {
+  AgreementPersistenceTracker,
+  CombStabilityTracker,
+  fuseAlgorithmResults,
+  DEFAULT_FUSION_CONFIG,
+  buildFusionConfig,
+} from '@/lib/dsp/advancedDetection'
+import { classifyTrackWithAlgorithms, shouldReportIssue } from '@/lib/dsp/classifier'
 import { generateEQAdvisory } from '@/lib/dsp/eqAdvisor'
+import { TrackManager } from '@/lib/dsp/trackManager'
+import { DEFAULT_SETTINGS } from '@/lib/dsp/constants'
+import { DEFAULT_CONFIG } from '@/types/advisory'
 import type { DetectedPeak, Track } from '@/types/advisory'
 import type { AlgorithmScores } from '@/lib/dsp/advancedDetection'
 import {
@@ -44,6 +54,123 @@ function makePeakSpectrum(peakBin: number, peakDb: number, floorDb: number = -80
     }
   }
   return spectrum
+}
+
+function makeMusicSpectrum(): Float32Array {
+  const spectrum = new Float32Array(NUM_BINS)
+  for (let i = 0; i < NUM_BINS; i++) {
+    const normFreq = i / NUM_BINS
+    spectrum[i] = -35 - normFreq * 15
+  }
+  return spectrum
+}
+
+function makeHarmonicInstrumentSpectrum(fundamentalBin: number): Float32Array {
+  const spectrum = new Float32Array(NUM_BINS)
+  spectrum.fill(-85)
+
+  for (let harmonic = 1; harmonic <= 5; harmonic++) {
+    const centerBin = fundamentalBin * harmonic
+    if (centerBin >= NUM_BINS) break
+    const centerDb = -24 - (harmonic - 1) * 4
+    for (let offset = -2; offset <= 2; offset++) {
+      const bin = centerBin + offset
+      if (bin >= 0 && bin < NUM_BINS) {
+        spectrum[bin] = centerDb - Math.abs(offset) * 4
+      }
+    }
+  }
+
+  return spectrum
+}
+
+function makeStableSineFrame(binIndex: number): Float32Array {
+  const frame = new Float32Array(FFT_SIZE)
+  const phaseStep = 2 * Math.PI * binIndex / FFT_SIZE
+  for (let i = 0; i < FFT_SIZE; i++) {
+    frame[i] = Math.sin(phaseStep * i)
+  }
+  return frame
+}
+
+function createDetectorHarness(
+  spectrumFiller: (array: Float32Array) => void,
+  timeDomainFiller: (array: Float32Array) => void,
+  configOverrides: NonNullable<ConstructorParameters<typeof FeedbackDetector>[0]> = {},
+): {
+  detector: FeedbackDetector
+  detectedPeaks: DetectedPeak[]
+  analyzeFrame: (timestamp: number, deltaMs: number) => void
+} {
+  const detectedPeaks: DetectedPeak[] = []
+  const detector = new FeedbackDetector({
+    ...DEFAULT_CONFIG,
+    aWeightingEnabled: false,
+    noiseFloorEnabled: false,
+    inputGainDb: 0,
+    autoGainEnabled: false,
+    analysisIntervalMs: 20,
+    thresholdDb: -50,
+    prominenceDb: 8,
+    sustainMs: 240,
+    minHz: 150,
+    maxHz: 10000,
+    ...configOverrides,
+  }, {
+    onPeakDetected: (peak) => {
+      detectedPeaks.push({ ...peak })
+    },
+  })
+
+  const analyser = {
+    frequencyBinCount: NUM_BINS,
+    fftSize: FFT_SIZE,
+    smoothingTimeConstant: 0.5,
+    minDecibels: -100,
+    maxDecibels: 0,
+    getFloatFrequencyData: (array: Float32Array) => {
+      spectrumFiller(array)
+    },
+    getFloatTimeDomainData: (array: Float32Array) => {
+      timeDomainFiller(array)
+    },
+  }
+
+  Reflect.set(detector, 'audioContext', {
+    sampleRate: SAMPLE_RATE,
+    state: 'running',
+    resume: () => Promise.resolve(),
+  })
+  Reflect.set(detector, 'analyser', analyser)
+  detector.setFftSize(FFT_SIZE)
+
+  const analyze = Reflect.get(detector, 'analyze') as (now: number, deltaMs: number) => void
+
+  return {
+    detector,
+    detectedPeaks,
+    analyzeFrame: (timestamp, deltaMs) => {
+      analyze.call(detector, timestamp, deltaMs)
+    },
+  }
+}
+
+function crestFactorForSpectrum(spectrum: Float32Array): number {
+  let peak = -Infinity
+  let sumLinear = 0
+  let validBins = 0
+
+  for (const value of spectrum) {
+    if (!Number.isFinite(value)) continue
+    if (value > peak) peak = value
+    sumLinear += 10 ** (value / 10)
+    validBins++
+  }
+
+  if (validBins === 0 || !Number.isFinite(peak)) return 0
+
+  const rmsDb = 10 * Math.log10(sumLinear / validBins)
+  return peak - rmsDb
 }
 
 /** Create a minimal Track for classification */
@@ -278,6 +405,129 @@ describe('Worker Pipeline Integration', () => {
       expect(result.pFeedback).toBeLessThan(0.5)
     })
 
+    it('reports core-consensus feedback even when harmonic content is classified as music', () => {
+      const track = makeTrack({
+        features: {
+          stabilityCentsStd: 1,
+          meanQ: 28,
+          minQ: 22,
+          meanVelocityDbPerSec: 3,
+          maxVelocityDbPerSec: 5,
+          persistenceMs: 2200,
+          harmonicityScore: 0.55,
+          modulationScore: 0.04,
+          noiseSidebandScore: 0.08,
+        },
+      })
+
+      const scores: AlgorithmScores = buildScores({
+        msd: 0.9,
+        phase: 0.9,
+        spectral: 0.85,
+        comb: 0,
+        ihr: 0.15,
+        ptmr: 0.9,
+        msdFrames: 20,
+      })
+      scores.ihr = {
+        ...scores.ihr!,
+        harmonicsFound: 4,
+        isFeedbackLike: false,
+        isMusicLike: true,
+      }
+
+      const settings = { ...DEFAULT_SETTINGS, mode: 'liveMusic' as const }
+      const fusionResult = fuseAlgorithmResults(scores, 'music', { ...DEFAULT_FUSION_CONFIG })
+      const result = classifyTrackWithAlgorithms(track, scores, fusionResult, settings)
+
+      expect(['POSSIBLE_FEEDBACK', 'FEEDBACK']).toContain(fusionResult.verdict)
+      expect(shouldReportIssue(result, settings)).toBe(true)
+    })
+
+    it('keeps strong non-MSD feedback evidence reportable in speech mode', () => {
+      const track = makeTrack({
+        trueAmplitudeDb: -24,
+        prominenceDb: 32,
+        features: {
+          stabilityCentsStd: 1,
+          meanQ: 30,
+          minQ: 24,
+          meanVelocityDbPerSec: 1.5,
+          maxVelocityDbPerSec: 3,
+          persistenceMs: 420,
+          harmonicityScore: 0.05,
+          modulationScore: 0.02,
+          noiseSidebandScore: 0.04,
+        },
+        qEstimate: 30,
+        bandwidthHz: 34,
+        velocityDbPerSec: 1.5,
+        persistenceFrames: 21,
+        isPersistent: true,
+        isHighlyPersistent: true,
+      })
+
+      const scores: AlgorithmScores = buildScores({
+        msd: 0,
+        phase: 0.2,
+        spectral: 0.8,
+        comb: 0,
+        ihr: 0.8,
+        ptmr: 0.8,
+        msdFrames: 20,
+      })
+
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const fusionResult = fuseAlgorithmResults(scores, 'speech', { ...DEFAULT_FUSION_CONFIG })
+      const result = classifyTrackWithAlgorithms(track, scores, fusionResult, settings, [1000])
+
+      expect(fusionResult.verdict).toBe('POSSIBLE_FEEDBACK')
+      expect(result.label).toBe('ACOUSTIC_FEEDBACK')
+      expect(shouldReportIssue(result, settings)).toBe(true)
+    })
+
+    it('keeps no-phase music feedback evidence reportable in live music mode', () => {
+      const track = makeTrack({
+        trueAmplitudeDb: -24,
+        prominenceDb: 32,
+        features: {
+          stabilityCentsStd: 1,
+          meanQ: 30,
+          minQ: 24,
+          meanVelocityDbPerSec: 1.5,
+          maxVelocityDbPerSec: 3,
+          persistenceMs: 420,
+          harmonicityScore: 0.05,
+          modulationScore: 0.02,
+          noiseSidebandScore: 0.04,
+        },
+        qEstimate: 30,
+        bandwidthHz: 34,
+        velocityDbPerSec: 1.5,
+        persistenceFrames: 21,
+        isPersistent: true,
+        isHighlyPersistent: true,
+      })
+
+      const scores: AlgorithmScores = buildScores({
+        msd: 0.8,
+        phase: 0,
+        spectral: 0.8,
+        comb: 0,
+        ihr: 0.8,
+        ptmr: 0.2,
+        msdFrames: 20,
+      })
+
+      const settings = { ...DEFAULT_SETTINGS, mode: 'liveMusic' as const }
+      const fusionResult = fuseAlgorithmResults(scores, 'music', { ...DEFAULT_FUSION_CONFIG })
+      const result = classifyTrackWithAlgorithms(track, scores, fusionResult, settings, [1000])
+
+      expect(fusionResult.verdict).toBe('POSSIBLE_FEEDBACK')
+      expect(result.label).toBe('ACOUSTIC_FEEDBACK')
+      expect(shouldReportIssue(result, settings)).toBe(true)
+    })
+
     it('marks NOT_FEEDBACK fusion results as ineligible for recommendation', () => {
       const track = makeTrack({
         features: {
@@ -317,11 +567,11 @@ describe('Worker Pipeline Integration', () => {
       expect(result.recommendationEligible).toBe(false)
     })
 
-    it('uses recommendation context to deepen the initial cut when history has a learned depth', () => {
+    it('uses recommendation context to deepen cuts for recurring current-run feedback', () => {
       const track = makeTrack({ trueFrequencyHz: 1000 })
 
       const baseline = generateEQAdvisory(track, 'RESONANCE', 'heavy')
-      const learned = generateEQAdvisory(
+      const recurring = generateEQAdvisory(
         track,
         'RESONANCE',
         'heavy',
@@ -330,19 +580,689 @@ describe('Worker Pipeline Integration', () => {
         undefined,
         [],
         {
-          recurrenceCount: 0,
-          learnedCutDb: -8,
-          successfulCutCount: 2,
+          recurrenceCount: 2,
         },
       )
 
-      expect(learned.peq.gainDb).toBeLessThan(baseline.peq.gainDb)
-      expect(learned.geq.suggestedDb).toBeLessThan(baseline.geq.suggestedDb)
-      expect(learned.recommendationContext).toMatchObject({
-        recurrenceCount: 0,
-        learnedCutDb: -8,
-        successfulCutCount: 2,
+      expect(recurring.peq.gainDb).toBeLessThan(baseline.peq.gainDb)
+      expect(recurring.geq.suggestedDb).toBeLessThan(baseline.geq.suggestedDb)
+      expect(recurring.recommendationContext).toMatchObject({
+        recurrenceCount: 2,
       })
+    })
+  })
+
+  describe('deterministic frame replay', () => {
+    it('uses detector MSD fallback to avoid worker cold-start latency at active-refresh cadence', () => {
+      const trackManager = new TrackManager({ historySize: 16 })
+      const peakBin = 170
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const timestamp = 1000
+      const spectrum = makePeakSpectrum(peakBin, -24)
+      const peak = makePeak({
+        binIndex: peakBin,
+        timestamp,
+        sustainedMs: 240,
+        trueAmplitudeDb: -24,
+        prominenceDb: 36,
+        qEstimate: 40,
+        bandwidthHz: 25,
+        msd: 0.02,
+        msdGrowthRate: 1.4,
+        msdIsHowl: true,
+        msdFastConfirm: true,
+        persistenceFrames: 12,
+        isPersistent: true,
+      })
+
+      const track = trackManager.processPeak(peak)
+      const activeFrequencies = trackManager.getRawTracks().map((activeTrack) => activeTrack.trueFrequencyHz)
+
+      engine.feedFrame(timestamp, spectrum, undefined, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+      const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, activeFrequencies)
+      const contentType = engine.getContentType() !== 'unknown'
+        ? engine.getContentType()
+        : algorithmResult.contentType
+      const fusionResult = fuseAlgorithmResults(
+        algorithmResult.algorithmScores,
+        contentType,
+        DEFAULT_FUSION_CONFIG,
+        track.trueFrequencyHz,
+      )
+      const classification = classifyTrackWithAlgorithms(
+        track,
+        algorithmResult.algorithmScores,
+        fusionResult,
+        settings,
+        activeFrequencies,
+      )
+
+      expect(algorithmResult.algorithmScores.msd?.msd).toBe(0.02)
+      expect(fusionResult.verdict).toBe('POSSIBLE_FEEDBACK')
+      expect(shouldReportIssue(classification, settings)).toBe(true)
+    })
+
+    it('uses TrackManager persistence to block first-frame growth while preserving fast feedback reports', () => {
+      const trackManager = new TrackManager({ historySize: 16 })
+      const peakBin = 170
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      let firstReportFrame: number | null = null
+      let firstReportPersistenceMs = 0
+
+      for (let frame = 0; frame < 8; frame++) {
+        const timestamp = 1000 + frame * 20
+        const peakDb = -30 + frame * 0.1
+        const spectrum = makePeakSpectrum(peakBin, peakDb)
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: frame * 20,
+          trueAmplitudeDb: peakDb,
+          prominenceDb: 36,
+          qEstimate: 40,
+          bandwidthHz: 25,
+        })
+        const track = trackManager.processPeak(peak)
+        const activeFrequencies = trackManager.getRawTracks().map((activeTrack) => activeTrack.trueFrequencyHz)
+
+        engine.updateContentType(spectrum, 13, SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, activeFrequencies)
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          DEFAULT_FUSION_CONFIG,
+          track.trueFrequencyHz,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          activeFrequencies,
+        )
+        const reported = shouldReportIssue(classification, settings)
+
+        if (frame < 4) {
+          expect(reported).toBe(false)
+        }
+
+        if (reported && firstReportFrame === null) {
+          firstReportFrame = frame + 1
+          firstReportPersistenceMs = classification.persistenceMs ?? 0
+        }
+      }
+
+      expect(firstReportFrame).not.toBeNull()
+      expect(firstReportFrame).toBeLessThanOrEqual(8)
+      expect(firstReportPersistenceMs).toBeGreaterThanOrEqual(80)
+    })
+
+    it('promotes clean narrow feedback within eight 20ms frames', () => {
+      const peakBin = 170
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      let firstReportFrame: number | null = null
+      let firstReportPersistenceMs = 0
+      let firstReportProbability = 0
+
+      for (let frame = 0; frame < 8; frame++) {
+        const timestamp = 1000 + frame * 20
+        const spectrum = makePeakSpectrum(peakBin, -24)
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: frame * 20,
+          trueAmplitudeDb: -24,
+          prominenceDb: 36,
+        })
+        const track = makeTrack({
+          binIndex: peakBin,
+          trueAmplitudeDb: -24,
+          prominenceDb: 36,
+          onsetTime: 1000,
+          lastUpdateTime: timestamp,
+          history: [],
+          features: {
+            stabilityCentsStd: 1,
+            meanQ: 40,
+            minQ: 34,
+            meanVelocityDbPerSec: 4,
+            maxVelocityDbPerSec: 7,
+            persistenceMs: frame * 20,
+            harmonicityScore: 0.02,
+            modulationScore: 0.01,
+            noiseSidebandScore: 0.02,
+          },
+          qEstimate: 40,
+          bandwidthHz: 25,
+          velocityDbPerSec: 4,
+          persistenceFrames: frame + 1,
+          isPersistent: frame >= 3,
+          isHighlyPersistent: frame >= 6,
+        })
+
+        engine.updateContentType(spectrum, 13, SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, [1000])
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          DEFAULT_FUSION_CONFIG,
+          track.trueFrequencyHz,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+        )
+
+        if (shouldReportIssue(classification, settings)) {
+          firstReportFrame = frame + 1
+          firstReportPersistenceMs = classification.persistenceMs ?? 0
+          firstReportProbability = fusionResult.feedbackProbability
+          break
+        }
+      }
+
+      expect(firstReportFrame).not.toBeNull()
+      expect(firstReportFrame).toBeGreaterThan(1)
+      expect(firstReportFrame).toBeLessThanOrEqual(8)
+      expect(firstReportPersistenceMs).toBeGreaterThanOrEqual(80)
+      expect(firstReportProbability).toBeGreaterThanOrEqual(DEFAULT_FUSION_CONFIG.feedbackThreshold * 0.6)
+    })
+
+    it('keeps broad music-like spectra below the recommendation path', () => {
+      const peakBin = 170
+      const settings = { ...DEFAULT_SETTINGS, mode: 'liveMusic' as const }
+      let maxFeedbackProbability = 0
+      let reported = false
+      let sawMusicContentType = false
+
+      for (let frame = 0; frame < 16; frame++) {
+        const timestamp = 1000 + frame * 20
+        const spectrum = makeMusicSpectrum()
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: frame * 20,
+          trueAmplitudeDb: spectrum[peakBin],
+          prominenceDb: 4,
+          qEstimate: 3,
+          bandwidthHz: 320,
+        })
+        const track = makeTrack({
+          binIndex: peakBin,
+          trueAmplitudeDb: spectrum[peakBin],
+          prominenceDb: 4,
+          onsetTime: 1000,
+          lastUpdateTime: timestamp,
+          features: {
+            stabilityCentsStd: 24,
+            meanQ: 3,
+            minQ: 2,
+            meanVelocityDbPerSec: 0.2,
+            maxVelocityDbPerSec: 0.4,
+            persistenceMs: frame * 20,
+            harmonicityScore: 0.9,
+            modulationScore: 0.35,
+            noiseSidebandScore: 0.45,
+          },
+          qEstimate: 3,
+          bandwidthHz: 320,
+          velocityDbPerSec: 0.2,
+          persistenceFrames: frame + 1,
+          isPersistent: frame >= 3,
+          isHighlyPersistent: frame >= 6,
+        })
+
+        engine.updateContentType(spectrum, 13, SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, undefined, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, [
+          1000,
+          2000,
+          3000,
+          4000,
+        ])
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        sawMusicContentType ||= contentType === 'music'
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          DEFAULT_FUSION_CONFIG,
+          track.trueFrequencyHz,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+        )
+
+        maxFeedbackProbability = Math.max(maxFeedbackProbability, fusionResult.feedbackProbability)
+        reported ||= shouldReportIssue(classification, settings)
+      }
+
+      expect(maxFeedbackProbability).toBeLessThan(0.35)
+      expect(reported).toBe(false)
+      expect(sawMusicContentType).toBe(true)
+    })
+
+    it('keeps stable harmonic musical notes below the recommendation path', () => {
+      const peakBin = 170
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'liveMusic' as const }
+      let maxFeedbackProbability = 0
+      let reported = false
+
+      for (let frame = 0; frame < 20; frame++) {
+        const timestamp = 1000 + frame * 20
+        const spectrum = makeHarmonicInstrumentSpectrum(peakBin)
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: frame * 20,
+          trueAmplitudeDb: spectrum[peakBin],
+          prominenceDb: 32,
+          qEstimate: 24,
+          bandwidthHz: 42,
+          firstSeenAt: 1000,
+          confirmedAt: 1120,
+          confirmLatencyMs: 120,
+        })
+        const track = makeTrack({
+          binIndex: peakBin,
+          trueAmplitudeDb: spectrum[peakBin],
+          prominenceDb: 32,
+          onsetTime: 1000,
+          lastUpdateTime: timestamp,
+          features: {
+            stabilityCentsStd: 1,
+            meanQ: 24,
+            minQ: 20,
+            meanVelocityDbPerSec: 0.1,
+            maxVelocityDbPerSec: 0.2,
+            persistenceMs: frame * 20,
+            harmonicityScore: 0.9,
+            modulationScore: 0.02,
+            noiseSidebandScore: 0.05,
+          },
+          qEstimate: 24,
+          bandwidthHz: 42,
+          velocityDbPerSec: 0.1,
+          persistenceFrames: frame + 1,
+          isPersistent: frame >= 3,
+          isHighlyPersistent: frame >= 6,
+        })
+
+        engine.updateContentType(spectrum, 12, SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, [
+          1000,
+          2000,
+          3000,
+          4000,
+          5000,
+        ])
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          DEFAULT_FUSION_CONFIG,
+          track.trueFrequencyHz,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          [1000, 2000, 3000, 4000, 5000],
+        )
+
+        maxFeedbackProbability = Math.max(maxFeedbackProbability, fusionResult.feedbackProbability)
+        reported ||= shouldReportIssue(classification, settings)
+      }
+
+      expect(maxFeedbackProbability).toBeLessThan(0.35)
+      expect(reported).toBe(false)
+    })
+
+    it('keeps steady chromatic pure tones below the recommendation path', () => {
+      const peakBin = Math.round(440 / (SAMPLE_RATE / FFT_SIZE))
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const fusionConfig = buildFusionConfig(settings)
+      const combTracker = new CombStabilityTracker()
+      const agreementTracker = new AgreementPersistenceTracker()
+      let maxFeedbackProbability = 0
+      let reported = false
+
+      for (let frame = 0; frame < 20; frame++) {
+        const timestamp = 1000 + frame * 80
+        const spectrum = makePeakSpectrum(peakBin, -18)
+        const peak = makePeak({
+          binIndex: peakBin,
+          trueFrequencyHz: 440,
+          timestamp,
+          sustainedMs: 240 + frame * 80,
+          trueAmplitudeDb: -18,
+          prominenceDb: 34,
+          qEstimate: 34,
+          bandwidthHz: 22,
+          firstSeenAt: 1000,
+          confirmedAt: 1240,
+          confirmLatencyMs: 240,
+          msd: 0.04,
+          msdGrowthRate: 0.05,
+          msdIsHowl: true,
+          msdFastConfirm: true,
+          persistenceFrames: 12 + frame,
+          isPersistent: true,
+          isHighlyPersistent: frame >= 2,
+        })
+        const track = makeTrack({
+          binIndex: peakBin,
+          trueFrequencyHz: 440,
+          trueAmplitudeDb: -18,
+          prominenceDb: 34,
+          onsetTime: 1000,
+          onsetDb: -18,
+          lastUpdateTime: timestamp,
+          features: {
+            stabilityCentsStd: 1,
+            meanQ: 34,
+            minQ: 28,
+            meanVelocityDbPerSec: 0.05,
+            maxVelocityDbPerSec: 0.1,
+            persistenceMs: 240 + frame * 80,
+            harmonicityScore: 0.04,
+            modulationScore: 0.01,
+            noiseSidebandScore: 0.02,
+          },
+          qEstimate: 34,
+          bandwidthHz: 22,
+          velocityDbPerSec: 0.05,
+          persistenceFrames: 12 + frame,
+          isPersistent: true,
+          isHighlyPersistent: frame >= 2,
+        })
+
+        engine.updateContentType(spectrum, crestFactorForSpectrum(spectrum), SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, [440])
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          fusionConfig,
+          track.trueFrequencyHz,
+          combTracker,
+          agreementTracker,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          [440],
+        )
+
+        maxFeedbackProbability = Math.max(maxFeedbackProbability, fusionResult.feedbackProbability)
+        reported ||= shouldReportIssue(classification, settings)
+      }
+
+      expect(maxFeedbackProbability).toBeGreaterThan(0.35)
+      expect(reported).toBe(false)
+    })
+
+    it('reports clean confirmed feedback quickly at the live active-peak cadence', () => {
+      const trackManager = new TrackManager({ historySize: 32 })
+      const peakBin = 170
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const fusionConfig = buildFusionConfig(settings)
+      const combTracker = new CombStabilityTracker()
+      const agreementTracker = new AgreementPersistenceTracker()
+      const firstSeenAt = 1000
+      const confirmedAt = 1240
+      let firstReportAt: number | null = null
+      let firstReportPersistenceMs = 0
+      let firstReportProbability = 0
+
+      for (let frame = 0; frame < 8; frame++) {
+        const timestamp = confirmedAt + frame * 80
+        const spectrum = makePeakSpectrum(peakBin, -24)
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: timestamp - firstSeenAt,
+          trueAmplitudeDb: -24,
+          prominenceDb: 36,
+          qEstimate: 40,
+          bandwidthHz: 25,
+          firstSeenAt,
+          confirmedAt,
+          confirmLatencyMs: confirmedAt - firstSeenAt,
+          msd: 0.02,
+          msdGrowthRate: 1.4,
+          msdIsHowl: true,
+          msdFastConfirm: true,
+          persistenceFrames: 12 + frame,
+          isPersistent: true,
+          isHighlyPersistent: frame >= 2,
+        })
+        const track = trackManager.processPeak(peak)
+        const activeFrequencies = trackManager.getRawTracks().map((activeTrack) => activeTrack.trueFrequencyHz)
+
+        engine.updateContentType(spectrum, crestFactorForSpectrum(spectrum), SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, activeFrequencies)
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          fusionConfig,
+          track.trueFrequencyHz,
+          combTracker,
+          agreementTracker,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          activeFrequencies,
+        )
+
+        if (shouldReportIssue(classification, settings)) {
+          firstReportAt = timestamp
+          firstReportPersistenceMs = classification.persistenceMs ?? 0
+          firstReportProbability = fusionResult.feedbackProbability
+          break
+        }
+      }
+
+      expect(firstReportAt).not.toBeNull()
+      expect((firstReportAt ?? Infinity) - firstSeenAt).toBeLessThanOrEqual(400)
+      expect(firstReportPersistenceMs).toBeGreaterThanOrEqual(240)
+      expect(firstReportProbability).toBeGreaterThanOrEqual(DEFAULT_FUSION_CONFIG.feedbackThreshold * 0.6)
+    })
+
+    it('reports a detector-produced narrow feedback peak through the worker gate within 240ms', () => {
+      const trackManager = new TrackManager({ historySize: 32 })
+      const peakBin = 170
+      const spectrumFixture = makePeakSpectrum(peakBin, -24)
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const fusionConfig = buildFusionConfig(settings)
+      const combTracker = new CombStabilityTracker()
+      const agreementTracker = new AgreementPersistenceTracker()
+      const { detector, detectedPeaks, analyzeFrame } = createDetectorHarness(
+        (array) => array.set(spectrumFixture),
+        (array) => array.set(sineFrame),
+      )
+
+      for (let frame = 0; frame < 28; frame++) {
+        analyzeFrame(1000 + frame * 20, 20)
+      }
+
+      const firstPeak = detectedPeaks[0]
+      const detectorSpectrum = detector.getSpectrum()
+      const detectorTimeDomain = detector.getTimeDomain()
+      expect(firstPeak).toBeDefined()
+      expect(detectorSpectrum).not.toBeNull()
+      expect(detectorTimeDomain).not.toBeNull()
+      expect(firstPeak.confirmLatencyMs).toBeLessThanOrEqual(200)
+      expect(firstPeak.confirmLatencyMs).toBe((firstPeak.confirmedAt ?? 0) - (firstPeak.firstSeenAt ?? 0))
+
+      let firstReportAt: number | null = null
+      let firstReportProbability = 0
+      let firstReportPersistenceMs = 0
+
+      for (const peak of detectedPeaks) {
+        const track = trackManager.processPeak(peak)
+        const activeFrequencies = trackManager.getRawTracks().map((activeTrack) => activeTrack.trueFrequencyHz)
+
+        engine.updateContentType(
+          detectorSpectrum!,
+          crestFactorForSpectrum(detectorSpectrum!),
+          SAMPLE_RATE,
+          FFT_SIZE,
+        )
+        engine.feedFrame(
+          peak.timestamp,
+          detectorSpectrum!,
+          detectorTimeDomain ?? sineFrame,
+          150,
+          10000,
+          SAMPLE_RATE,
+          FFT_SIZE,
+        )
+        const algorithmResult = engine.computeScores(
+          peak,
+          track,
+          detectorSpectrum!,
+          SAMPLE_RATE,
+          FFT_SIZE,
+          activeFrequencies,
+        )
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          fusionConfig,
+          track.trueFrequencyHz,
+          combTracker,
+          agreementTracker,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          activeFrequencies,
+        )
+
+        if (shouldReportIssue(classification, settings)) {
+          firstReportAt = peak.timestamp
+          firstReportProbability = fusionResult.feedbackProbability
+          firstReportPersistenceMs = classification.persistenceMs ?? 0
+          break
+        }
+      }
+
+      expect(firstReportAt).not.toBeNull()
+      expect((firstReportAt ?? Infinity) - (firstPeak.firstSeenAt ?? firstPeak.timestamp)).toBeLessThanOrEqual(240)
+      expect((firstReportAt ?? Infinity) - (firstPeak.confirmedAt ?? firstPeak.timestamp)).toBeLessThanOrEqual(80)
+      expect(firstReportPersistenceMs).toBeGreaterThanOrEqual(firstPeak.confirmLatencyMs ?? 0)
+      expect(firstReportProbability).toBeGreaterThanOrEqual(DEFAULT_FUSION_CONFIG.feedbackThreshold * 0.6)
+    })
+
+    it('keeps sustained harmonic music quiet at the live active-peak cadence', () => {
+      const trackManager = new TrackManager({ historySize: 32 })
+      const peakBin = 170
+      const sineFrame = makeStableSineFrame(peakBin)
+      const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
+      const fusionConfig = buildFusionConfig(settings)
+      const combTracker = new CombStabilityTracker()
+      const agreementTracker = new AgreementPersistenceTracker()
+      let maxFeedbackProbability = 0
+      let reported = false
+      let sawMusicLikeHarmonics = false
+
+      for (let frame = 0; frame < 20; frame++) {
+        const timestamp = 1000 + frame * 80
+        const spectrum = makeHarmonicInstrumentSpectrum(peakBin)
+        const peak = makePeak({
+          binIndex: peakBin,
+          timestamp,
+          sustainedMs: frame * 80,
+          trueAmplitudeDb: spectrum[peakBin],
+          prominenceDb: 32,
+          qEstimate: 24,
+          bandwidthHz: 42,
+          firstSeenAt: 1000,
+          confirmedAt: 1240,
+          confirmLatencyMs: 240,
+          msd: 0.04,
+          msdGrowthRate: 0.1,
+          msdIsHowl: true,
+          msdFastConfirm: true,
+          persistenceFrames: 12 + frame,
+          isPersistent: true,
+          isHighlyPersistent: frame >= 2,
+        })
+        const track = trackManager.processPeak(peak)
+        const activeFrequencies = [1000, 2000, 3000, 4000, 5000]
+
+        engine.updateContentType(spectrum, 12, SAMPLE_RATE, FFT_SIZE)
+        engine.feedFrame(timestamp, spectrum, sineFrame, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+        const algorithmResult = engine.computeScores(peak, track, spectrum, SAMPLE_RATE, FFT_SIZE, activeFrequencies)
+        const contentType = engine.getContentType() !== 'unknown'
+          ? engine.getContentType()
+          : algorithmResult.contentType
+        const fusionResult = fuseAlgorithmResults(
+          algorithmResult.algorithmScores,
+          contentType,
+          fusionConfig,
+          track.trueFrequencyHz,
+          combTracker,
+          agreementTracker,
+        )
+        const classification = classifyTrackWithAlgorithms(
+          track,
+          algorithmResult.algorithmScores,
+          fusionResult,
+          settings,
+          activeFrequencies,
+        )
+
+        sawMusicLikeHarmonics ||= algorithmResult.algorithmScores.ihr?.isMusicLike === true
+        maxFeedbackProbability = Math.max(maxFeedbackProbability, fusionResult.feedbackProbability)
+        reported ||= shouldReportIssue(classification, settings)
+      }
+
+      expect(sawMusicLikeHarmonics).toBe(true)
+      expect(maxFeedbackProbability).toBeLessThan(0.35)
+      expect(reported).toBe(false)
     })
   })
 
@@ -360,7 +1280,7 @@ describe('Worker Pipeline Integration', () => {
       }).not.toThrow()
     })
 
-    it('fusion handles all-null ML score', () => {
+    it('fusion handles sparse algorithm scores', () => {
       const scores: AlgorithmScores = buildScores({
         msd: 0.5,
         phase: 0.5,

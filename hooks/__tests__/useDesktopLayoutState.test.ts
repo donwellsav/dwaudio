@@ -13,7 +13,7 @@ describe('useDesktopLayoutState helpers', () => {
 
     expect(getDesktopSidebarViewState('issues', true)).toEqual({
       showSidebarIssues: false,
-      showSidebarControls: false,
+      showSidebarControls: true,
     })
 
     expect(getDesktopSidebarViewState('controls', false)).toEqual({

@@ -26,10 +26,25 @@ interface DualFaderStripProps {
   isRunning: boolean
 }
 
-const LINK_MODES: { mode: FaderLinkMode; icon: string; title: string }[] = [
-  { mode: 'unlinked', icon: '⊘', title: 'Unlinked - independent faders' },
-  { mode: 'linked', icon: '⛓', title: 'Linked - both move same direction' },
-  { mode: 'linked-reversed', icon: '⛓̸', title: 'Linked reversed - opposite directions' },
+const LINK_MODES: { mode: FaderLinkMode; icon: string; title: string; ariaLabel: string }[] = [
+  {
+    mode: 'unlinked',
+    icon: '⊘',
+    title: 'Unlinked - independent faders',
+    ariaLabel: 'Use independent gain and sensitivity faders',
+  },
+  {
+    mode: 'linked',
+    icon: '⛓',
+    title: 'Linked - both move same direction',
+    ariaLabel: 'Link gain and sensitivity faders in the same direction',
+  },
+  {
+    mode: 'linked-reversed',
+    icon: '⛓̸',
+    title: 'Linked reversed - opposite directions',
+    ariaLabel: 'Link gain and sensitivity faders in opposite directions',
+  },
 ]
 
 /**
@@ -84,7 +99,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
   return (
     <div className="flex flex-col h-full items-center py-2 gap-1 select-none">
       <div className="flex-shrink-0 flex w-full rounded-md overflow-hidden border border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.22)] bg-[rgba(0,0,0,0.15)]">
-        {LINK_MODES.map(({ mode, icon, title }) => (
+        {LINK_MODES.map(({ mode, icon, title, ariaLabel }) => (
           <button
             key={mode}
             onClick={() => onLinkModeChange(mode)}
@@ -94,6 +109,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
                 : 'bg-transparent text-muted-foreground hover:text-foreground/70'
             }`}
             title={title}
+            aria-label={ariaLabel}
             aria-pressed={linkMode === mode}
           >
             {icon}
@@ -162,6 +178,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
           autoGainLocked={autoGainLocked}
           onAutoGainToggle={onAutoGainToggle}
           noiseFloorDb={noiseFloorDb}
+          homeValue={linkCenterGainDb}
           width={64}
         />
         <SingleFader
@@ -172,6 +189,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
           max={50}
           label="SENS"
           guidance={guidance}
+          homeValue={linkCenterSensDb}
           width={64}
         />
       </div>

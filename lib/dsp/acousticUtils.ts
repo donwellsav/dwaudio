@@ -1,50 +1,43 @@
 /**
- * Acoustic Utilities — Barrel Re-export
+ * Acoustic Utilities — local-only detector helpers.
  *
- * All functions and types are implemented in domain-focused sub-modules
- * under `lib/dsp/acoustic/`. This barrel preserves the original import path
- * (`@/lib/dsp/acousticUtils`) so no consumers need to change.
+ * This barrel keeps only the deterministic helpers still used by the feedback
+ * classifier. Room modeling, dimension estimation, and RT60 adjustment were
+ * removed with the setup surfaces.
  */
 
-// Room modes, formatting, proximity penalty, harmonic series, dimension estimation
-export {
-  calculateRoomModes,
-  formatRoomModesForDisplay,
-  roomModeProximityPenalty,
-  findHarmonicSeries,
-  estimateRoomDimensions,
-} from './acoustic/roomModes'
-export type {
-  RoomMode,
-  RoomModesResult,
-  FormattedRoomMode,
-  FormattedRoomModesResult,
-} from './acoustic/roomModes'
+import { FREQUENCY_BANDS } from './constants'
 
-// Reverberation: Eyring RT60, air absorption, Q adjustment
-export {
-  calculateEyringRT60,
-  airAbsorptionCorrectedRT60,
-  reverberationQAdjustment,
-} from './acoustic/reverberation'
+export function getFrequencyBand(frequencyHz: number): {
+  band: 'LOW' | 'MID' | 'HIGH'
+  prominenceMultiplier: number
+  sustainMultiplier: number
+  qThresholdMultiplier: number
+  description: string
+} {
+  if (frequencyHz < FREQUENCY_BANDS.LOW.maxHz) {
+    return {
+      band: 'LOW',
+      ...FREQUENCY_BANDS.LOW,
+    }
+  }
+  if (frequencyHz < FREQUENCY_BANDS.MID.maxHz) {
+    return {
+      band: 'MID',
+      ...FREQUENCY_BANDS.MID,
+    }
+  }
+  return {
+    band: 'HIGH',
+    ...FREQUENCY_BANDS.HIGH,
+  }
+}
 
-// Modal analysis: density, overlap, classification, prominence
+// Modal analysis: Q overlap and classification
 export {
-  calculateModalDensity,
   calculateModalOverlap,
   classifyModalOverlap,
-  modalDensityFeedbackAdjustment,
-  frequencyDependentProminence,
 } from './acoustic/modalAnalysis'
-
-// Room parameters: Schroeder frequency, frequency bands, dimensions
-export {
-  calculateSchroederFrequency,
-  getFrequencyBand,
-  getRoomParametersFromDimensions,
-  feetToMeters,
-} from './acoustic/roomParameters'
-export type { RoomParameters } from './acoustic/roomParameters'
 
 // Vibrato / whistle detection
 export { analyzeVibrato } from './acoustic/vibratoDetection'

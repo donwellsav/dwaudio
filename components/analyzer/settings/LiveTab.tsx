@@ -1,6 +1,6 @@
 'use client'
 
-import React, { memo, useCallback } from 'react'
+import { memo, useCallback } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { ConsoleSlider } from '@/components/ui/console-slider'
 import { useSettings } from '@/contexts/SettingsContext'
@@ -9,11 +9,22 @@ import { FREQ_RANGE_PRESETS } from '@/lib/dsp/constants'
 import { formatFreqLabel } from '@/lib/utils/pitchUtils'
 import { roundFreqToNice } from '@/lib/utils/mathHelpers'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
+import { FRESH_START_SENSITIVITY_OFFSET_DB } from '@/lib/settings/defaults'
+import type { ModeId } from '@/types/settings'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const LOG_MIN = Math.log10(20)
 const LOG_MAX = Math.log10(20000)
+const LIVE_MODES: Array<{ id: ModeId; label: string }> = [
+  { id: 'speech', label: 'Speech' },
+  { id: 'worship', label: 'Worship' },
+  { id: 'liveMusic', label: 'Live' },
+  { id: 'theater', label: 'Theater' },
+  { id: 'monitors', label: 'Monitors' },
+  { id: 'broadcast', label: 'Bcast' },
+  { id: 'outdoor', label: 'Outdoor' },
+]
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -29,16 +40,28 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
   const ctx = useSettings()
 
   /** Sensitivity slider writes absolute dB; compute delta for layered model */
+  const defaultSensitivityOffsetDb =
+    ctx.session.modeId === 'speech' ? FRESH_START_SENSITIVITY_OFFSET_DB : 0
+  const defaultSensitivityDb =
+    MODE_BASELINES[ctx.session.modeId].feedbackThresholdDb +
+    defaultSensitivityOffsetDb
+  const defaultSensitivitySliderValue = 52 - defaultSensitivityDb
+
   const handleSensitivityChange = useCallback((v: number) => {
     const absoluteDb = 52 - v
     const baseline = MODE_BASELINES[ctx.session.modeId]
-    const envOffset = ctx.session.environment.feedbackOffsetDb
-    const currentEffective = baseline.feedbackThresholdDb + envOffset + ctx.session.liveOverrides.sensitivityOffsetDb
+    const currentEffective = baseline.feedbackThresholdDb + ctx.session.liveOverrides.sensitivityOffsetDb
     const delta = absoluteDb - currentEffective
     if (delta !== 0) {
       ctx.setSensitivityOffset(ctx.session.liveOverrides.sensitivityOffsetDb + delta)
     }
   }, [ctx])
+
+  const handleSensitivityReset = useCallback(() => {
+    if (ctx.session.liveOverrides.sensitivityOffsetDb !== defaultSensitivityOffsetDb) {
+      ctx.setSensitivityOffset(defaultSensitivityOffsetDb)
+    }
+  }, [ctx, defaultSensitivityOffsetDb])
 
   const handleFreqSliderChange = useCallback(([logMin, logMax]: number[]) => {
     const newMin = roundFreqToNice(Math.pow(10, logMin))
@@ -51,31 +74,70 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
   }, [ctx])
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
+      <div className="space-y-0.5">
+        <span className="section-label text-muted-foreground">Mode</span>
+        <div className="grid grid-cols-3 @sm:grid-cols-4 gap-0.5">
+          {LIVE_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => ctx.setMode(mode.id)}
+              className={`flex min-h-8 md:min-h-7 items-center justify-center overflow-hidden cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 px-1 rounded text-xs font-mono font-bold tracking-wide transition-[color,background-color,border-color,box-shadow] ${
+                settings.mode === mode.id
+                  ? 'bg-[var(--console-amber)]/10 text-[var(--console-amber)] border border-[var(--console-amber)]/40 btn-glow'
+                  : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.18)]'
+              }`}
+            >
+              <span className="truncate">{mode.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-0.5">
+        <span className="section-label text-muted-foreground">EQ Action Style</span>
+        <div className="flex items-center gap-0.5">
+          {([['surgical', 'Surgical'], ['heavy', 'Heavy']] as const).map(([style, label]) => (
+            <button
+              key={style}
+              onClick={() => ctx.setEqStyle(style)}
+              className={`min-h-8 md:min-h-7 flex-1 px-2 rounded text-xs font-mono font-bold tracking-wide transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
+                settings.eqPreset === style
+                  ? 'bg-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.12)] text-[var(--console-amber)] border border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.38)]'
+                  : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.18)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Sensitivity slider */}
       <ConsoleSlider
         label="Sensitivity"
         value={`${settings.feedbackThresholdDb}dB`}
-        tooltip={settings.showTooltips ? 'Fader up = picks up more. Lower = catches subtle resonances. Higher = fewer false positives. Also draggable on the RTA spectrum.' : undefined}
+        tooltip={settings.showTooltips ? 'Fader up = picks up more. Lower = catches subtle resonances. Higher = fewer wrong detections. Also draggable on the RTA spectrum.' : undefined}
         showTooltip={settings.showTooltips}
         min={2} max={50} step={1}
         sliderValue={52 - settings.feedbackThresholdDb}
         onChange={handleSensitivityChange}
-        defaultValue={52 - MODE_BASELINES[ctx.session.modeId].feedbackThresholdDb}
+        defaultValue={defaultSensitivitySliderValue}
+        defaultLabel={`Reset to default (${defaultSensitivityDb}dB)`}
+        onResetToDefault={handleSensitivityReset}
       />
 
       {/* Section divider */}
       <div className="panel-groove-subtle" />
 
       {/* Frequency range presets + slider */}
-      <div className="space-y-1 py-1">
-        <div className="flex items-center gap-1 flex-wrap">
+      <div className="space-y-0.5">
+        <div className="grid grid-cols-4 gap-0.5">
           {FREQ_RANGE_PRESETS.map((preset) => {
             const isActive = settings.minFrequency === preset.minFrequency && settings.maxFrequency === preset.maxFrequency
             return (
               <button key={preset.label} onClick={() => handleFreqPresetClick(preset.minFrequency, preset.maxFrequency)}
-                className={`min-h-11 px-3 py-1.5 rounded-md flex flex-col items-center gap-0.5 text-xs font-mono font-bold tracking-wide transition-[color,background-color,border-color,box-shadow] cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
+                className={`min-h-8 px-1 py-0.5 rounded flex flex-col items-center gap-0.5 text-xs font-mono font-bold tracking-wide transition-[color,background-color,border-color,box-shadow] cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
                   isActive
                     ? 'bg-[rgba(75,146,255,0.12)] text-[var(--console-blue)] border border-[rgba(75,146,255,0.38)] shadow-[0_0_10px_rgba(75,146,255,0.16)]'
                     : 'bg-[rgba(255,255,255,0.03)] text-foreground/50 border border-[rgba(255,255,255,0.08)] hover:text-foreground/80 hover:border-border/50'

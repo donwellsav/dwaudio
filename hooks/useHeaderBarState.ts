@@ -15,14 +15,11 @@ export interface HeaderBarState {
   selectedDeviceId: string
   handleDeviceChange: (deviceId: string) => void
   isFrozen: boolean
-  isFullscreen: boolean
   resolvedTheme: string | undefined
   hasClearableContent: boolean
   handleToggleAnalysis: () => void
   handleClearDisplays: () => void
   toggleFreeze: () => void
-  toggleFullscreen: () => void
-  resetLayout: () => void
   toggleTheme: () => void
 }
 
@@ -36,7 +33,7 @@ export function useHeaderBarState(): HeaderBarState {
     handleDeviceChange,
   } = useEngine()
   const { inputLevel } = useMetering()
-  const { isFullscreen, toggleFullscreen, isFrozen, toggleFreeze, resetLayout } = useUI()
+  const { isFrozen, toggleFreeze } = useUI()
   const { advisories, dismissedIds, hasActiveGEQBars, hasActiveRTAMarkers } = useAdvisoryData()
   const { onClearAll, onClearGEQ, onClearRTA } = useAdvisoryActions()
   const { resolvedTheme, setTheme } = useTheme()
@@ -74,14 +71,11 @@ export function useHeaderBarState(): HeaderBarState {
     selectedDeviceId,
     handleDeviceChange,
     isFrozen,
-    isFullscreen,
     resolvedTheme,
     hasClearableContent,
     handleToggleAnalysis,
     handleClearDisplays,
     toggleFreeze,
-    toggleFullscreen,
-    resetLayout,
     toggleTheme,
   }
 }

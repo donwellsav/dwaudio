@@ -18,6 +18,7 @@ const DISPLAY_MERGE_CENTS = 200
 export interface IssueListEntry {
   advisory: Advisory
   occurrenceCount: number
+  isHeld?: boolean
 }
 
 interface IssueHistory {
@@ -26,6 +27,25 @@ interface IssueHistory {
 
 function getEntriesIdentity(entries: IssueListEntry[]): string {
   return entries.map((entry) => entry.advisory.id).join(',')
+}
+
+function markHeldEntries(
+  entries: IssueListEntry[],
+  latestEntries: IssueListEntry[],
+): IssueListEntry[] {
+  const latestIds = new Set(latestEntries.map((entry) => entry.advisory.id))
+  let anyHeldStateChanged = false
+
+  const marked = entries.map((entry) => {
+    const isHeld = !latestIds.has(entry.advisory.id)
+    if ((entry.isHeld ?? false) !== isHeld) {
+      anyHeldStateChanged = true
+      return { ...entry, isHeld }
+    }
+    return entry
+  })
+
+  return anyHeldStateChanged ? marked : entries
 }
 
 /**
@@ -122,6 +142,15 @@ export function useStableIssueEntries(latestEntries: IssueListEntry[]): IssueLis
     const previousIdentity = getEntriesIdentity(stableRef.current)
     const nextIdentity = getEntriesIdentity(latestEntries)
 
+    if (stableRef.current.length === 0 && latestEntries.length > 0) {
+      const timerId = setTimeout(() => {
+        stableRef.current = latestEntries
+        lastUpdateRef.current = Date.now()
+        setStableEntries(latestEntries)
+      }, 0)
+      return () => clearTimeout(timerId)
+    }
+
     if (previousIdentity === nextIdentity) {
       const timerId = setTimeout(() => {
         stableRef.current = latestEntries
@@ -150,5 +179,8 @@ export function useStableIssueEntries(latestEntries: IssueListEntry[]): IssueLis
     return () => clearTimeout(timerId)
   }, [latestEntries])
 
-  return stableEntries
+  return useMemo(
+    () => markHeldEntries(stableEntries, latestEntries),
+    [stableEntries, latestEntries],
+  )
 }

@@ -26,6 +26,8 @@ function makeSpectrum(overrides: Partial<SpectrumData> = {}): SpectrumData {
     isCompressed: false,
     compressionRatio: 1.2,
     isSignalPresent: true,
+    lastConfirmLatencyMs: 84,
+    lastPeakConfirmedAt: 1200,
     ...overrides,
   }
 }
@@ -60,6 +62,9 @@ describe('mergeFrameState', () => {
     expect(first.spectrumStatus?.algorithmMode).toBe('custom')
     expect(first.spectrumStatus?.isCompressed).toBe(true)
     expect(first.spectrumStatus?.compressionRatio).toBe(3.4)
+    expect(first.spectrumStatus?.effectiveThresholdDb).toBe(-45)
+    expect(first.spectrumStatus?.lastConfirmLatencyMs).toBe(84)
+    expect(first.spectrumStatus?.lastPeakConfirmedAt).toBe(1200)
 
     const second = mergeFrameState(
       first,

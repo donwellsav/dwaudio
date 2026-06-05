@@ -2,7 +2,8 @@
 
 import { memo, type RefObject } from 'react'
 import type { FaderGuidance, FaderMode } from './faderTypes'
-import { getFaderThumbBottom } from '@/lib/fader/faderMath'
+import { clampFaderValue, getFaderThumbBottom } from '@/lib/fader/faderMath'
+import { DEFAULT_DISPLAY_PREFS } from '@/lib/settings/defaults'
 
 interface FaderTrackProps {
   ariaLabel: string
@@ -22,6 +23,7 @@ interface FaderTrackProps {
   onBeginPointerDrag: (clientY: number) => void
   onKeyStep: (direction: 1 | -1) => void
   onTrackTouchStart?: () => void
+  referenceValue?: number
   showReferenceLine?: boolean
   thumbBottom: number
   thumbWidthPx?: number
@@ -46,11 +48,18 @@ export const FaderTrack = memo(function FaderTrack({
   onBeginPointerDrag,
   onKeyStep,
   onTrackTouchStart,
+  referenceValue,
   showReferenceLine = false,
   thumbBottom,
   thumbWidthPx = 68,
   trackRef,
 }: FaderTrackProps) {
+  const resolvedReferenceValue = clampFaderValue({
+    mode,
+    value: referenceValue ?? (isSensitivity ? DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb : DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb),
+    min,
+    max,
+  })
   const compactThumb = thumbWidthPx < 68
   const showGuidance = guidance != null && guidance.direction !== 'none'
   const arrowColors = guidance?.urgency === 'warning'
@@ -123,7 +132,7 @@ export const FaderTrack = memo(function FaderTrack({
             style={{
               bottom: `${getFaderThumbBottom({
                 mode,
-                value: isSensitivity ? 20 : 0,
+                value: resolvedReferenceValue,
                 min,
                 max,
               })}%`,

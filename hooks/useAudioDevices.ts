@@ -8,6 +8,11 @@ export interface AudioDevice {
   label: string
 }
 
+function getMediaDevices(): MediaDevices | null {
+  if (typeof navigator === 'undefined') return null
+  return navigator.mediaDevices ?? null
+}
+
 export function useAudioDevices() {
   const [devices, setDevices] = useState<AudioDevice[]>([])
   const [selectedDeviceId, setSelectedDeviceIdState] = useState<string>('')
@@ -15,10 +20,15 @@ export function useAudioDevices() {
   const selectedDeviceIdRef = useRef('')
 
   const enumerate = useCallback(async () => {
+    const mediaDevices = getMediaDevices()
+    if (!mediaDevices) return []
+
     try {
-      const all = await navigator.mediaDevices.enumerateDevices()
+      const all = await mediaDevices.enumerateDevices()
       const inputs = all
         .filter(d => d.kind === 'audioinput')
+        .filter(d => d.deviceId.trim().length > 0)
+        .filter((device, index, devices) => devices.findIndex(d => d.deviceId === device.deviceId) === index)
         .map((d, i) => ({
           deviceId: d.deviceId,
           label: d.label || `Microphone ${i + 1}`,
@@ -49,9 +59,12 @@ export function useAudioDevices() {
 
   // Watch for device changes (plug/unplug)
   useEffect(() => {
+    const mediaDevices = getMediaDevices()
+    if (!mediaDevices) return undefined
+
     const handler = () => { enumerate() }
-    navigator.mediaDevices.addEventListener('devicechange', handler)
-    return () => navigator.mediaDevices.removeEventListener('devicechange', handler)
+    mediaDevices.addEventListener('devicechange', handler)
+    return () => mediaDevices.removeEventListener('devicechange', handler)
   }, [enumerate])
 
   const setSelectedDeviceId = useCallback((id: string) => {

@@ -8,7 +8,6 @@ import {
   formatFrequencyRange,
   formatPitch,
 } from '@/lib/utils/pitchUtils'
-import { useSwipeGesture } from '@/hooks/useSwipeGesture'
 import {
   RUNAWAY_VELOCITY_THRESHOLD,
   WARNING_VELOCITY_THRESHOLD,
@@ -30,7 +29,6 @@ export interface IssueCardDerivedState {
 
 export function resolveIssueCardActionsLayout(
   touchFriendly?: boolean,
-  swipeLabeling?: boolean,
 ): IssueCardActionsLayout {
   if (!touchFriendly) return 'desktop'
   if (touchFriendly) return 'mobile'
@@ -87,24 +85,57 @@ export function buildIssueCardDerivedState(advisory: Advisory): IssueCardDerived
   }
 }
 
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  const writeText = globalThis.navigator?.clipboard?.writeText
+
+  if (writeText) {
+    try {
+      await writeText.call(globalThis.navigator.clipboard, text)
+      return true
+    } catch {
+      // Fall through to the local DOM copy path below.
+    }
+  }
+
+  if (typeof document === 'undefined' || !document.body) {
+    return false
+  }
+
+  const execCommand = document.execCommand
+  if (typeof execCommand !== 'function') {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.opacity = '0'
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, text.length)
+
+  try {
+    return execCommand.call(document, 'copy') === true
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
+}
+
 interface UseIssueCardStateParams {
   advisory: Advisory
   touchFriendly?: boolean
-  swipeLabeling?: boolean
-  onFalsePositive?: (advisoryId: string) => void
-  onConfirmFeedback?: (advisoryId: string) => void
-  onDismiss?: (advisoryId: string) => void
-  onSendToMixer?: (advisory: Advisory) => void
 }
 
 export function useIssueCardState({
   advisory,
   touchFriendly,
-  swipeLabeling,
-  onFalsePositive,
-  onConfirmFeedback,
-  onDismiss,
-  onSendToMixer,
 }: UseIssueCardStateParams) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== 'light'
@@ -121,37 +152,18 @@ export function useIssueCardState({
     const parts = [derivedState.exactFreqStr]
     if (derivedState.pitchStr) parts.push(`(${derivedState.pitchStr})`)
 
-    navigator.clipboard.writeText(parts.join(' ')).then(() => {
+    copyTextToClipboard(parts.join(' ')).then((didCopy) => {
+      if (!didCopy) return
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    }).catch(() => {
-      // Clipboard API may be unavailable in insecure or test contexts.
     })
   }, [derivedState.exactFreqStr, derivedState.pitchStr])
-
-  const { swipeX, swiping, swipeProgress, swipeDirection, handlers } = useSwipeGesture({
-    enabled: !!swipeLabeling,
-    onSwipeLeft: onDismiss ? () => onDismiss(advisory.id) : undefined,
-    onSwipeRight: onConfirmFeedback ? () => onConfirmFeedback(advisory.id) : undefined,
-    onLongPress: onFalsePositive ? () => onFalsePositive(advisory.id) : undefined,
-  })
-
-  const handleSendToMixer = useMemo(
-    () => (onSendToMixer ? () => onSendToMixer(advisory) : undefined),
-    [advisory, onSendToMixer],
-  )
 
   return {
     ...derivedState,
     severityColor,
     copied,
     handleCopy,
-    swipeX,
-    swiping,
-    swipeProgress,
-    swipeDirection,
-    handlers,
-    actionsLayout: resolveIssueCardActionsLayout(touchFriendly, swipeLabeling),
-    handleSendToMixer,
+    actionsLayout: resolveIssueCardActionsLayout(touchFriendly),
   }
 }

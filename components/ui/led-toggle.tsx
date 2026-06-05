@@ -21,7 +21,7 @@ interface LEDToggleProps {
 /**
  * LED-style toggle with a circular indicator dot and label.
  * Replaces PillToggle with a pro-audio aesthetic.
- * Full 44px row height for WCAG touch target compliance.
+ * Compact row height for dense settings panels.
  *
  * LED colors use CSS variables defined in globals.css:
  * --console-green, --console-green-glow (green)
@@ -39,13 +39,13 @@ export const LEDToggle = memo(function LEDToggle({
   className,
 }: LEDToggleProps) {
   return (
-    <div className={cn('flex items-center gap-2.5 min-h-11 py-2 w-full group', className)}>
+    <div className={cn('flex min-h-8 md:min-h-7 w-full items-center gap-1.5 py-0.5 group', className)}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className="flex items-center gap-2.5 cursor-pointer flex-1 text-left"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
       >
         {/* LED dot — uses console color variables from globals.css */}
         <span
@@ -61,7 +61,7 @@ export const LEDToggle = memo(function LEDToggle({
           }}
         />
         {/* Label */}
-        <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+        <span className="truncate text-dwa-sm font-medium leading-tight text-muted-foreground transition-colors group-hover:text-foreground">
           {label}
         </span>
       </button>

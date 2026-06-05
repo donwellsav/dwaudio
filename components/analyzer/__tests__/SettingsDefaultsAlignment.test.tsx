@@ -3,19 +3,18 @@
 import { type PropsWithChildren } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DisplayTab } from '@/components/analyzer/settings/DisplayTab'
-import { SetupTab } from '@/components/analyzer/settings/SetupTab'
 import {
   AdvancedDetectionPolicySection,
 } from '@/components/analyzer/settings/advancedSections/AdvancedDetectionSections'
 import { AdvancedTrackManagementSection } from '@/components/analyzer/settings/advancedSections/AdvancedEngineSections'
-import { deriveDefaultDetectorSettings } from '@/lib/settings/defaultDetectorSettings'
+import { LiveTab } from '@/components/analyzer/settings/LiveTab'
+import { deriveDefaultDetectorSettings, deriveFreshStartDetectorSettings } from '@/lib/settings/defaultDetectorSettings'
 import { DEFAULT_SETTINGS, OPERATION_MODES } from '@/lib/dsp/constants/presetConstants'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
+import { DEFAULT_ENVIRONMENT, FRESH_START_SESSION_STATE } from '@/lib/settings/defaults'
 
-const { mockUseSettings, mockUseSetupTabExport } = vi.hoisted(() => ({
+const { mockUseSettings } = vi.hoisted(() => ({
   mockUseSettings: vi.fn(),
-  mockUseSetupTabExport: vi.fn(),
 }))
 
 function slug(label: string): string {
@@ -24,49 +23,56 @@ function slug(label: string): string {
 
 interface MockSliderProps {
   label: string
+  sliderValue?: number
+  step?: number
   defaultValue?: number
+  defaultLabel?: string
   onResetToDefault?: () => void
 }
 
-interface SectionProps extends PropsWithChildren {
-  title?: string
-}
-
 vi.mock('@/components/ui/console-slider', () => ({
-  ConsoleSlider: ({ label, defaultValue, onResetToDefault }: MockSliderProps) => (
-    <div
-      data-testid={`slider-${slug(label)}`}
-      data-default-value={defaultValue != null ? String(defaultValue) : ''}
-    >
-      <span>{label}</span>
-      {onResetToDefault ? (
-        <button
-          type="button"
-          aria-label={`reset-${slug(label)}`}
-          onClick={onResetToDefault}
-        >
-          reset
-        </button>
-      ) : null}
-    </div>
-  ),
+  ConsoleSlider: ({ label, sliderValue, step, defaultValue, defaultLabel, onResetToDefault }: MockSliderProps) => {
+    const canCompare =
+      typeof sliderValue === 'number' &&
+      Number.isFinite(sliderValue) &&
+      typeof step === 'number' &&
+      Number.isFinite(step) &&
+      defaultValue != null
+    const showReset =
+      !!onResetToDefault &&
+      (!canCompare || Math.abs(sliderValue - defaultValue) >= step / 2)
+
+    return (
+      <div
+        data-testid={`slider-${slug(label)}`}
+        data-default-value={defaultValue != null ? String(defaultValue) : ''}
+        data-default-label={defaultLabel ?? ''}
+      >
+        <span>{label}</span>
+        {showReset ? (
+          <button
+            type="button"
+            aria-label={`reset-${slug(label)}`}
+            onClick={onResetToDefault}
+          >
+            reset
+          </button>
+        ) : null}
+      </div>
+    )
+  },
+}))
+
+vi.mock('@/components/ui/slider', () => ({
+  Slider: () => <div data-testid="frequency-range-slider" />,
 }))
 
 vi.mock('@/components/ui/led-toggle', () => ({
   LEDToggle: ({ label }: { label: string }) => <div>{label}</div>,
 }))
 
-vi.mock('@/components/ui/channel-section', () => ({
-  ChannelSection: ({ title, children }: SectionProps) => (
-    <section>
-      <h2>{title}</h2>
-      {children}
-    </section>
-  ),
-}))
-
 vi.mock('@/components/analyzer/settings/SettingsShared', () => ({
-  Section: ({ title, children }: SectionProps) => (
+  Section: ({ title, children }: PropsWithChildren<{ title?: string }>) => (
     <section>
       <h2>{title}</h2>
       {children}
@@ -86,26 +92,6 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipContent: ({ children }: PropsWithChildren) => <>{children}</>,
 }))
 
-vi.mock('@/components/analyzer/settings/RoomTab', () => ({
-  RoomTab: () => <div>Room tab</div>,
-}))
-
-vi.mock('@/components/analyzer/settings/RigPresetsSection', () => ({
-  RigPresetsSection: () => <div>Rig presets</div>,
-}))
-
-vi.mock('@/components/analyzer/settings/SessionExportSection', () => ({
-  SessionExportSection: () => <div>Session export</div>,
-}))
-
-vi.mock('@/components/analyzer/settings/CalibrationTab', () => ({
-  CalibrationTab: () => <div>Calibration</div>,
-}))
-
-vi.mock('@/hooks/useSetupTabExport', () => ({
-  useSetupTabExport: () => mockUseSetupTabExport(),
-}))
-
 vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => mockUseSettings(),
 }))
@@ -116,32 +102,12 @@ function buildAdvancedActions() {
     updateDiagnosticField: vi.fn(),
     toggleAlgorithmMode: vi.fn(),
     toggleAlgorithm: vi.fn(),
-    handleCollectionToggle: vi.fn(),
   }
 }
 
 describe('settings default alignment', () => {
   beforeEach(() => {
-    mockUseSetupTabExport.mockReturnValue({
-      metadata: {},
-      isExporting: false,
-      updateMetadata: vi.fn(),
-      handleExportTxt: vi.fn(),
-      handleExportCSV: vi.fn(),
-      handleExportJSON: vi.fn(),
-      handleExportPdf: vi.fn(),
-    })
-  })
-
-  it('uses the canonical Canvas FPS display default', () => {
-    render(
-      <DisplayTab
-        settings={deriveDefaultDetectorSettings('speech')}
-        updateDisplay={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByTestId('slider-canvas-fps').dataset.defaultValue).toBe('30')
+    mockUseSettings.mockReset()
   })
 
   it('resets mode-owned detection overrides back to the active mode baseline', () => {
@@ -149,7 +115,7 @@ describe('settings default alignment', () => {
 
     render(
       <AdvancedDetectionPolicySection
-        settings={deriveDefaultDetectorSettings('liveMusic')}
+        settings={{ ...deriveDefaultDetectorSettings('liveMusic'), ringThresholdDb: 9 }}
         actions={actions}
       />,
     )
@@ -166,7 +132,7 @@ describe('settings default alignment', () => {
 
     render(
       <AdvancedTrackManagementSection
-        settings={deriveDefaultDetectorSettings('monitors')}
+        settings={{ ...deriveDefaultDetectorSettings('monitors'), trackTimeoutMs: 700 }}
         actions={actions}
       />,
     )
@@ -178,38 +144,51 @@ describe('settings default alignment', () => {
     expect(actions.updateDiagnosticField).toHaveBeenCalledWith('trackTimeoutMs', 'mode-default')
   })
 
-  it('shows the mode-derived auto-gain target and resets via the live override sentinel', () => {
-    const setMode = vi.fn()
-    const setEqStyle = vi.fn()
-    const setAutoGain = vi.fn()
-
+  it('uses operator-facing dB defaults for the live sensitivity reset control', () => {
+    const setSensitivityOffset = vi.fn()
     mockUseSettings.mockReturnValue({
-      session: { modeId: 'ringOut' },
-      setMode,
-      setEqStyle,
-      setAutoGain,
+      session: FRESH_START_SESSION_STATE,
+      setSensitivityOffset,
+      setFocusRange: vi.fn(),
+      setMode: vi.fn(),
+      setEqStyle: vi.fn(),
     })
 
-    render(
-      <SetupTab
-        settings={{ ...deriveDefaultDetectorSettings('ringOut'), autoGainEnabled: true }}
-        customPresets={[]}
-        canSavePreset={false}
-        showSaveInput={false}
-        setShowSaveInput={vi.fn()}
-        presetName=""
-        setPresetName={vi.fn()}
-        handleSavePreset={vi.fn()}
-        handleDeletePreset={vi.fn()}
-        handleLoadPreset={vi.fn()}
-      />,
-    )
+    render(<LiveTab settings={deriveFreshStartDetectorSettings()} />)
 
-    expect(screen.getByTestId('slider-ag-target').dataset.defaultValue).toBe('-12')
+    const speechSensitivity = screen.getByTestId('slider-sensitivity')
+    expect(speechSensitivity.dataset.defaultValue).toBe('26')
+    expect(speechSensitivity.dataset.defaultLabel).toBe('Reset to default (26dB)')
+    expect(screen.queryByRole('button', { name: 'reset-sensitivity' })).toBeNull()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'reset-ag-target' }))
+  it('keeps non-Speech sensitivity reset tied to the selected mode baseline', () => {
+    const setSensitivityOffset = vi.fn()
+    mockUseSettings.mockReturnValue({
+      session: {
+        ...FRESH_START_SESSION_STATE,
+        modeId: 'liveMusic',
+        environment: DEFAULT_ENVIRONMENT,
+        liveOverrides: {
+          ...FRESH_START_SESSION_STATE.liveOverrides,
+          sensitivityOffsetDb: 3,
+        },
+      },
+      setSensitivityOffset,
+      setFocusRange: vi.fn(),
+      setMode: vi.fn(),
+      setEqStyle: vi.fn(),
+    })
 
-    expect(setAutoGain).toHaveBeenCalledWith(true, -18)
+    render(<LiveTab settings={{ ...deriveDefaultDetectorSettings('liveMusic'), feedbackThresholdDb: 45 }} />)
+
+    const liveMusicSensitivity = screen.getByTestId('slider-sensitivity')
+    expect(liveMusicSensitivity.dataset.defaultValue).toBe('10')
+    expect(liveMusicSensitivity.dataset.defaultLabel).toBe('Reset to default (42dB)')
+
+    fireEvent.click(screen.getByRole('button', { name: 'reset-sensitivity' }))
+
+    expect(setSensitivityOffset).toHaveBeenCalledWith(0)
   })
 })
 
@@ -249,12 +228,13 @@ describe('mode table alignment invariants', () => {
     },
   )
 
-  // Regression guard for the narrow v0.102.0 fix: speech mode stays at 20 dB,
-  // while the fresh-start compatibility snapshot remains 25 dB.
+  // Regression guard: speech mode stays at 20 dB,
+  // while the fresh-start snapshot starts at the operator default.
   it('keeps speech mode defaults separate from the fresh-start snapshot', () => {
     expect(MODE_BASELINES.speech.feedbackThresholdDb).toBe(20)
     expect(OPERATION_MODES.speech.feedbackThresholdDb).toBe(20)
     expect(deriveDefaultDetectorSettings('speech').feedbackThresholdDb).toBe(20)
-    expect(DEFAULT_SETTINGS.feedbackThresholdDb).toBe(25)
+    expect(DEFAULT_SETTINGS.feedbackThresholdDb).toBe(26)
+    expect(DEFAULT_SETTINGS.inputGainDb).toBe(0)
   })
 })

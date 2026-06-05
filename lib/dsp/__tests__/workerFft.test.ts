@@ -28,6 +28,15 @@ function makeSilentSpectrum(length: number): Float32Array {
   return spectrum
 }
 
+function makeMusicSpectrum(length: number): Float32Array {
+  const spectrum = new Float32Array(length)
+  for (let i = 0; i < length; i++) {
+    const normFreq = i / length
+    spectrum[i] = -35 - normFreq * 15
+  }
+  return spectrum
+}
+
 function makePeak(binIndex: number, timestamp: number): DetectedPeak {
   return {
     binIndex,
@@ -150,5 +159,54 @@ describe('AlgorithmEngine compression caching', () => {
     expect(engine.getContentType()).toBe('unknown')
     expect(engine.getIsCompressed()).toBe(false)
     expect(engine.getCompressionRatio()).toBe(1)
+  })
+
+  it('uses instant content type as scoring fallback while smoothed state warms up', () => {
+    const engine = new AlgorithmEngine()
+    engine.init(FFT_SIZE)
+
+    const spectrum = makeMusicSpectrum(64)
+    const peakBin = 16
+
+    expect(engine.updateContentType(spectrum, 13, SAMPLE_RATE, FFT_SIZE)).toBe(false)
+    expect(engine.getContentType()).toBe('unknown')
+
+    for (let frame = 0; frame < 7; frame++) {
+      const timestamp = 1000 + frame * 20
+      engine.feedFrame(timestamp, spectrum, undefined, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+      const result = engine.computeScores(makePeak(peakBin, timestamp), makeTrack(peakBin), spectrum, SAMPLE_RATE, FFT_SIZE, [])
+
+      expect(result.contentType).toBe('music')
+      if (frame < 6) {
+        expect(result.algorithmScores.msd).toBeNull()
+      } else {
+        expect(result.algorithmScores.msd?.framesAnalyzed).toBe(7)
+      }
+    }
+  })
+
+  it('uses detector-provided MSD while worker MSD history warms up', () => {
+    const engine = new AlgorithmEngine()
+    engine.init(FFT_SIZE)
+
+    const peakBin = 16
+    const timestamp = 1000
+    const spectrum = makeSpectrum(64, peakBin, -24)
+    const peak = {
+      ...makePeak(peakBin, timestamp),
+      msd: 0.02,
+      msdGrowthRate: 1.4,
+      msdIsHowl: true,
+      msdFastConfirm: true,
+      persistenceFrames: 8,
+    }
+
+    engine.feedFrame(timestamp, spectrum, undefined, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+    const result = engine.computeScores(peak, makeTrack(peakBin), spectrum, SAMPLE_RATE, FFT_SIZE, [])
+
+    expect(result.algorithmScores.msd).not.toBeNull()
+    expect(result.algorithmScores.msd?.msd).toBe(0.02)
+    expect(result.algorithmScores.msd?.isFeedbackLikely).toBe(true)
+    expect(result.algorithmScores.msd?.framesAnalyzed).toBeGreaterThanOrEqual(8)
   })
 })

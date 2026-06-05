@@ -73,6 +73,8 @@ interface ConsoleSliderProps {
   className?: string
   /** When provided, shows a reset icon when value differs from default */
   defaultValue?: number
+  /** Operator-facing reset/default label when the slider value is transformed */
+  defaultLabel?: string
   /** Optional custom reset behavior for mode-derived defaults */
   onResetToDefault?: () => void
 }
@@ -97,6 +99,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
   color = 'amber',
   className,
   defaultValue,
+  defaultLabel,
   onResetToDefault,
 }: ConsoleSliderProps) {
   const c = COLOR_CONFIG[color]
@@ -119,10 +122,10 @@ export const ConsoleSlider = memo(function ConsoleSlider({
   }, [min, max, step, onChange])
 
   return (
-      <div className={cn('space-y-1', className)}>
+      <div className={cn('space-y-0.5', className)}>
         {/* Header: label + value readout (click to edit) */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="flex min-h-4 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
             <span className="section-label" style={{ color: c.text }}>{label}</span>
             {defaultValue != null && (
               <ResetDefault
@@ -130,6 +133,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
                 defaultValue={defaultValue}
                 onReset={onResetToDefault ?? (() => onChange(defaultValue))}
                 tolerance={step / 2}
+                label={defaultLabel}
               />
             )}
             {tooltip && showTooltip && (
@@ -149,7 +153,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
               type="text"
               defaultValue={String(sliderValue)}
               aria-label={`${label} value`}
-              className="console-readout bg-input border border-primary rounded px-1 text-right w-16 focus-visible:outline-none"
+              className="console-readout bg-input border border-primary rounded px-1 text-right w-14 focus-visible:outline-none"
               style={{ color: c.text }}
               onBlur={(e) => commitEdit(e.target.value)}
               onKeyDown={(e) => {
@@ -160,7 +164,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
           ) : (
             <button
               onClick={() => setEditing(true)}
-              className="console-readout cursor-text hover:opacity-80 transition-opacity"
+              className="console-readout shrink-0 cursor-text hover:opacity-80 transition-opacity"
               style={{ color: c.text, textShadow: `0 0 8px ${c.thumbBorder}40` }}
               title="Click to type a value"
               aria-label={`${label}: ${value}. Click to edit.`}
@@ -181,10 +185,10 @@ export const ConsoleSlider = memo(function ConsoleSlider({
           min={min}
           max={max}
           step={step}
-          className="relative flex w-full touch-none items-center select-none h-5"
+          className="relative flex h-4 w-full touch-none items-center select-none"
         >
           <SliderPrimitive.Track
-            className="relative grow overflow-hidden rounded-full h-2 panel-recessed"
+            className="relative h-1.5 grow overflow-hidden rounded-full panel-recessed"
             style={{ background: 'var(--card)' }}
           >
             <SliderPrimitive.Range
@@ -198,7 +202,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
                 aria-label={label}
                 className="console-thumb block shrink-0 rounded-full motion-safe:transition-[box-shadow,transform] motion-safe:duration-100 focus-visible:outline-hidden cursor-grab active:cursor-grabbing"
                 style={{
-                  width: 20, height: 20,
+                  width: 16, height: 16,
                   borderColor: c.thumbBorder,
                   boxShadow: c.thumbGlow,
                 }}

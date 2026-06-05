@@ -10,7 +10,6 @@ import {
   DEFAULT_ENVIRONMENT,
   FRESH_START_SENSITIVITY_OFFSET_DB,
   DEFAULT_LIVE_OVERRIDES,
-  DEFAULT_MIC_PROFILE,
 } from '@/lib/settings/defaults'
 import { deriveDetectorSettings } from '@/lib/settings/deriveSettings'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
@@ -26,14 +25,13 @@ describe('deriveDefaultDetectorSettings', () => {
       },
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      DEFAULT_MIC_PROFILE,
     )
 
     expect(deriveDefaultDetectorSettings('speech')).toEqual(expected)
     expect(deriveDefaultDetectorSettings('speech').feedbackThresholdDb).toBe(20)
   })
 
-  it('exports the fresh-start compatibility snapshot at 25 dB', () => {
+  it('exports the fresh-start compatibility snapshot at 26 dB with 0 dB gain', () => {
     const expected = deriveDetectorSettings(
       MODE_BASELINES.speech,
       DEFAULT_ENVIRONMENT,
@@ -44,21 +42,26 @@ describe('deriveDefaultDetectorSettings', () => {
       },
       DEFAULT_DISPLAY_PREFS,
       DEFAULT_DIAGNOSTICS,
-      DEFAULT_MIC_PROFILE,
     )
 
     expect(deriveFreshStartDetectorSettings()).toEqual(expected)
     expect(DEFAULT_SETTINGS).toEqual(expected)
-    expect(DEFAULT_SETTINGS.feedbackThresholdDb).toBe(25)
-    expect(DEFAULT_MIC_PROFILE).toBe('none')
-    expect(DEFAULT_SETTINGS.micCalibrationProfile).toBe('none')
+    expect(DEFAULT_SETTINGS.feedbackThresholdDb).toBe(26)
+    expect(DEFAULT_SETTINGS.inputGainDb).toBe(0)
+    expect(DEFAULT_SETTINGS.sustainMs).toBeLessThanOrEqual(180)
+    expect(DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb).toBe(26)
+    expect(DEFAULT_SETTINGS.faderLinkCenterSensDb).toBe(26)
+    expect(DEFAULT_DISPLAY_PREFS.showFreqZones).toBe(true)
+    expect(DEFAULT_SETTINGS.showFreqZones).toBe(true)
   })
 
   it('keeps mode-owned defaults aligned for non-Speech modes', () => {
-    const ringOutDefaults = deriveDefaultDetectorSettings('ringOut')
+    const broadcastDefaults = deriveDefaultDetectorSettings('broadcast')
+    const liveMusicDefaults = deriveDefaultDetectorSettings('liveMusic')
 
-    expect(ringOutDefaults.feedbackThresholdDb).toBe(MODE_BASELINES.ringOut.feedbackThresholdDb)
-    expect(ringOutDefaults.trackTimeoutMs).toBe(MODE_BASELINES.ringOut.defaultTrackTimeoutMs)
-    expect(ringOutDefaults.autoGainTargetDb).toBe(MODE_BASELINES.ringOut.defaultAutoGainTargetDb)
+    expect(broadcastDefaults.feedbackThresholdDb).toBe(MODE_BASELINES.broadcast.feedbackThresholdDb)
+    expect(broadcastDefaults.trackTimeoutMs).toBe(MODE_BASELINES.broadcast.defaultTrackTimeoutMs)
+    expect(broadcastDefaults.autoGainTargetDb).toBe(MODE_BASELINES.broadcast.defaultAutoGainTargetDb)
+    expect(liveMusicDefaults.sustainMs).toBeLessThanOrEqual(240)
   })
 })

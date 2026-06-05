@@ -3,7 +3,7 @@
  *
  * Replaces Math.pow(10, db/10) in hot loops with ~3× faster LUT access.
  * Range: [-100, +30] dB at 0.1 dB steps = 1301 entries × 4 bytes = 5.2KB.
- * Extended from [-100, 0] to handle A-weighting (+12dB) + mic calibration
+ * Extended from [-100, 0] to handle A-weighting offsets
  * (+12dB) extremes without clamp-induced quantization error.
  *
  * Shared by both main thread (feedbackDetector.ts) and worker thread

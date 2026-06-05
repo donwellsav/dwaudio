@@ -17,6 +17,15 @@ describe('getAudioAnalyzerErrorGuidance', () => {
     ).toContain('Click the mic icon')
   })
 
+  it('does not show HTTPS guidance for loopback permission errors', () => {
+    expect(
+      getAudioAnalyzerErrorGuidance('Permission denied by system', {
+        protocol: 'http:',
+        hostname: '127.0.0.1',
+      }),
+    ).toContain('Click the mic icon')
+  })
+
   it('falls back to the generic guidance for unknown errors', () => {
     expect(getAudioAnalyzerErrorGuidance('Something odd happened')).toBe(
       'Check your microphone connection and browser permissions.',

@@ -29,7 +29,6 @@ interface MobilePortraitLayoutProps {
   portraitRtaProps: SpectrumCanvasProps
   rtaContainerRef: Ref<HTMLDivElement>
   settingsContent: ReactNode
-  settingsRtaProps: SpectrumCanvasProps
   setInlineGraphMode: (mode: GraphMode) => void
   sidecarFader: ReactNode
   tabIndex: number
@@ -53,7 +52,6 @@ export const MobilePortraitLayout = memo(function MobilePortraitLayout({
   portraitRtaProps,
   rtaContainerRef,
   settingsContent,
-  settingsRtaProps,
   setInlineGraphMode,
   sidecarFader,
   tabIndex,
@@ -61,7 +59,7 @@ export const MobilePortraitLayout = memo(function MobilePortraitLayout({
   nudgeGraphHeight,
 }: MobilePortraitLayoutProps) {
   return (
-    <div className="landscape:hidden lg:hidden flex-1 flex overflow-hidden">
+    <div className="landscape:hidden xl:hidden flex-1 flex overflow-hidden">
       <div
         className="flex-1 flex flex-col overflow-hidden min-w-0"
         style={{ touchAction: 'pan-y' }}
@@ -150,10 +148,7 @@ export const MobilePortraitLayout = memo(function MobilePortraitLayout({
             aria-hidden={mobileTab !== 'settings'}
             inert={mobileTab !== 'settings' || undefined}
           >
-            <div className="flex-shrink-0 h-[18vh] min-h-[80px] bg-card/40 border-b border-border/40 overflow-hidden">
-              <MobileSpectrumGraph spectrumProps={settingsRtaProps} />
-            </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-3 scroll-fade-bottom">{settingsContent}</div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 scroll-fade-bottom">{settingsContent}</div>
           </div>
         </div>
       </div>

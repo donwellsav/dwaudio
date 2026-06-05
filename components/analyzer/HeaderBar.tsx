@@ -17,14 +17,11 @@ export const HeaderBar = memo(function HeaderBar() {
     selectedDeviceId,
     handleDeviceChange,
     isFrozen,
-    isFullscreen,
     resolvedTheme,
     hasClearableContent,
     handleToggleAnalysis,
     handleClearDisplays,
     toggleFreeze,
-    toggleFullscreen,
-    resetLayout,
     toggleTheme,
   } = useHeaderBarState()
 
@@ -60,12 +57,9 @@ export const HeaderBar = memo(function HeaderBar() {
         isFrozen={isFrozen}
         hasClearableContent={hasClearableContent}
         resolvedTheme={resolvedTheme}
-        isFullscreen={isFullscreen}
         onToggleFreeze={toggleFreeze}
         onClearDisplays={handleClearDisplays}
         onToggleTheme={toggleTheme}
-        onResetLayout={resetLayout}
-        onToggleFullscreen={toggleFullscreen}
       />
     </header>
   )

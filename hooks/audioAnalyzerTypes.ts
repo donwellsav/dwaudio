@@ -1,4 +1,4 @@
-import type { AlgorithmMode, ContentType } from '@/types/advisory'
+import type { AlgorithmMode, ContentType, ReportGateId } from '@/types/advisory'
 
 export interface EarlyWarning {
   predictedFrequencies: number[]
@@ -20,4 +20,15 @@ export interface SpectrumStatus {
   compressionRatio?: number
   isSignalPresent?: boolean
   rawPeakDb?: number
+  effectiveThresholdDb?: number
+  lastConfirmLatencyMs?: number
+  lastPeakConfirmedAt?: number
+  lastFusionVerdict?: 'FEEDBACK' | 'POSSIBLE_FEEDBACK' | 'NOT_FEEDBACK' | 'UNCERTAIN'
+  lastFusionConfidence?: number
+  lastFeedbackProbability?: number
+  lastReportDecision?: 'reported' | 'blocked'
+  lastReportGate?: ReportGateId
+  lastReportGateReason?: string
+  lastReportFrequencyHz?: number
+  lastReportTimestamp?: number
 }

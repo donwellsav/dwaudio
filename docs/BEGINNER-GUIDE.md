@@ -92,17 +92,10 @@ That is intentional. A brand-new session starts from the historical fresh-start 
 - they now distinguish narrow cuts from broader regions
 - repeated clustered cards are not automatically "more notches"
 
-### Room / Measurement
+### Display
 
-- room auto-detect is a modal or low-frequency estimate, not a full room-analysis engine
 - `Perceptual` spectrum view is for reading room and speech balance
 - `Raw` view is for narrow ring hunting
-
-### Ring-Out
-
-- ring-out is a pre-show workflow, not a substitute for live emergency handling
-- performer and wedge placement matters
-- if one band keeps returning, suspect setup or room conditions before stacking cuts
 
 ## Safe Change Workflow
 
@@ -122,4 +115,4 @@ If you are touching detection or defaults:
 - `tests/README.md`
 - current tests near the code you are changing
 
-Prefer those over older archived audits when they disagree.
+Prefer those over stale notes when they disagree.

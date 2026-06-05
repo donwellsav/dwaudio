@@ -5,6 +5,8 @@ import { FaderTrack } from './FaderTrack'
 import { useWheelStep } from '@/hooks/useWheelStep'
 import { useFaderControlState } from '@/hooks/useFaderControlState'
 import { useFaderMeterCanvas } from '@/hooks/useFaderMeterCanvas'
+import { clampFaderValue } from '@/lib/fader/faderMath'
+import { DEFAULT_DISPLAY_PREFS } from '@/lib/settings/defaults'
 import type { FaderGuidance, FaderMode } from './faderTypes'
 
 export type { FaderGuidance } from './faderTypes'
@@ -24,6 +26,7 @@ export interface SingleFaderProps {
   noiseFloorDb?: number | null
   guidance?: FaderGuidance
   width?: number
+  homeValue?: number
 }
 
 export const SingleFader = memo(function SingleFader({
@@ -41,6 +44,7 @@ export const SingleFader = memo(function SingleFader({
   noiseFloorDb,
   guidance,
   width = 64,
+  homeValue: homeValueProp,
 }: SingleFaderProps) {
   const { canvasRef, trackRef } = useFaderMeterCanvas({
     mode,
@@ -75,6 +79,12 @@ export const SingleFader = memo(function SingleFader({
     autoGainDb,
     onAutoGainToggle,
   })
+  const homeValue = clampFaderValue({
+    mode,
+    value: homeValueProp ?? (isSensitivity ? DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb : DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb),
+    min,
+    max,
+  })
 
   useWheelStep(trackRef, {
     value,
@@ -99,13 +109,13 @@ export const SingleFader = memo(function SingleFader({
       if (!isSensitivity && autoGainEnabled && onAutoGainToggle) {
         onAutoGainToggle(false)
       }
-      onChange(isSensitivity ? 20 : 0)
+      onChange(homeValue)
       lastTapRef.current = 0
       return
     }
 
     lastTapRef.current = now
-  }, [autoGainEnabled, isSensitivity, onAutoGainToggle, onChange])
+  }, [autoGainEnabled, homeValue, isSensitivity, onAutoGainToggle, onChange])
 
   return (
     <div className="flex flex-col h-full items-center gap-1" style={{ width }}>
@@ -127,7 +137,7 @@ export const SingleFader = memo(function SingleFader({
       ) : (
         <button
           ref={readoutRef}
-          className={`fader-readout font-mono text-center transition-colors cursor-text flex-shrink-0 tabular-nums text-sm font-bold leading-tight ${
+          className={`fader-readout w-full overflow-hidden whitespace-nowrap px-0.5 font-mono text-center transition-colors cursor-text flex-shrink-0 tabular-nums text-sm font-bold leading-tight ${
             isSensitivity
               ? 'text-blue-400 hover:text-blue-300'
               : 'text-[var(--console-amber)] hover:text-[var(--console-amber)]/80'
@@ -172,6 +182,7 @@ export const SingleFader = memo(function SingleFader({
           onBeginPointerDrag={beginPointerDrag}
           onKeyStep={handleKeyStep}
           onTrackTouchStart={handleDoubleTap}
+          referenceValue={homeValue}
           showReferenceLine
           thumbBottom={thumbBottom}
           thumbWidthPx={thumbWidth}

@@ -9,10 +9,6 @@ import type { AlgorithmMode, ContentType } from '@/types/advisory'
 const MODE_LABELS: Record<AlgorithmMode, string> = {
   auto: 'AUTO',
   custom: 'CUSTOM',
-  msd: 'MSD',
-  phase: 'PHASE',
-  combined: 'MSD+PH',
-  all: 'ALL',
 }
 
 const CONTENT_LABELS: Record<ContentType, string> = {

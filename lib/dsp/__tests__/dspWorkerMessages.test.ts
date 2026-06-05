@@ -61,9 +61,16 @@ describe('WorkerOutboundMessage types', () => {
       algorithmMode: 'auto',
       isCompressed: false,
       compressionRatio: 1,
+      lastFusionVerdict: 'POSSIBLE_FEEDBACK',
+      lastFeedbackProbability: 0.52,
+      lastFusionConfidence: 0.41,
+      lastReportDecision: 'blocked',
+      lastReportGate: 'low-confidence',
+      lastReportGateReason: 'Confidence is below the display threshold',
     }
     expect(msg.type).toBe('tracksUpdate')
     expect(msg.contentType).toBe('speech')
+    expect(msg.lastReportGate).toBe('low-confidence')
   })
 
   it('tracksUpdate works without optional fields', () => {

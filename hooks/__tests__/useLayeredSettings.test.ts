@@ -5,9 +5,8 @@
  * Proves that:
  * 1. The hook produces valid DetectorSettings on mount
  * 2. Semantic actions produce correct derived output
- * 3. The legacy shim routes old-style partials correctly
- * 4. Mode changes reset live overrides as expected
- * 5. Persistence round-trips through v2 storage
+ * 3. Mode changes reset live overrides as expected
+ * 4. Persistence round-trips through v2 storage
  */
 
 import { renderHook, act } from '@testing-library/react'
@@ -16,10 +15,10 @@ import { useLayeredSettings } from '@/hooks/useLayeredSettings'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
 import {
   DEFAULT_DISPLAY_PREFS,
+  DEFAULT_SESSION_STATE,
   FRESH_START_FEEDBACK_THRESHOLD_DB,
   FRESH_START_SENSITIVITY_OFFSET_DB,
 } from '@/lib/settings/defaults'
-import { ENVIRONMENT_TEMPLATES } from '@/lib/settings/environmentTemplates'
 
 afterEach(() => {
   localStorage.removeItem('dwa-v2-session')
@@ -35,6 +34,7 @@ describe('useLayeredSettings — default state', () => {
 
     expect(ds.mode).toBe('speech')
     expect(ds.feedbackThresholdDb).toBe(FRESH_START_FEEDBACK_THRESHOLD_DB)
+    expect(ds.inputGainDb).toBe(0)
     expect(ds.fftSize).toBe(MODE_BASELINES.speech.fftSize)
     expect(ds.minFrequency).toBe(MODE_BASELINES.speech.minFrequency)
     expect(ds.maxFrequency).toBe(MODE_BASELINES.speech.maxFrequency)
@@ -59,7 +59,8 @@ describe('useLayeredSettings — default state', () => {
     expect(result.current.session.liveOverrides.sensitivityOffsetDb).toBe(
       FRESH_START_SENSITIVITY_OFFSET_DB,
     )
-    expect(result.current.session.environment.feedbackOffsetDb).toBe(0)
+    expect(result.current.session.liveOverrides.inputGainDb).toBe(0)
+    expect(result.current.session.environment.mainsHumEnabled).toBe(true)
   })
 
   it('does not inject the fresh-start bump when explicit initial settings are provided', () => {
@@ -78,7 +79,6 @@ describe('useLayeredSettings — default state', () => {
       minFrequency: 250,
       maxDisplayedIssues: 5,
       showAlgorithmScores: true,
-      roomPreset: 'small',
       mainsHumFundamental: 60,
     }))
 
@@ -87,7 +87,6 @@ describe('useLayeredSettings — default state', () => {
     expect(result.current.derivedSettings.minFrequency).toBe(250)
     expect(result.current.display.maxDisplayedIssues).toBe(5)
     expect(result.current.display.showAlgorithmScores).toBe(true)
-    expect(result.current.session.environment.templateId).toBe('small')
     expect(result.current.session.environment.mainsHumFundamental).toBe(60)
   })
 })
@@ -133,20 +132,6 @@ describe('useLayeredSettings — semantic actions', () => {
     )
   })
 
-  it('setEnvironment with template applies relative offsets', () => {
-    const { result } = renderHook(() => useLayeredSettings())
-
-    act(() => result.current.setEnvironment({ templateId: 'small' }))
-
-    const ds = result.current.derivedSettings
-    const expected = (
-      MODE_BASELINES.speech.feedbackThresholdDb +
-      FRESH_START_SENSITIVITY_OFFSET_DB +
-      ENVIRONMENT_TEMPLATES.small.feedbackOffsetDb
-    )
-    expect(ds.feedbackThresholdDb).toBe(expected)
-  })
-
   it('updateDisplay changes display prefs without affecting DSP', () => {
     const { result } = renderHook(() => useLayeredSettings())
     const thresholdBefore = result.current.derivedSettings.feedbackThresholdDb
@@ -181,6 +166,7 @@ describe('useLayeredSettings — semantic actions', () => {
     expect(result.current.derivedSettings.feedbackThresholdDb).toBe(
       FRESH_START_FEEDBACK_THRESHOLD_DB,
     )
+    expect(result.current.derivedSettings.inputGainDb).toBe(0)
     expect(result.current.display.graphFontSize).toBe(DEFAULT_DISPLAY_PREFS.graphFontSize)
   })
 })
@@ -203,24 +189,6 @@ describe('useLayeredSettings — regression', () => {
     expect(stored.liveOverrides?.sensitivityOffsetDb).toBe(FRESH_START_SENSITIVITY_OFFSET_DB)
     expect(result.current.derivedSettings.mode).toBe('speech')
     expect(result.current.derivedSettings.feedbackThresholdDb).toBe(FRESH_START_FEEDBACK_THRESHOLD_DB)
-  })
-
-  it('setEnvironment with displayUnit triggers recomputation (P2 fix)', () => {
-    const { result } = renderHook(() => useLayeredSettings())
-
-    act(() => result.current.setEnvironment({
-      templateId: 'custom',
-      provenance: 'manual',
-      dimensionsM: { length: 10, width: 8, height: 3 },
-      treatment: 'typical',
-      displayUnit: 'meters',
-    }))
-
-    act(() => result.current.setEnvironment({ displayUnit: 'feet' }))
-
-    expect(result.current.session.environment.displayUnit).toBe('feet')
-    expect(result.current.derivedSettings.roomRT60).toBeGreaterThan(0)
-    expect(result.current.derivedSettings.roomVolume).toBeGreaterThan(0)
   })
 })
 
@@ -269,7 +237,8 @@ describe('useLayeredSettings — persistence', () => {
 
 describe('useLayeredSettings — storage backfill', () => {
   it('backfills missing display pref fields from defaults', () => {
-    // Simulate an existing user who saved display prefs before showRoomModeLines existed
+    const staleSwipeKey = ['swipe', 'Labeling'].join('')
+    // Simulate an existing user who saved display prefs before the current schema.
     const oldDisplayPrefs = {
       maxDisplayedIssues: 12,
       graphFontSize: 18,
@@ -288,8 +257,7 @@ describe('useLayeredSettings — storage backfill', () => {
       faderLinkRatio: 1.0,
       faderLinkCenterGainDb: 0,
       faderLinkCenterSensDb: 25,
-      swipeLabeling: false,
-      // NOTE: showRoomModeLines is intentionally missing
+      [staleSwipeKey]: true,
     }
     localStorage.setItem('dwa-v2-display', JSON.stringify(oldDisplayPrefs))
 
@@ -301,24 +269,24 @@ describe('useLayeredSettings — storage backfill', () => {
     expect(result.current.display.showTooltips).toBe(false)
     expect(result.current.display.showFreqZones).toBe(true)
 
-    // New field should backfill from DEFAULT_DISPLAY_PREFS
-    expect(result.current.display.showRoomModeLines).toBe(DEFAULT_DISPLAY_PREFS.showRoomModeLines)
     expect(result.current.display.spectrumSmoothingMode).toBe(DEFAULT_DISPLAY_PREFS.spectrumSmoothingMode)
+    expect(staleSwipeKey in (result.current.display as unknown as Record<string, unknown>)).toBe(false)
+
+    const stored = JSON.parse(localStorage.getItem('dwa-v2-display') ?? '{}')
+    expect(staleSwipeKey in stored).toBe(false)
+    expect(stored.maxDisplayedIssues).toBe(12)
   })
 
   it('backfills missing nested session fields from defaults', () => {
+    const staleModelFlagKey = ['m', 'lEnabled'].join('')
     // Simulate a session saved before environment gained mainsHumEnabled
     const oldSession = {
       modeId: 'worship',
       environment: {
-        templateId: 'medium',
-        treatment: 'typical',
         feedbackOffsetDb: 5,
         ringOffsetDb: 3,
-        provenance: 'template',
         roomRT60: 1.5,
         roomVolume: 300,
-        displayUnit: 'meters',
         // NOTE: mainsHumEnabled and mainsHumFundamental intentionally missing
       },
       liveOverrides: {
@@ -330,7 +298,7 @@ describe('useLayeredSettings — storage backfill', () => {
         eqStyle: 'mode-default',
       },
       diagnostics: {
-        mlEnabled: true,
+        [staleModelFlagKey]: true,
         algorithmMode: 'auto',
         enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml'],
         thresholdMode: 'hybrid',
@@ -349,12 +317,82 @@ describe('useLayeredSettings — storage backfill', () => {
 
     // Stored values should survive
     expect(result.current.session.modeId).toBe('worship')
-    expect(result.current.session.environment.templateId).toBe('medium')
-    expect(result.current.session.environment.feedbackOffsetDb).toBe(5)
     expect(result.current.session.liveOverrides.sensitivityOffsetDb).toBe(2)
 
     // New nested fields should backfill from defaults
     expect(result.current.session.environment.mainsHumEnabled).toBe(true)
     expect(result.current.session.environment.mainsHumFundamental).toBe('auto')
+
+    expect('micCalibrationProfile' in (result.current.session as unknown as Record<string, unknown>)).toBe(false)
+    expect('feedbackOffsetDb' in (result.current.session.environment as unknown as Record<string, unknown>)).toBe(false)
+    expect(staleModelFlagKey in (result.current.session.diagnostics as unknown as Record<string, unknown>)).toBe(false)
+    expect(result.current.session.diagnostics.enabledAlgorithms).not.toContain('ml')
+  })
+
+  it('migrates stale Speech sessions without an explicit sensitivity offset to the fresh-start default', () => {
+    const oldSession = {
+      modeId: 'speech',
+      environment: DEFAULT_SESSION_STATE.environment,
+      liveOverrides: {
+        inputGainDb: 0,
+        autoGainEnabled: false,
+        autoGainTargetDb: -18,
+        focusRange: { kind: 'mode-default' },
+        eqStyle: 'mode-default',
+      },
+      diagnostics: DEFAULT_SESSION_STATE.diagnostics,
+    }
+    localStorage.setItem('dwa-v2-session', JSON.stringify(oldSession))
+
+    const { result } = renderHook(() => useLayeredSettings())
+
+    expect(result.current.session.liveOverrides.sensitivityOffsetDb).toBe(
+      FRESH_START_SENSITIVITY_OFFSET_DB,
+    )
+    expect(result.current.derivedSettings.feedbackThresholdDb).toBe(
+      FRESH_START_FEEDBACK_THRESHOLD_DB,
+    )
+    expect(result.current.derivedSettings.inputGainDb).toBe(0)
+
+    const stored = JSON.parse(localStorage.getItem('dwa-v2-session') ?? '{}')
+    expect(stored.liveOverrides.sensitivityOffsetDb).toBe(
+      FRESH_START_SENSITIVITY_OFFSET_DB,
+    )
+  })
+
+  it('sanitizes stale persisted expert timing and threshold overrides on load', () => {
+    const staleSession = {
+      ...DEFAULT_SESSION_STATE,
+      diagnostics: {
+        ...DEFAULT_SESSION_STATE.diagnostics,
+        confidenceThresholdOverride: 1.5,
+        growthRateThresholdOverride: 0,
+        smoothingTimeConstantOverride: 1.2,
+        sustainMsOverride: 5000,
+        clearMsOverride: 50,
+        prominenceDbOverride: -5,
+        ringThresholdDbOverride: 99,
+      },
+    }
+    localStorage.setItem('dwa-v2-session', JSON.stringify(staleSession))
+
+    const { result } = renderHook(() => useLayeredSettings())
+
+    expect(result.current.session.diagnostics.confidenceThresholdOverride).toBe(0.8)
+    expect(result.current.session.diagnostics.growthRateThresholdOverride).toBe(0.5)
+    expect(result.current.session.diagnostics.smoothingTimeConstantOverride).toBe(0.95)
+    expect(result.current.session.diagnostics.sustainMsOverride).toBe(2000)
+    expect(result.current.session.diagnostics.clearMsOverride).toBe(100)
+    expect(result.current.session.diagnostics.prominenceDbOverride).toBe(4)
+    expect(result.current.session.diagnostics.ringThresholdDbOverride).toBe(12)
+
+    const stored = JSON.parse(localStorage.getItem('dwa-v2-session') ?? '{}')
+    expect(stored.diagnostics.confidenceThresholdOverride).toBe(0.8)
+    expect(stored.diagnostics.growthRateThresholdOverride).toBe(0.5)
+    expect(stored.diagnostics.smoothingTimeConstantOverride).toBe(0.95)
+    expect(stored.diagnostics.sustainMsOverride).toBe(2000)
+    expect(stored.diagnostics.clearMsOverride).toBe(100)
+    expect(stored.diagnostics.prominenceDbOverride).toBe(4)
+    expect(stored.diagnostics.ringThresholdDbOverride).toBe(12)
   })
 })

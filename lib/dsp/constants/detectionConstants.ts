@@ -21,7 +21,7 @@ export const SEVERITY_THRESHOLDS = {
 
 // Classification weights - optimized for PA feedback detection
 // Base feature weights sum to 1.0; classifier also applies contextual deltas
-// (Q factor, room modes, persistence, etc.) that shift probabilities further.
+// (Q factor, persistence, growth, and source-shape gates) that shift probabilities further.
 export const CLASSIFIER_WEIGHTS = {
   // Stationarity (low pitch variation = feedback) - primary indicator
   STABILITY_FEEDBACK: 0.28,
@@ -208,7 +208,7 @@ export const PERSISTENCE_SCORING = {
 /**
  * Per-mode persistence thresholds. Music modes use higher thresholds because
  * instruments sustain 1-5s naturally — using 300ms would false-boost sustained notes.
- * Monitor/ringOut modes use lower thresholds for faster detection.
+ * Monitor mode uses lower thresholds for faster detection.
  * Falls back to PERSISTENCE_SCORING.HIGH_PERSISTENCE_MS (300ms) for unlisted modes.
  */
 export const MODE_PERSISTENCE_HIGH_MS: Partial<Record<string, number>> = {
@@ -219,7 +219,6 @@ export const MODE_PERSISTENCE_HIGH_MS: Partial<Record<string, number>> = {
   liveMusic: 500,  // Dense harmonics — sustained notes are normal
   outdoor: 500,    // Festivals — wind/reverb cause sustained energy
   monitors: 150,   // Stage wedges — fastest detection needed
-  ringOut: 150,    // Calibration — fastest detection needed
 } as const
 
 // ── Signal & Noise Gates ────────────────────────────────────────────────────
@@ -235,7 +234,6 @@ export const SIGNAL_GATE = {
     liveMusic: -45,
     theater: -58,
     monitors: -45,
-    ringOut: -70,      // ring-out wants maximum sensitivity
     broadcast: -70,    // studio is very quiet
     outdoor: -45,
   } as Record<string, number>,
@@ -303,12 +301,11 @@ export const HOTSPOT_COOLDOWN_MS = 3000
 
 /**
  * Per-mode hotspot cooldown durations (ms).
- * Monitors/ringOut need fastest re-detection; liveMusic needs longest to avoid
+ * Monitors need fastest re-detection; liveMusic needs longest to avoid
  * counting musical content as repeat offenders.
  */
 export const HOTSPOT_COOLDOWN_BY_MODE: Record<string, number> = {
   monitors: 1000,
-  ringOut: 1000,
   broadcast: 2000,
   theater: 2000,
   speech: 3000,

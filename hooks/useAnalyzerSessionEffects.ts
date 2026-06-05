@@ -1,115 +1,36 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
-import { useAdvisoryLogging } from '@/hooks/useAdvisoryLogging'
-import { useCompanionModeSync } from '@/hooks/useCompanionModeSync'
-import type { DataCollectionHandle } from '@/hooks/useDataCollection'
-import type { UseCalibrationSessionReturn } from '@/hooks/useCalibrationSession'
+import { useCallback, useEffect } from 'react'
+import { useCurrentRunRecurrence } from '@/hooks/useCurrentRunRecurrence'
 import type { DSPWorkerHandle } from '@/hooks/useDSPWorker'
 import {
   getFeedbackHotspotSummaries,
-  whenFeedbackHistoryReady,
+  getFeedbackHistory,
 } from '@/lib/dsp/feedbackHistory'
 import type { Advisory, DetectorSettings, SpectrumData } from '@/types/advisory'
 
-function assignSettingDelta<K extends keyof DetectorSettings>(
-  delta: Partial<DetectorSettings>,
-  key: K,
-  value: DetectorSettings[K],
-): void {
-  delta[key] = value
-}
-
 interface UseAnalyzerSessionEffectsParams {
-  isRunning: boolean
-  dataCollection: Pick<DataCollectionHandle, 'promptIfNeeded'>
   dspWorker: Pick<DSPWorkerHandle, 'syncFeedbackHistory'>
-  fftSize: number
-  sampleRate: number
   advisories: Advisory[]
-  calibrationEnabled: UseCalibrationSessionReturn['calibrationEnabled']
-  onDetection: UseCalibrationSessionReturn['onDetection']
-  onSettingsChange: UseCalibrationSessionReturn['onSettingsChange']
   spectrumRef: React.RefObject<SpectrumData | null>
   settings: DetectorSettings
 }
 
 export function useAnalyzerSessionEffects({
-  isRunning,
-  dataCollection,
   dspWorker,
-  fftSize,
-  sampleRate,
   advisories,
-  calibrationEnabled,
-  onDetection,
-  onSettingsChange,
   spectrumRef,
   settings,
 }: UseAnalyzerSessionEffectsParams): void {
-  useCompanionModeSync(settings.mode)
   const syncFeedbackHistory = useCallback(() => {
     dspWorker.syncFeedbackHistory(getFeedbackHotspotSummaries())
   }, [dspWorker])
 
   useEffect(() => {
-    if (isRunning) {
-      dataCollection.promptIfNeeded(fftSize, sampleRate)
-    }
-  }, [dataCollection, fftSize, isRunning, sampleRate])
+    getFeedbackHistory().setMode(settings.mode)
+    syncFeedbackHistory()
+  }, [settings.mode, syncFeedbackHistory])
 
-  useEffect(() => {
-    let cancelled = false
-
-    void whenFeedbackHistoryReady().then(() => {
-      if (!cancelled) {
-        syncFeedbackHistory()
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [syncFeedbackHistory])
-
-  useAdvisoryLogging(advisories, syncFeedbackHistory)
-
-  const prevAdvisoryIdsRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!calibrationEnabled) return
-
-    const prevIds = prevAdvisoryIdsRef.current
-    for (const advisory of advisories) {
-      if (!prevIds.has(advisory.id)) {
-        onDetection(advisory, spectrumRef.current)
-      }
-    }
-
-    prevIds.clear()
-    advisories.forEach(advisory => prevIds.add(advisory.id))
-  }, [advisories, calibrationEnabled, onDetection, spectrumRef])
-
-  const prevSettingsRef = useRef(settings)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const previousSettings = prevSettingsRef.current
-      const delta: Partial<DetectorSettings> = {}
-      let hasDelta = false
-
-      for (const key of Object.keys(settings) as Array<keyof DetectorSettings>) {
-        if (settings[key] !== previousSettings[key]) {
-          assignSettingDelta(delta, key, settings[key])
-          hasDelta = true
-        }
-      }
-
-      if (hasDelta) {
-        onSettingsChange(delta)
-      }
-
-      prevSettingsRef.current = settings
-    }, 100)
-
-    return () => clearTimeout(timer)
-  }, [onSettingsChange, settings])
+  useCurrentRunRecurrence(advisories, syncFeedbackHistory)
+  void spectrumRef
 }

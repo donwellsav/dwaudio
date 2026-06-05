@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { logError } from '@/lib/utils/logger'
 
 const STYLES = `
 html { color-scheme: dark light; }
@@ -48,7 +49,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error(error)
+    logError(error)
   }, [error])
 
   return (

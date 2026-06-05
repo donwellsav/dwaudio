@@ -4,21 +4,118 @@ import { memo } from 'react'
 import { DwaLogo } from './DwaLogo'
 import { useSettings } from '@/contexts/SettingsContext'
 import { formatFreqLabel } from '@/lib/utils/pitchUtils'
+import type { SpectrumStatus } from '@/hooks/audioAnalyzerTypes'
 
 interface IssuesEmptyStateProps {
   isRunning?: boolean
   isLowSignal?: boolean
+  spectrumStatus?: SpectrumStatus | null
+  noiseFloorDb?: number | null
   onStart?: () => void
-  onStartRingOut?: () => void
+}
+
+function formatStatusDb(value: number): string {
+  return `${Math.round(value)}dB`
+}
+
+function formatLatencyMs(value: number): string {
+  return value < 1000 ? `${Math.round(value)}ms` : `${(value / 1000).toFixed(1)}s`
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`
+}
+
+function formatReportGateLabel(gate: SpectrumStatus['lastReportGate']): string | null {
+  switch (gate) {
+    case 'not-eligible': return 'Not Eligible'
+    case 'steady-chromatic-tone': return 'Chromatic Gate'
+    case 'growing-waiting-persistence': return 'Persistence Wait'
+    case 'speech-formant': return 'Formant Gate'
+    case 'fusion-uncertain': return 'Fusion Wait'
+    case 'fusion-not-feedback': return 'Not Feedback'
+    case 'speech-material': return 'Speech Material'
+    case 'music-material': return 'Music Material'
+    case 'low-confidence': return 'Low Confidence'
+    case 'whistle-ignored': return 'Whistle Filter'
+    case 'mode-filter': return 'Mode Filter'
+    case 'reported': return 'Report Ready'
+    default: return null
+  }
+}
+
+function formatFusionVerdict(value: SpectrumStatus['lastFusionVerdict']): string | null {
+  switch (value) {
+    case 'POSSIBLE_FEEDBACK': return 'possible'
+    case 'NOT_FEEDBACK': return 'not'
+    case 'UNCERTAIN': return 'uncertain'
+    case 'FEEDBACK': return 'feedback'
+    default: return null
+  }
+}
+
+function getAnalyzerStatusLabel(
+  spectrumStatus: SpectrumStatus | null | undefined,
+  noiseFloorDb: number | null | undefined,
+): string | null {
+  if (!spectrumStatus) return null
+
+  if (spectrumStatus.isSignalPresent === false) return 'Signal Gate'
+  if (spectrumStatus.lastReportDecision === 'blocked') {
+    const gateLabel = formatReportGateLabel(spectrumStatus.lastReportGate)
+    if (gateLabel) return gateLabel
+  }
+  if (spectrumStatus.contentType === 'compressed' || spectrumStatus.isCompressed) return 'Compression Guard'
+  if (spectrumStatus.contentType === 'music') return 'Music Guard'
+  if (noiseFloorDb == null) return 'Measuring Floor'
+
+  if (
+    Number.isFinite(spectrumStatus.peak) &&
+    Number.isFinite(spectrumStatus.effectiveThresholdDb) &&
+    spectrumStatus.peak < (spectrumStatus.effectiveThresholdDb ?? -Infinity)
+  ) {
+    return 'Below Threshold'
+  }
+
+  return 'Listening'
+}
+
+function buildAnalyzerStatusMetrics(spectrumStatus: SpectrumStatus | null | undefined): string[] {
+  if (!spectrumStatus) return []
+
+  const metrics: string[] = []
+  if (Number.isFinite(spectrumStatus.peak)) {
+    metrics.push(`pk ${formatStatusDb(spectrumStatus.peak)}`)
+  }
+  if (Number.isFinite(spectrumStatus.effectiveThresholdDb)) {
+    metrics.push(`thr ${formatStatusDb(spectrumStatus.effectiveThresholdDb ?? 0)}`)
+  }
+  if (Number.isFinite(spectrumStatus.lastConfirmLatencyMs)) {
+    metrics.push(`last ${formatLatencyMs(spectrumStatus.lastConfirmLatencyMs ?? 0)}`)
+  }
+  const fusionVerdict = formatFusionVerdict(spectrumStatus.lastFusionVerdict)
+  if (fusionVerdict) {
+    metrics.push(`fusion ${fusionVerdict}`)
+  }
+  if (Number.isFinite(spectrumStatus.lastFeedbackProbability)) {
+    metrics.push(`prob ${formatPercent(spectrumStatus.lastFeedbackProbability ?? 0)}`)
+  }
+  if (Number.isFinite(spectrumStatus.lastFusionConfidence)) {
+    metrics.push(`conf ${formatPercent(spectrumStatus.lastFusionConfidence ?? 0)}`)
+  }
+  return metrics
 }
 
 export const IssuesEmptyState = memo(function IssuesEmptyState({
   isRunning = false,
   isLowSignal = false,
+  spectrumStatus,
+  noiseFloorDb,
   onStart,
-  onStartRingOut,
 }: IssuesEmptyStateProps) {
   const { settings } = useSettings()
+  const analyzerStatusLabel = getAnalyzerStatusLabel(spectrumStatus, noiseFloorDb)
+  const analyzerStatusMetrics = buildAnalyzerStatusMetrics(spectrumStatus)
 
   if (!isRunning && onStart) {
     return (
@@ -60,21 +157,6 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
             </span>
           </div>
         </button>
-
-        {onStartRingOut ? (
-          <>
-            <div className="w-full max-w-[220px] h-px bg-border/40" />
-            <button
-              onClick={onStartRingOut}
-              aria-label="Start ring-out wizard"
-              className="group relative flex items-center justify-center gap-2 w-full max-w-[220px] min-h-[44px] py-2 px-4 rounded-lg border border-amber-500/15 hover:border-amber-500/30 bg-transparent hover:bg-amber-500/5 transition-[color,background-color,border-color] duration-300 cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-amber-500"
-            >
-              <span className="font-mono text-dwa-sm font-bold tracking-[0.12em] uppercase text-amber-500/70 dark:text-amber-400/70 group-hover:text-amber-400">
-                Ring Out Room
-              </span>
-            </button>
-          </>
-        ) : null}
 
         <div className="flex flex-col items-center gap-1 mt-3 max-w-[220px]">
           <div className="flex items-center gap-2 font-mono text-dwa-xs tracking-[0.12em] uppercase text-muted-foreground/65">
@@ -139,6 +221,16 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
         <div className="font-mono text-dwa-sm font-bold tracking-[0.2em] uppercase text-emerald-500/80">
           All Clear
         </div>
+        {analyzerStatusLabel ? (
+          <div className="flex max-w-[260px] flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-dwa-xs uppercase tracking-[0.12em] text-muted-foreground/55">
+            <span className="text-emerald-400/75">{analyzerStatusLabel}</span>
+            {analyzerStatusMetrics.map((metric) => (
+              <span key={metric} className="text-muted-foreground/40">
+                {metric}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   )

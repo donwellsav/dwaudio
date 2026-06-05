@@ -5,7 +5,6 @@ import {
   useContext,
   useMemo,
   type ReactNode,
-  type RefObject,
 } from 'react'
 import { useEngine } from '@/contexts/EngineContext'
 import { useGeneralUIState } from '@/hooks/useGeneralUIState'
@@ -16,10 +15,6 @@ export interface UIContextValue {
   setMobileTab: (tab: 'issues' | 'settings') => void
   isFrozen: boolean
   toggleFreeze: () => void
-  isFullscreen: boolean
-  toggleFullscreen: () => void
-  layoutKey: number
-  resetLayout: () => void
   rtaContainerRef: (node: HTMLDivElement | null) => void
   isRtaFullscreen: boolean
   toggleRtaFullscreen: () => void
@@ -28,13 +23,12 @@ export interface UIContextValue {
 const UIContext = createContext<UIContextValue | null>(null)
 
 interface UIProviderProps {
-  rootRef: RefObject<HTMLDivElement | null>
   children: ReactNode
 }
 
-export function UIProvider({ rootRef, children }: UIProviderProps) {
+export function UIProvider({ children }: UIProviderProps) {
   const { isRunning } = useEngine()
-  const generalState = useGeneralUIState(rootRef, isRunning)
+  const generalState = useGeneralUIState(isRunning)
   const rtaFullscreenState = useRtaFullscreenState()
 
   const value = useMemo<UIContextValue>(() => ({

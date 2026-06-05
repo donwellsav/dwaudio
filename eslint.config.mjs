@@ -11,7 +11,18 @@ const eslintConfig = [
   ...coreWebVitals,
   ...typescript,
   {
-    ignores: ['.claude/**', 'public/**', 'docs/**', 'autoresearch/**', 'companion/**', 'companion-module-dbx-driverack-pa2/**', 'companion-module/**', 'scripts/**', 'tmp/**', 'supabase/**'],
+    ignores: [
+      '.claude/**',
+      '.next/**',
+      'coverage/**',
+      'dist/**',
+      'docs/**',
+      'node_modules/**',
+      'out/**',
+      'public/**',
+      'scripts/**',
+      'tmp/**',
+    ],
   },
   {
     plugins: {

@@ -131,24 +131,13 @@ function makeSettings(overrides: Partial<DetectorSettings> = {}): DetectorSettin
     harmonicToleranceCents: 200,
     showTooltips: true,
     aWeightingEnabled: true,
-    micCalibrationProfile: 'none',
     confidenceThreshold: 0.35,
-    roomRT60: 0.6,
-    roomVolume: 200,
-    roomPreset: 'none',
-    roomTreatment: 'typical',
-    roomLengthM: 10,
-    roomWidthM: 8,
-    roomHeightM: 2.5,
-    roomDimensionsUnit: 'meters',
     algorithmMode: 'auto',
-    enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr', 'ml'],
-    mlEnabled: true,
+    enabledAlgorithms: ['msd', 'phase', 'spectral', 'comb', 'ihr', 'ptmr'],
     adaptivePhaseSkip: true,
     showAlgorithmScores: false,
     showPeqDetails: true,
     showFreqZones: false,
-    showRoomModeLines: true,
     spectrumWarmMode: false,
     spectrumSmoothingMode: 'raw',
     sustainMs: 300,
@@ -170,7 +159,6 @@ function makeSettings(overrides: Partial<DetectorSettings> = {}): DetectorSettin
     faderLinkRatio: 1.0,
     faderLinkCenterGainDb: 0,
     faderLinkCenterSensDb: 25,
-    swipeLabeling: false,
     signalTintEnabled: true,
     mainsHumEnabled: true,
     mainsHumFundamental: 'auto' as const,
@@ -207,6 +195,30 @@ describe('AdvisoryManager', () => {
       expect(advisory.trackId).toBe('track-new')
       expect(advisory.severity).toBe('RESONANCE')
       expect(advisory.trueFrequencyHz).toBe(1000)
+    })
+
+    it('preserves detector confirmation timing on new advisories', () => {
+      const track = makeTrack({ id: 'track-latency' })
+      const peak = makePeak({
+        timestamp: 10000,
+        firstSeenAt: 9860,
+        confirmedAt: 10000,
+        confirmLatencyMs: 140,
+      })
+
+      const actions = mgr.createOrUpdate(
+        track,
+        peak,
+        makeClassification(),
+        makeEQAdvisory(),
+        settings,
+      )
+
+      expect(actions).toHaveLength(1)
+      const advisory = (actions[0] as { type: 'advisory'; advisory: { firstSeenAt?: number; confirmedAt?: number; confirmLatencyMs?: number } }).advisory
+      expect(advisory.firstSeenAt).toBe(9860)
+      expect(advisory.confirmedAt).toBe(10000)
+      expect(advisory.confirmLatencyMs).toBe(140)
     })
 
     it('maps track ID to advisory ID after creation', () => {
@@ -620,6 +632,22 @@ describe('AdvisoryManager', () => {
   // ── 6. Rate limiting ─────────────────────────────────────────────────────
 
   describe('rate limiting', () => {
+    it('does not rate-limit the first advisory in a fresh analyzer run', () => {
+      const track = makeTrack({ id: 'track-first-fast', trueFrequencyHz: 1000 })
+      const peak = makePeak({ timestamp: 120 })
+
+      const actions = mgr.createOrUpdate(
+        track,
+        peak,
+        makeClassification(),
+        makeEQAdvisory({ geq: { bandHz: 1000, bandIndex: 15, suggestedDb: -6 } }),
+        settings,
+      )
+
+      expect(actions).toHaveLength(1)
+      expect(actions[0].type).toBe('advisory')
+    })
+
     it('blocks new advisory within 200ms of last creation', () => {
       const track1 = makeTrack({ id: 'track-rl1', trueFrequencyHz: 1000 })
       const track2 = makeTrack({ id: 'track-rl2', trueFrequencyHz: 3000 })
@@ -939,6 +967,24 @@ describe('AdvisoryManager', () => {
 
       expect(mgr.getAdvisoryIdForTrack('track-ct-merged-1')).toBeUndefined()
       expect(mgr.getAdvisoryIdForTrack('track-ct-merged-2')).toBeUndefined()
+    })
+
+    it('does not clear an existing advisory on a brief report-gate miss', () => {
+      const track = makeTrack({ id: 'track-ct-grace', trueFrequencyHz: 1000 })
+      const peak = makePeak({ timestamp: 10000 })
+      mgr.createOrUpdate(track, peak, makeClassification(), makeEQAdvisory(), settings)
+
+      const advisoryId = mgr.getAdvisoryIdForTrack('track-ct-grace')!
+
+      expect(mgr.clearForTrackAfterReportGateMiss('track-ct-grace', 10100, 1200)).toBeNull()
+      expect(mgr.getAdvisoryIdForTrack('track-ct-grace')).toBe(advisoryId)
+
+      expect(mgr.clearForTrackAfterReportGateMiss('track-ct-grace', 11250, 1200)).toBeNull()
+      expect(mgr.getAdvisoryIdForTrack('track-ct-grace')).toBe(advisoryId)
+
+      const cleared = mgr.clearForTrackAfterReportGateMiss('track-ct-grace', 11301, 1200)
+      expect(cleared).toBe(advisoryId)
+      expect(mgr.getAdvisoryIdForTrack('track-ct-grace')).toBeUndefined()
     })
   })
 

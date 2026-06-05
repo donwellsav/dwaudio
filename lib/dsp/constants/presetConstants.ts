@@ -1,14 +1,11 @@
 /**
- * Preset Constants — Operation Modes, canonical default snapshot, Room Presets
+ * Preset Constants — Operation Modes and canonical default snapshot
  *
- * 8 operation mode presets (speech, worship, liveMusic, theater, monitors,
- * ringOut, broadcast, outdoor), the DEFAULT_SETTINGS compatibility export,
- * room size presets, and frequency range presets.
+ * 7 operation mode presets (speech, worship, liveMusic, theater, monitors,
+ * broadcast, outdoor), the DEFAULT_SETTINGS compatibility export,
+ * and frequency range presets.
  *
  * @see DBX AFS whitepaper — mode-specific detection strategies
- * @see Smaart v8 measurement guide — calibration modes
- * @see Everest, "Master Handbook of Acoustics" — venue acoustics
- * @see Hopkins, "Sound Insulation" — room mode behavior
  */
 
 import type { DetectorSettings } from '@/types/advisory'
@@ -53,7 +50,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 8192,
     minFrequency: 150,
     maxFrequency: 10000,
-    sustainMs: 240,
+    sustainMs: 180,
     clearMs: 400,
     confidenceThreshold: 0.35,
     prominenceDb: 8,
@@ -72,7 +69,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 8192,
     minFrequency: 100,
     maxFrequency: 12000,
-    sustainMs: 240,
+    sustainMs: 200,
     clearMs: 500,
     confidenceThreshold: 0.45,
     prominenceDb: 12,
@@ -91,7 +88,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 4096,
     minFrequency: 60,
     maxFrequency: 16000,
-    sustainMs: 320,
+    sustainMs: 240,
     clearMs: 600,
     confidenceThreshold: 0.55,
     prominenceDb: 14,
@@ -110,7 +107,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 8192,
     minFrequency: 150,
     maxFrequency: 10000,
-    sustainMs: 220,
+    sustainMs: 180,
     clearMs: 400,
     confidenceThreshold: 0.40,
     prominenceDb: 10,
@@ -129,33 +126,13 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 4096,
     minFrequency: 200,
     maxFrequency: 6000,
-    sustainMs: 180,
+    sustainMs: 140,
     clearMs: 300,
     confidenceThreshold: 0.35,
     prominenceDb: 8,
     eqPreset: 'surgical',
     aWeightingEnabled: false,
     inputGainDb: 0,
-    ignoreWhistle: false,
-  },
-
-  ringOut: {
-    label: 'Ring Out',
-    description: 'System Calibration',
-    feedbackThresholdDb: 27,
-    ringThresholdDb: 2,
-    growthRateThreshold: 0.5,
-    fftSize: 16384,
-    minFrequency: 60,
-    maxFrequency: 16000,
-    sustainMs: 160,
-    clearMs: 300,
-    confidenceThreshold: 0.30,
-    prominenceDb: 8,
-    eqPreset: 'surgical',
-    aWeightingEnabled: false,
-    inputGainDb: 0,
-    autoGainTargetDb: -12,
     ignoreWhistle: false,
   },
 
@@ -168,7 +145,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 8192,
     minFrequency: 80,
     maxFrequency: 12000,
-    sustainMs: 220,
+    sustainMs: 180,
     clearMs: 350,
     confidenceThreshold: 0.30,
     prominenceDb: 8,
@@ -188,7 +165,7 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
     fftSize: 4096,
     minFrequency: 100,
     maxFrequency: 12000,
-    sustainMs: 220,
+    sustainMs: 200,
     clearMs: 450,
     confidenceThreshold: 0.45,
     prominenceDb: 12,
@@ -204,69 +181,6 @@ export const OPERATION_MODES: Record<string, ModePreset> = {
 // Speech-mode compatibility snapshot derived from the layered defaults.
 // Keep the exported symbol for legacy runtime consumers and tests.
 export const DEFAULT_SETTINGS: DetectorSettings = DEFAULT_DETECTOR_SETTINGS
-
-// ── Room Presets ─────────────────────────────────────────────────────────────
-
-export const ROOM_PRESETS = {
-  none: {
-    label: 'None',
-    description: 'No room physics — raw detection only',
-    lengthM: 15, widthM: 12, heightM: 5,
-    treatment: 'typical' as const,
-    roomRT60: 1.0, roomVolume: 1000, schroederFreq: 63,
-    feedbackThresholdDb: 23, ringThresholdDb: 4,
-  },
-  small: {
-    label: 'Small Room',
-    description: 'Boardrooms, huddle rooms, podcast booths (10–20 people)',
-    lengthM: 6.1, widthM: 4.6, heightM: 2.9,
-    treatment: 'treated' as const,
-    roomRT60: 0.4, roomVolume: 80, schroederFreq: 141,
-    feedbackThresholdDb: 15, ringThresholdDb: 3,
-  },
-  medium: {
-    label: 'Medium Room',
-    description: 'Conference rooms, classrooms, training rooms (20–80 people)',
-    lengthM: 10.7, widthM: 8.5, heightM: 3.4,
-    treatment: 'typical' as const,
-    roomRT60: 0.7, roomVolume: 300, schroederFreq: 97,
-    feedbackThresholdDb: 23, ringThresholdDb: 4,
-  },
-  large: {
-    label: 'Large Venue',
-    description: 'Ballrooms, auditoriums, theaters, town halls (80–500 people)',
-    lengthM: 15.2, widthM: 12.2, heightM: 5.5,
-    treatment: 'typical' as const,
-    roomRT60: 1.0, roomVolume: 1000, schroederFreq: 63,
-    feedbackThresholdDb: 25, ringThresholdDb: 5,
-  },
-  arena: {
-    label: 'Arena / Hall',
-    description: 'Concert halls, arenas, convention centers (500+ people)',
-    lengthM: 30, widthM: 25, heightM: 6.7,
-    treatment: 'untreated' as const,
-    roomRT60: 1.8, roomVolume: 5000, schroederFreq: 38,
-    feedbackThresholdDb: 31, ringThresholdDb: 6,
-  },
-  worship: {
-    label: 'Worship Space',
-    description: 'Churches, cathedrals, temples (highly reverberant)',
-    lengthM: 20, widthM: 14, heightM: 7.1,
-    treatment: 'untreated' as const,
-    roomRT60: 2.0, roomVolume: 2000, schroederFreq: 63,
-    feedbackThresholdDb: 28, ringThresholdDb: 5,
-  },
-  custom: {
-    label: 'Custom',
-    description: 'Enter your own room dimensions',
-    lengthM: 15, widthM: 12, heightM: 5,
-    treatment: 'typical' as const,
-    roomRT60: 1.0, roomVolume: 1000, schroederFreq: 63,
-    feedbackThresholdDb: 23, ringThresholdDb: 4,
-  },
-} as const
-
-export type RoomPresetKey = keyof typeof ROOM_PRESETS
 
 // Frequency range presets — quick switching for different use cases
 export const FREQ_RANGE_PRESETS = [

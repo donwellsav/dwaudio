@@ -10,6 +10,7 @@ import {
   drawGEQBarView,
 } from '@/lib/canvas/geqBarViewDrawing'
 import type { Advisory } from '@/types/advisory'
+import type { SpectrumStatus } from '@/hooks/audioAnalyzerTypes'
 import { useGEQBarViewState } from '@/hooks/useGEQBarViewState'
 
 interface GEQBarViewProps {
@@ -17,6 +18,8 @@ interface GEQBarViewProps {
   graphFontSize?: number
   clearedIds?: Set<string>
   isRunning?: boolean
+  isLowSignal?: boolean
+  spectrumStatus?: SpectrumStatus | null
 }
 
 export const GEQBarView = memo(function GEQBarView({
@@ -24,6 +27,8 @@ export const GEQBarView = memo(function GEQBarView({
   graphFontSize = 11,
   clearedIds,
   isRunning = false,
+  isLowSignal = false,
+  spectrumStatus,
 }: GEQBarViewProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== 'light'
@@ -121,7 +126,7 @@ export const GEQBarView = memo(function GEQBarView({
       numBands: metrics.numBands,
     }
 
-    drawGEQBarView(ctx, metrics, bandRecommendations, isDark, Date.now())
+    drawGEQBarView(ctx, metrics, bandRecommendations, isDark)
   }, [bandRecommendations, graphFontSize, isDark, layoutRef])
 
   useAnimationFrame(render)
@@ -158,7 +163,13 @@ export const GEQBarView = memo(function GEQBarView({
         />
       )}
 
-      {!hasRecommendations && <GEQBarEmptyState isRunning={isRunning} />}
+      {!hasRecommendations && (
+        <GEQBarEmptyState
+          isRunning={isRunning}
+          isLowSignal={isLowSignal}
+          spectrumStatus={spectrumStatus}
+        />
+      )}
     </div>
   )
 })

@@ -74,7 +74,7 @@ describe('useMobileFaderState', () => {
     expect(handleThresholdChange).not.toHaveBeenCalled()
   })
 
-  it('raises upward guidance after prolonged silence and warning guidance when sensitivity is extreme', () => {
+  it('keeps ordinary signal neutral and warns when advisories pile up', () => {
     const { result, rerender } = renderHook((props: {
       feedbackThresholdDb: number
       activeAdvisoryCount: number
@@ -98,7 +98,7 @@ describe('useMobileFaderState', () => {
       vi.advanceTimersByTime(2000)
     })
 
-    expect(result.current.mobileGuidance).toEqual({ direction: 'up', urgency: 'hint' })
+    expect(result.current.mobileGuidance).toEqual({ direction: 'none', urgency: 'none' })
 
     rerender({
       feedbackThresholdDb: 4,

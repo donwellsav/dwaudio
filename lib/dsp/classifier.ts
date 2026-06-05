@@ -1,6 +1,5 @@
 // DoneWell Audio Classifier - Distinguishes feedback vs whistle vs instrument
-// Enhanced with acoustic research from "Sound Insulation" (Carl Hopkins, 2007)
-// Now integrates MSD, Phase Coherence, and Spectral Flatness from advancedDetection.ts
+// Integrates deterministic MSD, phase, spectral, comb, IHR, and PTMR evidence.
 
 import { CLASSIFIER_WEIGHTS, SEVERITY_THRESHOLDS, PHPR_SETTINGS, MAINS_HUM_GATE } from './constants'
 import type {
@@ -10,35 +9,27 @@ import type {
   IssueLabel,
   TrackedPeak,
   DetectorSettings,
+  ReportGateDecision,
 } from '@/types/advisory'
 import {
   normalizeTrackInput,
-  belowSchroederWeight,
   countFormantBands,
-  countNearbyFrequencies,
   isChromaticallyQuantized,
   detectMainsHum,
   getRecentFrequencyHistory,
   CHROMATIC_PHASE_THRESHOLD,
   CHROMATIC_PHASE_REDUCTION,
-  MODE_PRESENCE_BONUS,
   FORMANT_BANDS,
 } from './classifierHelpers'
 import type { TrackInput } from './classifierHelpers'
 import type { AlgorithmScores, FusedDetectionResult } from './advancedDetection'
 import {
-  calculateSchroederFrequency,
   getFrequencyBand,
   calculateModalOverlap,
   classifyModalOverlap,
   analyzeCumulativeGrowth,
   calculateCalibratedConfidence,
   analyzeVibrato,
-  reverberationQAdjustment,
-  modalDensityFeedbackAdjustment,
-  roomModeProximityPenalty,
-  frequencyDependentProminence,
-  airAbsorptionCorrectedRT60,
 } from './acousticUtils'
 
 // ── Classifier Tuning Constants ─────────────────────────────────────────────
@@ -52,21 +43,6 @@ import {
 const PRIOR_FEEDBACK = 0.45
 const PRIOR_WHISTLE = 0.27
 const PRIOR_INSTRUMENT = 0.27
-const CLUSTERING_BANDWIDTH_MULTIPLIER = 3
-const MODE_ABSENCE_PENALTY = 0.05
-
-// Cached room-physics derivation — only depends on (roomPreset, roomRT60, roomVolume).
-// Avoids recalculating Schroeder frequency on every peak (~200+ calls/sec during dense feedback).
-let _roomCacheKey = ''
-let _roomCacheSchroeder = 0
-
-/**
- * Maximum absolute delta that room-physics adjustments can cumulatively apply
- * to pFeedback. Room cues (RT60, modal density, Schroeder penalty, mode
- * clustering, mode proximity) are correlated — they all derive from Q,
- * frequency, and RT60 — so unbounded stacking can over-suppress.
- */
-const MAX_ROOM_DELTA = 0.30
 
 const FORMANT_Q_MIN = 3
 const FORMANT_Q_MAX = 20
@@ -82,6 +58,13 @@ const WHISTLE_NON_CORRECTIVE_REASON =
   'Whistle-like tone detected without enough feedback evidence for corrective action'
 const WHISTLE_PROMOTION_MIN_FEEDBACK = 0.50
 const WHISTLE_PROMOTION_MARGIN = 0.10
+const LIVE_MUSIC_MATERIAL_INSTRUMENT_POSTERIOR_MIN = 0.30
+const LIVE_MUSIC_MATERIAL_FEEDBACK_POSTERIOR_MIN = 0.55
+const CONSERVATIVE_GROWING_MIN_PERSISTENCE_MS = 80
+const STRONG_WHISTLE_MODULATION_MIN = 0.65
+const STRONG_WHISTLE_SIDEBAND_MIN = 0.7
+const CHROMATIC_STEADY_TONE_MAX_GROWTH_DB = 2
+const CHROMATIC_STEADY_TONE_MIN_PERSISTENCE_MS = 120
 
 function isUrgentFeedbackSeverity(severity: SeverityLevel): boolean {
   return severity === 'RUNAWAY' || severity === 'GROWING'
@@ -140,35 +123,17 @@ function normalizePromotedWhistleSeverity(
 /**
  * Classify a track as feedback, whistle, or instrument
  * Uses weighted scoring model based on extracted features
- * Enhanced with acoustic research from "Sound Insulation" (Carl Hopkins, 2007)
  */
 export function classifyTrack(track: TrackInput, settings?: DetectorSettings, activeFrequencies?: number[]): ClassificationResult {
   const features = normalizeTrackInput(track)
   const reasons: string[] = []
   let speechLikePattern = false
-  let roomRiskFactors = 0
 
   // ==================== Acoustic Context ====================
 
-  // Gate all room physics behind preset — 'none' means raw detection only
-  const roomPreset = settings?.roomPreset
-  const roomConfigured = roomPreset != null && roomPreset !== 'none'
-  const roomRT60 = settings?.roomRT60 ?? 1.2
-  const roomVolume = settings?.roomVolume ?? 500
-
-  // Cached Schroeder frequency — only recompute when room settings change
-  const roomKey = roomConfigured ? `${roomPreset}:${roomRT60}:${roomVolume}` : ''
-  let schroederFreq: number
-  if (roomKey === _roomCacheKey) {
-    schroederFreq = _roomCacheSchroeder
-  } else {
-    schroederFreq = roomConfigured ? calculateSchroederFrequency(roomRT60, roomVolume) : 0
-    _roomCacheKey = roomKey
-    _roomCacheSchroeder = schroederFreq
-  }
-  
-  // Get frequency band and modifiers
-  const freqBand = getFrequencyBand(features.frequencyHz, schroederFreq)
+  // Local-only fork: no hidden room/environment model. Frequency banding uses
+  // fixed detector bands so stale room settings cannot change classification.
+  const freqBand = getFrequencyBand(features.frequencyHz)
   
   // Calculate modal overlap indicator (M = 1/Q, based on textbook Section 1.2.6.7)
   const modalOverlap = calculateModalOverlap(features.minQ)
@@ -279,26 +244,6 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     reasons.push(`Narrow Q: ${features.minQ.toFixed(1)} (band: ${freqBand.band})`)
   }
 
-  // Track cumulative room-physics delta for MAX_ROOM_DELTA cap
-  let roomDelta = 0
-
-  // 6a. Reverberation-aware Q adjustment (Hopkins §1.2.6.3)
-  // Rooms with high RT60 produce naturally high-Q room modes.
-  // A peak Q ≤ Q_room = π·f·T₆₀/6.9 is more likely a room mode than feedback.
-  // A peak Q >> Q_room is unusually sharp → boost pFeedback.
-  // Air absorption correction (Hopkins §1.2.4) shortens effective RT60 at high frequencies.
-  // Only applies when room is configured (preset !== 'none')
-  if (roomConfigured) {
-    const effectiveRT60 = airAbsorptionCorrectedRT60(roomRT60, features.frequencyHz, roomVolume)
-    const rt60Adj = reverberationQAdjustment(features.minQ, features.frequencyHz, effectiveRT60)
-    if (rt60Adj.delta !== 0) {
-      pFeedback += rt60Adj.delta
-      roomDelta += rt60Adj.delta
-      if (rt60Adj.delta < 0) roomRiskFactors++
-      if (rt60Adj.reason) reasons.push(rt60Adj.reason)
-    }
-  }
-
   // 7. Persistence without modulation
   const persistenceThreshold = 1000 * freqBand.sustainMultiplier
   if (features.persistenceMs > persistenceThreshold && features.modulationScore < 0.2) {
@@ -306,43 +251,14 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     reasons.push(`Sustained without modulation: ${(features.persistenceMs / 1000).toFixed(1)}s`)
   }
 
-  // 8. Modal overlap analysis (from textbook)
-  // Isolated modes (M < 0.3) are more likely feedback
+  // 8. Q-overlap context
+  // Isolated narrow peaks are more likely feedback; diffuse peaks are more
+  // likely complex source material.
   pFeedback += modalAnalysis.feedbackProbabilityBoost
   if (modalAnalysis.classification === 'ISOLATED') {
     reasons.push(`Isolated mode (M=${modalOverlap.toFixed(2)}) - high feedback risk`)
   } else if (modalAnalysis.classification === 'DIFFUSE') {
-    reasons.push(`Diffuse field (M=${modalOverlap.toFixed(2)}) - likely room noise`)
-  }
-
-  // 8a. Hopkins n(f) modal density adjustment (Eq. 1.77)
-  // Sparse modal fields make peaks ambiguous; dense modal fields make sharp
-  // peaks stand out as feedback.  Derives from room volume + frequency.
-  // Only applies when room is configured (preset !== 'none')
-  if (roomConfigured) {
-    const nfAdj = modalDensityFeedbackAdjustment(
-      features.frequencyHz,
-      roomVolume,
-      features.minQ
-    )
-    if (nfAdj.delta !== 0) {
-      pFeedback += nfAdj.delta
-      roomDelta += nfAdj.delta
-      if (nfAdj.delta < 0) roomRiskFactors++
-      if (nfAdj.note) reasons.push(nfAdj.note)
-    }
-  }
-
-  // 8b. Mode clustering — 2+ peaks within 3× bandwidth suggest coupled room modes (Hopkins §1.2.6.7)
-  if (activeFrequencies && activeFrequencies.length > 1 && features.minQ > 0) {
-    const bandwidth3dB = features.frequencyHz / features.minQ
-    const clusterRadius = CLUSTERING_BANDWIDTH_MULTIPLIER * bandwidth3dB
-    const neighbors = countNearbyFrequencies(activeFrequencies, features.frequencyHz, clusterRadius)
-    if (neighbors >= 2) {
-      pFeedback -= MODE_PRESENCE_BONUS
-      roomRiskFactors++
-      reasons.push(`Mode cluster: ${neighbors + 1} peaks within ${clusterRadius.toFixed(0)} Hz — coupled modes`)
-    }
+    reasons.push(`Diffuse peak shape (M=${modalOverlap.toFixed(2)}) - likely complex source material`)
   }
 
   // 9. NEW: Cumulative growth analysis (slow-building feedback)
@@ -357,55 +273,6 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
       pFeedback += 0.08
       reasons.push(`Cumulative growth: +${cumulativeGrowth.totalGrowthDb.toFixed(1)}dB (building)`)
     }
-  }
-
-  // 10. Frequency band context — Schroeder room-mode penalty
-  // PHYSICS (Hopkins §1.2.6): Below the Schroeder frequency individual room
-  // modes dominate.  Modal density n(f) ≈ 4π f² V / c³ → very sparse below
-  // ~200 Hz.  A sharp peak in this range is more likely to be a room mode
-  // than acoustic feedback.
-  //
-  // Penalty reduced to -0.12 (was -0.25): the old value consumed 76% of the
-  // starting pFeedback budget (0.33), making it nearly impossible for low-freq
-  // feedback to reach the confidence threshold even with strong positive
-  // signals (high MSD, sustained growth, high Q).  The frequency-dependent
-  // prominence floor (up to 1.5× via modal density) and the LOW band
-  // multipliers (1.4× prominence, 1.5× sustain) already provide robust
-  // room-mode filtering without this severe a classifier penalty.
-  if (roomConfigured && schroederFreq > 0) {
-    const bw = belowSchroederWeight(features.frequencyHz, schroederFreq)
-    if (bw > 0.001) {
-      const schroederDelta = -MODE_PRESENCE_BONUS * bw
-      pFeedback   += schroederDelta
-      roomDelta   += schroederDelta
-      pInstrument += MODE_ABSENCE_PENALTY * bw
-      roomRiskFactors++
-      reasons.push(`Below Schroeder boundary (${schroederFreq.toFixed(0)} Hz, weight ${bw.toFixed(2)}) — possible room mode`)
-    }
-  }
-
-  // 10a. Room mode proximity — compare against calculated eigenfrequencies
-  if (roomConfigured && settings && settings.roomLengthM && settings.roomLengthM > 0 && settings.roomWidthM && settings.roomWidthM > 0 && settings.roomHeightM && settings.roomHeightM > 0) {
-    const modeProximity = roomModeProximityPenalty(
-      features.frequencyHz,
-      settings.roomLengthM,
-      settings.roomWidthM,
-      settings.roomHeightM,
-      roomRT60
-    )
-    if (modeProximity.delta !== 0) {
-      pFeedback += modeProximity.delta
-      roomDelta += modeProximity.delta
-      if (modeProximity.delta < 0) roomRiskFactors++
-      if (modeProximity.reason) reasons.push(modeProximity.reason)
-    }
-  }
-
-  // Room-physics delta cap: clamp cumulative room-only adjustments
-  if (roomConfigured && Math.abs(roomDelta) > MAX_ROOM_DELTA) {
-    const excess = roomDelta - Math.sign(roomDelta) * MAX_ROOM_DELTA
-    pFeedback -= excess
-    reasons.push(`Room delta clamped: ${roomDelta.toFixed(3)} to ${MAX_ROOM_DELTA}`)
   }
 
   // 11. Formant gate — suppress sustained vowel false positives (Fant 1960)
@@ -424,11 +291,6 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
       reasons.push(`Formant gate: ${bandsHit} vocal formant bands active, Q=${features.minQ.toFixed(0)} (speech-like)`)
     }
   }
-
-  const roomModeRisk =
-    roomConfigured &&
-    freqBand.band === 'LOW' &&
-    (roomRiskFactors >= 2 || roomDelta <= -0.18)
 
   // ==================== Normalization ====================
 
@@ -488,7 +350,7 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     pFeedback = Math.max(pFeedback, 0.7)
   }
   // Priority 3: Check cumulative building (slow but steady growth)
-  else if (cumulativeGrowth.severity === 'BUILDING' && !speechLikePattern && !roomModeRisk) {
+  else if (cumulativeGrowth.severity === 'BUILDING' && !speechLikePattern) {
     severity = 'GROWING' // Treat as growing for early warning
     reasons.push('Early warning: slow buildup detected')
   }
@@ -509,12 +371,8 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     severity = 'RESONANCE'
   }
 
-  if (cumulativeGrowth.severity === 'BUILDING' && (speechLikePattern || roomModeRisk)) {
-    reasons.push(
-      speechLikePattern
-        ? 'Early warning held at resonance: speech-like formant pattern'
-        : 'Early warning held at resonance: room-like low-frequency pattern'
-    )
+  if (cumulativeGrowth.severity === 'BUILDING' && speechLikePattern) {
+    reasons.push('Early warning held at resonance: speech-like formant pattern')
   }
 
   // F5: Renormalize after severity overrides so the scores sum to 1.
@@ -530,7 +388,17 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
 
   // Determine label
   const whistleWins =
-    pWhistle >= CLASSIFIER_WEIGHTS.WHISTLE_THRESHOLD && pWhistle > pFeedback
+    (
+      pWhistle >= CLASSIFIER_WEIGHTS.WHISTLE_THRESHOLD ||
+      (
+        features.modulationScore >= STRONG_WHISTLE_MODULATION_MIN &&
+        features.noiseSidebandScore >= STRONG_WHISTLE_SIDEBAND_MIN &&
+        features.minQ < qThreshold &&
+        features.harmonicityScore < CLASSIFIER_WEIGHTS.HARMONICITY_THRESHOLD &&
+        features.maxVelocityDbPerSec < growingVelocity
+      )
+    ) &&
+    pWhistle > pFeedback
   const instrumentWins =
     pInstrument >= CLASSIFIER_WEIGHTS.INSTRUMENT_THRESHOLD && pInstrument > pFeedback
   const whistleFeedbackPromoted = shouldPromoteWhistleToFeedback(
@@ -580,8 +448,8 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     frequencyBand: freqBand.band,
     confidenceLabel: calibratedResult.confidenceLabel,
     prominenceDb: features.prominenceDb,
+    persistenceMs: features.persistenceMs,
     speechLikePattern,
-    roomModeRisk,
   }
 }
 
@@ -593,44 +461,95 @@ export function shouldReportIssue(
   classification: ClassificationResult,
   settings: DetectorSettings
 ): boolean {
+  return getReportGateDecision(classification, settings).shouldReport
+}
+
+export function getReportGateDecision(
+  classification: ClassificationResult,
+  settings: DetectorSettings,
+): ReportGateDecision {
   const mode = settings.mode
   const ignoreWhistle = settings.ignoreWhistle ?? false
   const { label, severity, confidence } = classification
   const speechLikePattern = classification.speechLikePattern ?? false
-  const lowBandRoomRisk =
-    (classification.roomModeRisk ?? false) &&
-    classification.frequencyBand === 'LOW' &&
-    settings.roomPreset !== 'none' &&
-    mode !== 'monitors' &&
-    mode !== 'ringOut'
 
   if (!classification.recommendationEligible) {
-    return false
+    return {
+      shouldReport: false,
+      gate: 'not-eligible',
+      reason: 'Classification is not eligible for corrective action',
+    }
   }
   
   // Get confidence threshold from settings (default 0.40 = 40%)
   const confidenceThreshold = settings.confidenceThreshold ?? 0.40
 
+  const isSteadyChromaticTone =
+    mode !== 'monitors' &&
+    classification.frequencyHz != null &&
+    isChromaticallyQuantized(classification.frequencyHz) &&
+    classification.cumulativeGrowthDb != null &&
+    classification.cumulativeGrowthDb <= CHROMATIC_STEADY_TONE_MAX_GROWTH_DB &&
+    (classification.persistenceMs ?? 0) >= CHROMATIC_STEADY_TONE_MIN_PERSISTENCE_MS
+  if (isSteadyChromaticTone) {
+    return {
+      shouldReport: false,
+      gate: 'steady-chromatic-tone',
+      reason: 'Steady chromatic tone looks more like source material than feedback',
+    }
+  }
+
   // Always report runaway regardless of mode or confidence
   if (severity === 'RUNAWAY') {
-    return true
+    return {
+      shouldReport: true,
+      gate: 'reported',
+      reason: 'Runaway feedback severity bypasses normal report gates',
+    }
   }
   
   // Always report GROWING severity regardless of confidence (early warning)
   if (severity === 'GROWING') {
+    if (
+      classification.fusionVerdict !== 'FEEDBACK' &&
+      (classification.persistenceMs ?? 0) < CONSERVATIVE_GROWING_MIN_PERSISTENCE_MS
+    ) {
+      return {
+        shouldReport: false,
+        gate: 'growing-waiting-persistence',
+        reason: 'Growing candidate is waiting for enough persistence',
+      }
+    }
     if ((mode === 'speech' || mode === 'worship') && speechLikePattern && classification.fusionVerdict !== 'FEEDBACK') {
-      return false
+      return {
+        shouldReport: false,
+        gate: 'speech-formant',
+        reason: 'Speech-like formant pattern is holding the advisory',
+      }
     }
-    if (lowBandRoomRisk && classification.fusionVerdict !== 'FEEDBACK') {
-      return false
+    return {
+      shouldReport: true,
+      gate: 'reported',
+      reason: 'Growing feedback severity is reportable',
     }
-    return true
   }
 
   // Fusion never became decisive enough to justify a corrective advisory.
   // Keep the UI quiet for uncertain cases instead of surfacing low-trust cuts.
   if (classification.fusionVerdict === 'UNCERTAIN') {
-    return false
+    return {
+      shouldReport: false,
+      gate: 'fusion-uncertain',
+      reason: 'Fusion is still uncertain',
+    }
+  }
+
+  if (classification.fusionVerdict === 'NOT_FEEDBACK') {
+    return {
+      shouldReport: false,
+      gate: 'fusion-not-feedback',
+      reason: 'Fusion classified this as not feedback',
+    }
   }
 
   // Speech and worship are the highest false-positive-risk paths for sustained
@@ -641,15 +560,11 @@ export function shouldReportIssue(
     && speechLikePattern
     && classification.fusionVerdict !== 'FEEDBACK'
   ) {
-    return false
-  }
-
-  if (
-    lowBandRoomRisk
-    && classification.fusionVerdict === 'POSSIBLE_FEEDBACK'
-    && classification.pFeedback < 0.55
-  ) {
-    return false
+    return {
+      shouldReport: false,
+      gate: 'speech-formant',
+      reason: 'Speech-like formant pattern is holding the advisory',
+    }
   }
 
   if (
@@ -659,71 +574,100 @@ export function shouldReportIssue(
     && classification.pFeedback < 0.40
     && classification.pInstrument >= 0.35
   ) {
-    return false
+    return {
+      shouldReport: false,
+      gate: 'speech-material',
+      reason: 'Speech/worship material posterior is still too high',
+    }
+  }
+
+  if (
+    mode === 'liveMusic'
+    && classification.fusionVerdict === 'POSSIBLE_FEEDBACK'
+    && classification.pFeedback < LIVE_MUSIC_MATERIAL_FEEDBACK_POSTERIOR_MIN
+    && classification.pInstrument >= LIVE_MUSIC_MATERIAL_INSTRUMENT_POSTERIOR_MIN
+  ) {
+    return {
+      shouldReport: false,
+      gate: 'music-material',
+      reason: 'Live-music material posterior is still too high',
+    }
   }
 
   // Filter by confidence threshold (reduces low-confidence alerts)
   if (confidence < confidenceThreshold) {
-    return false
-  }
-
-  // Frequency-dependent prominence floor — sparse modal regions need higher prominence
-  // Uses the actual peak frequency (not a band proxy) so e.g. a 350 Hz peak isn't
-  // penalised as heavily as a 100 Hz peak.  Falls back to band midpoints only when
-  // the actual frequency isn't available.
-  // Only applies when room is configured (preset !== 'none')
-  if (settings.roomPreset !== 'none') {
-    const baseProminence = settings.prominenceDb ?? 10
-    const freq = classification.frequencyHz
-      ?? (classification.frequencyBand === 'LOW' ? 200 : classification.frequencyBand === 'HIGH' ? 6000 : 1000)
-    const prominenceFloor = frequencyDependentProminence(baseProminence, freq, settings.roomVolume ?? 250)
-    if (classification.prominenceDb !== undefined && classification.prominenceDb < prominenceFloor) {
-      return false
+    return {
+      shouldReport: false,
+      gate: 'low-confidence',
+      reason: 'Confidence is below the display threshold',
     }
   }
 
   // Handle whistle filtering
   if (label === 'WHISTLE' && ignoreWhistle) {
-    return false
+    return {
+      shouldReport: false,
+      gate: 'whistle-ignored',
+      reason: 'Whistle filtering is enabled',
+    }
   }
 
   // Mode-specific filtering — professional live sound scenarios
+  let modePass: boolean
   switch (mode) {
     case 'speech':
       // Corporate/conference — report feedback and rings, suppress instruments
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     case 'worship':
       // House of worship — music-aware, skip instruments during music portions
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     case 'liveMusic':
       // Live music still needs early rings. Confidence filtering already ran
       // above, so don't add a second POSSIBLE_RING gate here.
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     case 'theater':
       // Theater/drama — report feedback and rings, skip instruments
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     case 'monitors':
       // Stage monitors — report everything including instruments (could be feedback)
-      return true
-
-    case 'ringOut':
-      // Calibration — report everything including instruments
-      return true
+      modePass = true
+      break
 
     case 'broadcast':
       // Studio/broadcast — very sensitive, report feedback and rings
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     case 'outdoor':
       // Outdoor — report feedback and strong rings, skip instruments
-      return label !== 'INSTRUMENT'
+      modePass = label !== 'INSTRUMENT'
+      break
 
     default:
-      return label === 'ACOUSTIC_FEEDBACK' || label === 'POSSIBLE_RING'
+      modePass = label === 'ACOUSTIC_FEEDBACK' || label === 'POSSIBLE_RING'
+      break
+  }
+
+  if (!modePass) {
+    return {
+      shouldReport: false,
+      gate: 'mode-filter',
+      reason: `${mode} mode filtered this label`,
+    }
+  }
+
+  return {
+    shouldReport: true,
+    gate: 'reported',
+    reason: 'Passed report gates',
   }
 }
 
@@ -779,7 +723,7 @@ export function classifyTrackWithAlgorithms(
   // ==================== Fusion Result (algorithm evidence counted once) ====================
   //
   // Fusion owns the algorithm-level scoring (MSD, phase, spectral, comb,
-  // IHR, PTMR, ML). Classifier adds only track/acoustic context.
+  // IHR, PTMR). Classifier adds only track/acoustic context.
   // Per-algorithm scores are NOT re-added here to avoid double-counting.
 
   // Blend track-level base score toward fusion's algorithm-level score.
@@ -843,11 +787,6 @@ export function classifyTrackWithAlgorithms(
   const uncertainFeedback = fusionResult.verdict === 'UNCERTAIN'
   const preserveUrgentFeedback = definitiveFeedback
   const feedbackWinsPosterior = pFeedback >= pWhistle && pFeedback >= pInstrument
-  const strongFeedbackPrior =
-    baseResult.label === 'ACOUSTIC_FEEDBACK' ||
-    baseResult.severity === 'RUNAWAY' ||
-    baseResult.severity === 'GROWING' ||
-    pFeedback >= 0.45
   const compressedSourceGateActive =
     algorithmScores.compression?.isCompressed === true &&
     fusionResult.verdict !== 'FEEDBACK' &&
@@ -859,18 +798,11 @@ export function classifyTrackWithAlgorithms(
     baseResult.severity === 'GROWING' &&
     !compressedSourceGateActive &&
     !(baseResult.speechLikePattern ?? false) &&
-    !(baseResult.roomModeRisk ?? false) &&
     feedbackWinsPosterior &&
     pFeedback >= 0.55 &&
     pFeedback >= pWhistle + 0.12 &&
     pFeedback >= pInstrument + 0.12
-  const softRejectedFeedback =
-    rejectedFeedback &&
-    feedbackWinsPosterior &&
-    strongFeedbackPrior &&
-    (pFeedback >= 0.4 || urgentFeedbackDominance) &&
-    (fusionResult.feedbackProbability >= 0.2 || urgentFeedbackDominance)
-  const hardRejectedFeedback = rejectedFeedback && !softRejectedFeedback
+  const hardRejectedFeedback = rejectedFeedback
 
   // Re-apply severity overrides AFTER normalization only when fusion still
   // considers feedback plausible. A negative verdict must be able to demote
@@ -905,7 +837,7 @@ export function classifyTrackWithAlgorithms(
   const preserveUrgencyOnConservativeFusion =
     !hardRejectedFeedback &&
     urgentFeedbackDominance &&
-    (probableFeedback || uncertainFeedback || softRejectedFeedback)
+    (probableFeedback || uncertainFeedback)
 
   removeWhistlePolicyReasons(reasons)
   const whistleCandidate = baseResult.label === 'WHISTLE' || whistleWins
@@ -936,10 +868,6 @@ export function classifyTrackWithAlgorithms(
       label = 'POSSIBLE_RING'
       severity = 'POSSIBLE_RING'
     }
-  } else if (softRejectedFeedback) {
-    label = 'ACOUSTIC_FEEDBACK'
-    severity = 'RESONANCE'
-    reasons.push('Fusion soft reject: feedback still dominates posterior')
   } else if (whistleWins) {
     label = 'WHISTLE'
     severity = 'WHISTLE'
@@ -982,8 +910,6 @@ export function classifyTrackWithAlgorithms(
   const confidence =
     hardRejectedFeedback && label === 'POSSIBLE_RING'
       ? Math.min(blendedConfidence, fusionResult.confidence)
-      : softRejectedFeedback
-        ? Math.max(labelProbability, Math.min(blendedConfidence, 0.55))
       : blendedConfidence
   
   return {
@@ -996,7 +922,7 @@ export function classifyTrackWithAlgorithms(
     severity,
     confidence,
     fusionVerdict: fusionResult.verdict,
-    recommendationEligible: whistleFeedbackPromoted || !hardRejectedFeedback,
+    recommendationEligible: whistleFeedbackPromoted || !rejectedFeedback,
     reasons,
   }
 }
@@ -1042,4 +968,3 @@ export function getAlgorithmSummary(scores: AlgorithmScores): string[] {
 
   return summary
 }
-

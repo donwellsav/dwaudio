@@ -14,14 +14,6 @@ function makeSessionWithDiagnostics(
   return {
     modeId: 'speech',
     environment: {
-      templateId: 'generic-hall',
-      treatment: 'typical',
-      feedbackOffsetDb: 0,
-      ringOffsetDb: 0,
-      provenance: 'template',
-      roomRT60: 1.2,
-      roomVolume: 200,
-      displayUnit: 'meters',
       mainsHumEnabled: true,
       mainsHumFundamental: 'auto',
     },
@@ -34,7 +26,6 @@ function makeSessionWithDiagnostics(
       eqStyle: 'mode-default',
     },
     diagnostics: {
-      mlEnabled: true,
       algorithmMode: 'auto',
       enabledAlgorithms: [],
       thresholdMode: 'hybrid',
@@ -45,11 +36,6 @@ function makeSessionWithDiagnostics(
       harmonicToleranceCents: 200,
       peakMergeCents: 35,
       ...diagnostics,
-    },
-    micCalibrationProfile: {
-      profileId: 'flat',
-      label: 'Flat',
-      corrections: [],
     },
   } as unknown as DwaSessionState
 }
@@ -62,7 +48,6 @@ function makeSettings(overrides: Partial<DetectorSettings> = {}): DetectorSettin
     spectrumLineWidth: 2,
     canvasTargetFps: 30,
     showFreqZones: true,
-    showRoomModeLines: false,
     showThresholdLine: true,
     spectrumWarmMode: true,
     spectrumSmoothingMode: 'raw',
@@ -131,7 +116,6 @@ describe('useAnalyzerLayoutState helpers', () => {
       spectrumLineWidth: 1.5,
       canvasTargetFps: 24,
       showFreqZones: false,
-      showRoomModeLines: true,
       showThresholdLine: false,
       spectrumWarmMode: false,
       spectrumSmoothingMode: 'perceptual',
@@ -144,7 +128,6 @@ describe('useAnalyzerLayoutState helpers', () => {
       spectrumLineWidth: 1.5,
       canvasTargetFps: 24,
       showFreqZones: false,
-      showRoomModeLines: true,
       showThresholdLine: false,
       spectrumWarmMode: false,
       spectrumSmoothingMode: 'perceptual',

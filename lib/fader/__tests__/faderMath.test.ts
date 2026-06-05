@@ -4,6 +4,8 @@ import {
   getFaderBounds,
   getFaderThumbBottom,
   getFaderValueFromClientY,
+  getSensitivityGraphDragValue,
+  getSensitivityGraphY,
   stepFaderValue,
 } from '@/lib/fader/faderMath'
 
@@ -69,6 +71,34 @@ describe('faderMath', () => {
       min: 2,
       max: 50,
     })).toBe(100)
+  })
+
+  it('maps the graph sensitivity line opposite the fader visual direction', () => {
+    expect(getSensitivityGraphY({
+      value: 2,
+      plotHeight: 480,
+    })).toBe(480)
+
+    expect(getSensitivityGraphY({
+      value: 50,
+      plotHeight: 480,
+    })).toBe(0)
+  })
+
+  it('preserves graph drag direction so dragging down lowers dB sensitivity', () => {
+    expect(getSensitivityGraphDragValue({
+      startValue: 20,
+      startY: 100,
+      currentY: 148,
+      plotHeight: 480,
+    })).toBe(15)
+
+    expect(getSensitivityGraphDragValue({
+      startValue: 20,
+      startY: 100,
+      currentY: 52,
+      plotHeight: 480,
+    })).toBe(25)
   })
 
   it('clamps edited values to the configured range', () => {

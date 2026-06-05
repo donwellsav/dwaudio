@@ -30,7 +30,7 @@ describe('AudioAnalyzerFooter', () => {
     })
     mocks.useMeteringMock.mockReturnValue({
       spectrumStatus: {
-        algorithmMode: 'combined',
+        algorithmMode: 'custom',
         contentType: 'speech',
         msdFrameCount: 12,
       },

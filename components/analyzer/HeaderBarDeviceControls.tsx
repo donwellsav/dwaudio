@@ -58,44 +58,42 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
         />
       </div>
 
-      {devices.length > 0 && (
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-11 w-11 text-foreground/70 hover:text-foreground btn-glow relative"
-                  aria-label="Select audio input"
-                >
-                  <Mic className="size-5 tablet:size-6" />
-                  <ChevronDown className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 text-muted-foreground/50" />
-                </Button>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-sm">
-              Audio input
-            </TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="start" className="max-w-[min(360px,90vw)]">
-            <DropdownMenuRadioGroup value={selectedDeviceId} onValueChange={handleDeviceChange}>
-              <DropdownMenuRadioItem value="" className="text-sm">
-                Default (System)
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 text-foreground/70 hover:text-foreground btn-glow relative"
+                aria-label="Select audio input"
+              >
+                <Mic className="size-5 tablet:size-6" />
+                <ChevronDown className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 text-muted-foreground/50" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-sm">
+            Audio input
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="start" className="max-w-[min(360px,90vw)]">
+          <DropdownMenuRadioGroup value={selectedDeviceId} onValueChange={handleDeviceChange}>
+            <DropdownMenuRadioItem value="" className="text-sm">
+              Default (System)
+            </DropdownMenuRadioItem>
+            {devices.map((device) => (
+              <DropdownMenuRadioItem
+                key={device.deviceId}
+                value={device.deviceId}
+                className="text-sm truncate"
+              >
+                {device.label}
               </DropdownMenuRadioItem>
-              {devices.map((device) => (
-                <DropdownMenuRadioItem
-                  key={device.deviceId}
-                  value={device.deviceId}
-                  className="text-sm truncate"
-                >
-                  {device.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 })

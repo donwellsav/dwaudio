@@ -9,6 +9,7 @@ import { DesktopRtaPanel } from './DesktopRtaPanel'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 
 interface DesktopGraphPanelsProps {
+  defaultSize?: string
   rtaContainerRef: Ref<HTMLDivElement>
   isRunning: boolean
   noiseFloorDb: number | null
@@ -26,6 +27,7 @@ interface DesktopGraphPanelsProps {
 }
 
 export const DesktopGraphPanels = memo(function DesktopGraphPanels({
+  defaultSize = '84%',
   rtaContainerRef,
   isRunning,
   noiseFloorDb,
@@ -42,7 +44,7 @@ export const DesktopGraphPanels = memo(function DesktopGraphPanels({
   geqBarViewProps,
 }: DesktopGraphPanelsProps) {
   return (
-    <ResizablePanel defaultSize="50%">
+    <ResizablePanel defaultSize={defaultSize}>
       <ResizablePanelGroup orientation="vertical">
         <ResizablePanel defaultSize="60%" minSize="20%" collapsible>
           <DesktopRtaPanel

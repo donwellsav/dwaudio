@@ -30,7 +30,7 @@ export const ResetConfirmDialog = memo(function ResetConfirmDialog({ onConfirm, 
       <AlertDialogContent>
         <AlertDialogTitle>Reset settings?</AlertDialogTitle>
         <AlertDialogDescription>
-          This will restore all detection settings to their defaults (Feedback Hunt mode, standard thresholds, input gain 15dB). Active issues will be cleared.
+          This will restore all detection settings to their defaults (Speech mode, 26dB sensitivity, input gain 0dB). Active issues will be cleared.
         </AlertDialogDescription>
         <div className="flex items-center gap-3 justify-end">
           <AlertDialogCancel>Cancel</AlertDialogCancel>

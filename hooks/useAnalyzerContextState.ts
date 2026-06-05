@@ -3,8 +3,6 @@
 import { useCallback, useEffect, type RefObject } from 'react'
 import { useAudioAnalyzer, type UseAudioAnalyzerReturn } from '@/hooks/useAudioAnalyzer'
 import { useAudioDevices, type AudioDevice } from '@/hooks/useAudioDevices'
-import type { SnapshotBatch } from '@/types/data'
-import type { DataCollectionHandle } from '@/hooks/useDataCollection'
 
 export interface AnalyzerContextState extends UseAudioAnalyzerReturn {
   devices: AudioDevice[]
@@ -18,34 +16,20 @@ export interface AnalyzerContextState extends UseAudioAnalyzerReturn {
 }
 
 interface UseAnalyzerContextStateOptions {
-  dataCollection: DataCollectionHandle
   frozenRef?: RefObject<boolean>
 }
 
 export function useAnalyzerContextState({
-  dataCollection,
   frozenRef,
 }: UseAnalyzerContextStateOptions): AnalyzerContextState {
-  const analyzer = useAudioAnalyzer(
-    {},
-    {
-      onSnapshotBatch: (batch: SnapshotBatch) => dataCollection.handleSnapshotBatch(batch),
-    },
-    frozenRef,
-  )
+  const analyzer = useAudioAnalyzer({}, frozenRef)
   const {
-    dspWorker,
     isRunning,
     start,
     switchDevice,
     spectrumStatus,
     settings,
   } = analyzer
-
-  useEffect(() => {
-    dataCollection.attachWorker(dspWorker)
-    return () => dataCollection.attachWorker(null)
-  }, [dataCollection, dspWorker])
 
   const { devices, selectedDeviceId, setSelectedDeviceId, refresh: refreshDevices } = useAudioDevices()
 

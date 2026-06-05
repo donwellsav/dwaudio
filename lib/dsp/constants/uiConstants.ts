@@ -1,7 +1,7 @@
 /**
  * UI & Display Constants
  *
- * Mobile performance settings, ML inference config, canvas rendering,
+ * Mobile performance settings, canvas rendering,
  * EQ recommendation presets, ERB scaling, and visualization colors.
  */
 
@@ -11,18 +11,6 @@
 export const MOBILE_ANALYSIS_INTERVAL_MS = 40
 /** Max advisories shown on mobile (cards, RTA markers, GEQ bars). */
 export const MOBILE_MAX_DISPLAYED_ISSUES = 5
-
-/** ML inference engine settings — 7th fusion algorithm (false positive filter) */
-export const ML_SETTINGS = {
-  /** Weight in fusion (0 to disable ML contribution) */
-  DEFAULT_WEIGHT: 0.10,
-  /** Model URL (relative to public/) — static asset or fetched from registry */
-  MODEL_PATH: '/models/dwa-fp-filter-v1.onnx',
-  /** Max inference time in ms before skipping (safety timeout) */
-  MAX_INFERENCE_MS: 2,
-  /** Feature count for the meta-model input vector */
-  FEATURE_COUNT: 11,
-} as const
 
 // Canvas rendering settings
 export const CANVAS_SETTINGS = {

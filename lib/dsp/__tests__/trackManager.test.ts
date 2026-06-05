@@ -95,6 +95,41 @@ describe('TrackManager', () => {
       expect(track.isPersistent).toBe(true)
       expect(track.isHighlyPersistent).toBe(false)
     })
+
+    it('populates confirmation timing fields from the peak', () => {
+      const track = tm.processPeak(makePeak({
+        firstSeenAt: 1000,
+        confirmedAt: 1120,
+        confirmLatencyMs: 120,
+      }))
+
+      expect(track.firstSeenAt).toBe(1000)
+      expect(track.confirmedAt).toBe(1120)
+      expect(track.confirmLatencyMs).toBe(120)
+    })
+
+    it('uses detector firstSeenAt as onset so worker persistence includes confirmation hold time', () => {
+      tm.processPeak(makePeak({
+        binIndex: 50,
+        trueFrequencyHz: 1000,
+        timestamp: 1120,
+        firstSeenAt: 1000,
+        confirmedAt: 1120,
+        confirmLatencyMs: 120,
+      }))
+
+      const updated = tm.processPeak(makePeak({
+        binIndex: 50,
+        trueFrequencyHz: 1000,
+        timestamp: 1200,
+        firstSeenAt: 1000,
+        confirmedAt: 1120,
+        confirmLatencyMs: 120,
+      }))
+
+      expect(updated.onsetTime).toBe(1000)
+      expect(updated.features.persistenceMs).toBe(200)
+    })
   })
 
   // ================================================================
@@ -137,6 +172,28 @@ describe('TrackManager', () => {
       const t2 = tm.processPeak(makePeak({ binIndex: 50, timestamp: 2000 }))
       expect(t2.onsetTime).toBe(1000)
       expect(t2.id).toBe(t1.id)
+    })
+
+    it('updates confirmation timing fields on refreshed peaks', () => {
+      tm.processPeak(makePeak({
+        binIndex: 50,
+        timestamp: 1000,
+        firstSeenAt: 920,
+        confirmedAt: 1000,
+        confirmLatencyMs: 80,
+      }))
+
+      const updated = tm.processPeak(makePeak({
+        binIndex: 50,
+        timestamp: 1200,
+        firstSeenAt: 920,
+        confirmedAt: 1000,
+        confirmLatencyMs: 80,
+      }))
+
+      expect(updated.firstSeenAt).toBe(920)
+      expect(updated.confirmedAt).toBe(1000)
+      expect(updated.confirmLatencyMs).toBe(80)
     })
 
     it('keeps isSubHarmonicRoot sticky once set', () => {
@@ -475,12 +532,24 @@ describe('TrackManager', () => {
   // Feature extraction
   // ================================================================
   describe('feature extraction', () => {
-    it('initializes features with defaults for single-entry tracks', () => {
-      const track = tm.processPeak(makePeak({ binIndex: 50, timestamp: 1000 }))
+    it('initializes single-entry tracks with detector-confirmed timing and Q', () => {
+      const track = tm.processPeak(makePeak({
+        binIndex: 50,
+        timestamp: 1000,
+        firstSeenAt: 760,
+        confirmedAt: 1000,
+        confirmLatencyMs: 240,
+        sustainedMs: 240,
+        qEstimate: 32,
+      }))
       expect(track.features.stabilityCentsStd).toBe(0)
       expect(track.features.harmonicityScore).toBe(0)
       expect(track.features.modulationScore).toBe(0)
-      expect(track.features.persistenceMs).toBe(0)
+      expect(track.features.persistenceMs).toBe(240)
+      expect(track.features.meanQ).toBe(32)
+      expect(track.features.minQ).toBe(32)
+      expect(track.onsetTime).toBe(760)
+      expect(track.confirmLatencyMs).toBe(240)
     })
 
     it('computes persistenceMs from onset to last update', () => {

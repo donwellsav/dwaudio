@@ -11,11 +11,7 @@ DoneWell Audio runs almost entirely in the browser:
 - worker-side classification and advisory generation
 - local UI rendering and local storage
 
-Optional integrations exist for:
-
-- snapshot ingestion
-- Companion relay and proxy routes
-- external mixer or DSP control through the Companion module
+There are no active cloud ingest, telemetry, Companion, mixer-control, or model-inference paths in the local-only fork.
 
 ## Top-Level Flow
 
@@ -113,8 +109,6 @@ The product now tries to tell the operator what kind of problem they are seeing:
 That distinction appears in:
 
 - issue cards
-- ring-out workflow
-- room interpretation panel
 - help tabs
 
 ## Display Architecture
@@ -132,21 +126,10 @@ Persistent UI and session state live in layered local storage domains:
 
 - session state
 - display preferences
-- structured rig presets
 - startup preference
 
 The old flat "one saved detector bag" model is no longer the primary ownership path.
 
 ## API And Integration Boundary
 
-The repo has HTTP route handlers, not a standalone websocket control plane.
-
-Current HTTP duties:
-
-- ingest labeled spectral snapshots
-- geo-based GDPR hinting
-- health or version reporting
-- Companion relay queue
-- Companion public HTTP proxy
-
-Anything claiming a general-purpose external websocket API or Dante integration is describing an older plan, not the current shipped architecture.
+The local-only fork keeps no active analyzer API surface for upload, relay, telemetry, or remote control. The browser app analyzes microphone input locally and renders local advisories.

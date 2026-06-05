@@ -4,86 +4,51 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsPanelState } from '@/hooks/useSettingsPanelState'
 
 const mockUseSettings = vi.fn()
-const mockUseRigPresets = vi.fn()
 
 vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => mockUseSettings(),
 }))
 
-vi.mock('@/hooks/useRigPresets', () => ({
-  useRigPresets: (...args: unknown[]) => mockUseRigPresets(...args),
-}))
-
 describe('useSettingsPanelState', () => {
   beforeEach(() => {
     mockUseSettings.mockReset()
-    mockUseRigPresets.mockReset()
 
     mockUseSettings.mockReturnValue({
       session: {
         diagnostics: {},
       },
-      setMode: vi.fn(),
-      setEnvironment: vi.fn(),
-      updateLiveOverrides: vi.fn(),
-      updateDiagnostics: vi.fn(),
-      updateDisplay: vi.fn(),
       resetSettings: vi.fn(),
-    })
-
-    mockUseRigPresets.mockReturnValue({
-      presets: [{ id: 'preset-1', name: 'Sunday AM' }],
-      canSave: true,
-      savePreset: vi.fn(),
-      deletePreset: vi.fn(),
-      loadPreset: vi.fn(),
     })
   })
 
-  it('manages uncontrolled tab state and preset save flow', () => {
+  it('manages uncontrolled tab state', () => {
     const { result } = renderHook(() => useSettingsPanelState({}))
 
     expect(result.current.activeTab).toBe('live')
-    expect(result.current.customPresets).toEqual([{ id: 'preset-1', name: 'Sunday AM' }])
 
     act(() => {
-      result.current.setActiveTab('display')
-      result.current.setShowSaveInput(true)
-      result.current.setPresetName('  Main Room  ')
+      result.current.setActiveTab('expert')
     })
 
-    expect(result.current.activeTab).toBe('display')
-    expect(result.current.showSaveInput).toBe(true)
-
-    act(() => {
-      result.current.handleSavePreset()
-    })
-
-    const rigPresets = mockUseRigPresets.mock.results[0]?.value as {
-      savePreset: ReturnType<typeof vi.fn>
-    }
-
-    expect(rigPresets.savePreset).toHaveBeenCalledWith('Main Room')
-    expect(result.current.presetName).toBe('')
-    expect(result.current.showSaveInput).toBe(false)
+    expect(result.current.activeTab).toBe('expert')
   })
 
   it('delegates tab changes in controlled mode', () => {
     const onTabChange = vi.fn()
 
     const { result } = renderHook(() => useSettingsPanelState({
-      activeTab: 'advanced',
+      activeTab: 'expert',
       onTabChange,
     }))
 
-    expect(result.current.activeTab).toBe('advanced')
+    expect(result.current.activeTab).toBe('expert')
 
     act(() => {
-      result.current.setActiveTab('setup')
+      result.current.setActiveTab('live')
     })
 
-    expect(onTabChange).toHaveBeenCalledWith('setup')
-    expect(result.current.activeTab).toBe('advanced')
+    expect(onTabChange).toHaveBeenCalledWith('live')
+    expect(result.current.activeTab).toBe('expert')
   })
 
   it('reports when custom gate overrides are active', () => {
@@ -93,11 +58,6 @@ describe('useSettingsPanelState', () => {
           chromaticGateOverride: 0.5,
         },
       },
-      setMode: vi.fn(),
-      setEnvironment: vi.fn(),
-      updateLiveOverrides: vi.fn(),
-      updateDiagnostics: vi.fn(),
-      updateDisplay: vi.fn(),
       resetSettings: vi.fn(),
     })
 

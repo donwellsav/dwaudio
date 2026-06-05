@@ -2,15 +2,14 @@
 
 // Re-export algorithm types defined in advancedDetection.ts so consumers
 // can import everything from '@/types/advisory'
-export type { AlgorithmScores, FusedDetectionResult, InterHarmonicResult, PTMRResult, MLScoreResult } from '@/lib/dsp/advancedDetection'
-export type Algorithm = 'msd' | 'phase' | 'spectral' | 'comb' | 'ihr' | 'ptmr' | 'ml'
-export type AlgorithmMode = 'auto' | 'custom' | 'msd' | 'phase' | 'combined' | 'all' // legacy modes kept for backward compat
+export type { AlgorithmScores, FusedDetectionResult, InterHarmonicResult, PTMRResult } from '@/lib/dsp/advancedDetection'
+export type Algorithm = 'msd' | 'phase' | 'spectral' | 'comb' | 'ihr' | 'ptmr'
+export type AlgorithmMode = 'auto' | 'custom'
 export type ContentType = 'speech' | 'music' | 'compressed' | 'unknown'
-export type MicCalibrationProfile = 'none' | 'ecm8000' | 'rta-m' | 'smartphone'
 
 export type ThresholdMode = 'absolute' | 'relative' | 'hybrid'
 // Professional live sound operation modes — each configures detection for a specific scenario
-export type OperationMode = 'speech' | 'worship' | 'liveMusic' | 'theater' | 'monitors' | 'ringOut' | 'broadcast' | 'outdoor'
+export type OperationMode = 'speech' | 'worship' | 'liveMusic' | 'theater' | 'monitors' | 'broadcast' | 'outdoor'
 export type Preset = 'surgical' | 'heavy'
 export type SeverityLevel = 'RUNAWAY' | 'GROWING' | 'RESONANCE' | 'POSSIBLE_RING' | 'WHISTLE' | 'INSTRUMENT'
 /** @deprecated Use SeverityLevel instead. Kept for backward compatibility. */
@@ -49,10 +48,6 @@ export interface AnalysisConfig {
   preset: Preset
   mode: OperationMode
   aWeightingEnabled: boolean
-  micCalibrationProfile: MicCalibrationProfile
-  // Room acoustics for Schroeder frequency calculation
-  roomRT60?: number
-  roomVolume?: number
   // Confidence threshold for filtering
   confidenceThreshold?: number
   // Noise floor settings
@@ -71,6 +66,9 @@ export interface DetectedPeak {
   trueAmplitudeDb: number
   prominenceDb: number
   sustainedMs: number
+  firstSeenAt?: number
+  confirmedAt?: number
+  confirmLatencyMs?: number
   harmonicOfHz: number | null
   isSubHarmonicRoot?: boolean // True when this peak is the root of a harmonic series already active
   timestamp: number
@@ -132,6 +130,9 @@ export interface Track {
   qMeasurementMode?: QMeasurementMode
   /** PHPR (Peak-to-Harmonic Power Ratio) in dB */
   phpr?: number
+  firstSeenAt?: number
+  confirmedAt?: number
+  confirmLatencyMs?: number
   velocityDbPerSec: number
   harmonicOfHz: number | null
   isSubHarmonicRoot: boolean // True when this track is the fundamental of a partial series
@@ -178,8 +179,28 @@ export interface ClassificationResult {
   frequencyBand?: 'LOW' | 'MID' | 'HIGH' // Which frequency band this falls into
   confidenceLabel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH' // Human-readable confidence
   prominenceDb?: number // Carried through for downstream filtering
+  persistenceMs?: number // Track age used to keep first-frame growth spikes off the recommendation path
   speechLikePattern?: boolean // Formant-pattern speech / sung-vowel suppressor fired
-  roomModeRisk?: boolean // Multiple low-frequency room-physics cues aligned against feedback
+}
+
+export type ReportGateId =
+  | 'reported'
+  | 'not-eligible'
+  | 'steady-chromatic-tone'
+  | 'growing-waiting-persistence'
+  | 'speech-formant'
+  | 'fusion-uncertain'
+  | 'fusion-not-feedback'
+  | 'speech-material'
+  | 'music-material'
+  | 'low-confidence'
+  | 'whistle-ignored'
+  | 'mode-filter'
+
+export interface ReportGateDecision {
+  shouldReport: boolean
+  gate: ReportGateId
+  reason: string
 }
 
 export interface PitchInfo {
@@ -219,8 +240,6 @@ export interface ShelfRecommendation {
 
 export interface RecommendationContext {
   recurrenceCount: number
-  learnedCutDb?: number
-  successfulCutCount?: number
 }
 
 export interface EQAdvisory {
@@ -248,6 +267,9 @@ export interface Advisory {
   bandwidthHz: number
   /** PHPR (Peak-to-Harmonic Power Ratio) in dB */
   phpr?: number
+  firstSeenAt?: number
+  confirmedAt?: number
+  confirmLatencyMs?: number
   velocityDbPerSec: number
   stabilityCentsStd: number
   harmonicityScore: number
@@ -256,11 +278,10 @@ export interface Advisory {
   // Feedback prediction fields
   isRunaway?: boolean
   predictedTimeToClipMs?: number
-  // Enhanced detection fields (from textbook research)
+  // Enhanced detection fields
   modalOverlapFactor?: number // M = 1/Q (isolated < 0.03, coupled < 0.1, diffuse > 0.33)
   cumulativeGrowthDb?: number // Total dB growth since onset
   frequencyBand?: 'LOW' | 'MID' | 'HIGH' // Which frequency band this falls into
-  schroederFrequency?: number // Calculated Schroeder frequency for reference
   // Cluster info — tracks merged peaks in same GEQ band
   clusterCount?: number // Number of peaks merged into this advisory (default 1)
   clusterMinHz?: number // Lowest frequency in merged cluster
@@ -273,7 +294,6 @@ export interface Advisory {
     comb: number | null
     ihr: number | null
     ptmr: number | null
-    ml: number | null
     fusedProbability: number
   }
   /** Spectral profile ±1 octave around detection — for smarter notch decisions */
@@ -310,6 +330,8 @@ export interface SpectrumData {
   isCompressed?: boolean // Whether compressed/limited audio is detected
   compressionRatio?: number // Estimated compression ratio (1.0 = no compression, higher = more compressed)
   isSignalPresent?: boolean // True when pre-gain signal is above silence threshold
+  lastConfirmLatencyMs?: number // Last new peak confirmation latency, in milliseconds
+  lastPeakConfirmedAt?: number // Timestamp for the last newly confirmed peak
 }
 
 export interface AnalyzerState {
@@ -378,29 +400,17 @@ export interface DetectorSettings {
   harmonicToleranceCents: number // Cents window for harmonic/sub-harmonic matching (25–400, default 200)
   showTooltips: boolean // Show/hide all help tooltips throughout the UI
   aWeightingEnabled: boolean // Apply A-weighting curve to analysis (per IEC 61672-1)
-  micCalibrationProfile: MicCalibrationProfile // Measurement mic compensation profile ('none' | 'ecm8000' | 'rta-m')
   // Confidence and filtering
   confidenceThreshold: number // Minimum confidence to display (0.0-1.0, default 0.35)
-  // Unified room physics (acoustics + mode calculator)
-  roomRT60: number // Reverberation time in seconds (auto-derived from dimensions + treatment)
-  roomVolume: number // Room volume in m³ (auto-derived from dimensions)
-  roomPreset: 'none' | 'small' | 'medium' | 'large' | 'arena' | 'worship' | 'custom' // Room preset ('none' disables all room physics)
-  roomTreatment: 'untreated' | 'typical' | 'treated' // Acoustic treatment level for RT60 estimation
-  roomLengthM: number // Room length (in display unit, converted at use)
-  roomWidthM: number // Room width
-  roomHeightM: number // Room height
-  roomDimensionsUnit: 'meters' | 'feet' // Unit for dimension input
   mainsHumEnabled: boolean // Whether mains hum detection gate is active
   mainsHumFundamental: 'auto' | 50 | 60 // Mains frequency: auto-detect or explicit 50/60 Hz
   // Algorithm mode and scoring display
   algorithmMode: AlgorithmMode // 'auto' (content-adaptive) or 'custom' (user-selected algorithms)
   enabledAlgorithms: Algorithm[] // Which algorithms are active when algorithmMode === 'custom'
-  mlEnabled: boolean // When false, ML algorithm is excluded from all mode branches including Auto
   adaptivePhaseSkip: boolean // Skip phase FFT when MSD is decisive in MSD-led modes (default true)
   showAlgorithmScores: boolean // Show the algorithm status bar with live scoring metrics
   showPeqDetails: boolean // Show PEQ recommendation (type, Q, gain) on each issue card
   showFreqZones: boolean // Show frequency zone overlay (Sub/Voice/Presence/Air) on RTA
-  showRoomModeLines: boolean // Show predicted axial room mode lines on RTA (below Schroeder, faint dashed)
   spectrumWarmMode: boolean // Use warm amber spectrum line instead of blue
   spectrumSmoothingMode: SpectrumSmoothingMode // Display-only spectrum view: raw or perceptual 1/3-octave smoothing
   // Peak timing
@@ -427,7 +437,6 @@ export interface DetectorSettings {
   faderLinkRatio: number
   faderLinkCenterGainDb: number
   faderLinkCenterSensDb: number
-  swipeLabeling: boolean // Enable swipe-to-label on issue cards (left=false+, right=confirm). Hides buttons when on.
   signalTintEnabled: boolean // Enable signal-responsive background tint (severity → console color shift)
   // Gate multiplier overrides — expert-only, undefined = use hardcoded default
   formantGateOverride?: number    // 0.65 default
@@ -438,13 +447,15 @@ export interface DetectorSettings {
   mainsHumGateOverride?: number   // 0.40 default
 }
 
+export const DEFAULT_SMOOTHING_TIME_CONSTANT = 0.1
+
 // Default analysis configuration - aligned with the canonical Speech-mode startup profile.
 export const DEFAULT_CONFIG: AnalysisConfig = {
   fftSize: 8192,
   minHz: 150, // Body mic chest resonance lower bound
   maxHz: 10000, // Condenser sibilance feedback upper bound
   analysisIntervalMs: 20, // Faster analysis for quicker detection
-  sustainMs: 240, // 240 ms — startup speech default after the latency tuning pass
+  sustainMs: 180, // Fast startup speech default for live feedback detection
   clearMs: 400, // Slightly longer decay reduces display flicker
   thresholdMode: 'hybrid',
   thresholdDb: -80, // Safety floor only — relative threshold (noise floor + slider) controls detection
@@ -456,7 +467,6 @@ export const DEFAULT_CONFIG: AnalysisConfig = {
   preset: 'surgical',
   mode: 'speech', // Matches the startup Speech profile
   aWeightingEnabled: true, // A-weighting on — prioritizes speech intelligibility band (2–5 kHz)
-  micCalibrationProfile: 'none' as const, // Mic frequency response compensation off by default
   noiseFloorEnabled: true,
   noiseFloorSampleCount: 160, // Faster noise floor sampling
   noiseFloorAttackMs: 200, // Faster attack for dynamic environments

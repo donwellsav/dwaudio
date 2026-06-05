@@ -6,12 +6,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { MobileIssuesContent } from '@/components/analyzer/MobileLayoutSections'
 import type { Advisory } from '@/types/advisory'
 
-vi.mock('@/components/analyzer/RingOutWizard', () => ({
-  RingOutWizard: ({ advisories }: { advisories: Advisory[] }) => (
-    <div data-testid="ringout-wizard">{advisories.length}</div>
-  ),
-}))
-
 vi.mock('@/components/analyzer/IssuesList', () => ({
   IssuesList: ({ advisories }: { advisories: Advisory[] }) => (
     <div data-testid="issues-list">{advisories.length}</div>
@@ -57,43 +51,18 @@ const baseIssuesListProps = {
   dismissedIds: new Set<string>(),
   isRunning: true,
   onStart: vi.fn(),
-  onFalsePositive: vi.fn(),
-  falsePositiveIds: new Set<string>(),
-  onConfirmFeedback: vi.fn(),
-  confirmedIds: new Set<string>(),
   isLowSignal: false,
-  swipeLabeling: true,
   showAlgorithmScores: false,
   showPeqDetails: false,
   onDismiss: vi.fn(),
 }
 
 describe('MobileIssuesContent', () => {
-  it('shows the ring-out wizard when the wizard is active', () => {
+  it('shows the issues list and early warning panel', () => {
     render(
       <MobileIssuesContent
-        advisories={[makeAdvisory('adv-1')]}
         mobileAdvisories={[makeAdvisory('adv-1')]}
         earlyWarning={null}
-        isRunning={true}
-        isWizardActive={true}
-        issuesListBaseProps={baseIssuesListProps}
-        onClearAll={vi.fn()}
-        onClearResolved={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByTestId('ringout-wizard').textContent).toBe('1')
-    expect(screen.queryByTestId('issues-list')).toBeNull()
-  })
-
-  it('shows the issues list and early warning panel when the wizard is inactive', () => {
-    render(
-      <MobileIssuesContent
-        advisories={[makeAdvisory('adv-1')]}
-        mobileAdvisories={[makeAdvisory('adv-1')]}
-        earlyWarning={null}
-        isRunning={true}
         issuesListBaseProps={baseIssuesListProps}
         onClearAll={vi.fn()}
         onClearResolved={vi.fn()}
@@ -102,6 +71,5 @@ describe('MobileIssuesContent', () => {
 
     expect(screen.getByTestId('issues-list').textContent).toBe('1')
     expect(screen.queryByTestId('early-warning-panel')).not.toBeNull()
-    expect(screen.queryByTestId('ringout-wizard')).toBeNull()
   })
 })

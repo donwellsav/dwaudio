@@ -2,11 +2,11 @@
  * Mode Baselines — frozen detector policy for each mode.
  *
  * Extracted from OPERATION_MODES in constants.ts. These are the authoritative
- * starting point for threshold derivation. Room offsets and live overrides
- * are applied on top of these values.
+ * starting point for threshold derivation. Live overrides are applied on top
+ * of these values.
  *
  * @see types/settings.ts for ModeBaseline interface
- * @see lib/settings/deriveSettings.ts for how baselines compose with environment + overrides
+ * @see lib/settings/deriveSettings.ts for how baselines compose with local environment + overrides
  */
 
 import type { ModeBaseline, ModeId } from '@/types/settings'
@@ -26,7 +26,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 8192,
     minFrequency: 150,
     maxFrequency: 10000,
-    sustainMs: 240,
+    sustainMs: 180,
     clearMs: 400,
     confidenceThreshold: 0.35,
     prominenceDb: 8,
@@ -46,7 +46,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 8192,
     minFrequency: 100,
     maxFrequency: 12000,
-    sustainMs: 240,
+    sustainMs: 200,
     clearMs: 500,
     confidenceThreshold: 0.45,
     prominenceDb: 12,
@@ -66,7 +66,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 4096,
     minFrequency: 60,
     maxFrequency: 16000,
-    sustainMs: 320,
+    sustainMs: 240,
     clearMs: 600,
     confidenceThreshold: 0.55,
     prominenceDb: 14,
@@ -86,7 +86,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 8192,
     minFrequency: 150,
     maxFrequency: 10000,
-    sustainMs: 220,
+    sustainMs: 180,
     clearMs: 400,
     confidenceThreshold: 0.40,
     prominenceDb: 10,
@@ -106,34 +106,13 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 4096,
     minFrequency: 200,
     maxFrequency: 6000,
-    sustainMs: 180,
+    sustainMs: 140,
     clearMs: 300,
     confidenceThreshold: 0.35,
     prominenceDb: 8,
     eqPreset: 'surgical',
     aWeightingEnabled: false,
     defaultInputGainDb: 0,
-    ignoreWhistle: false,
-    defaultTrackTimeoutMs: 500,
-  },
-  ringOut: {
-    modeId: 'ringOut',
-    label: 'Ring Out',
-    description: 'System Calibration',
-    feedbackThresholdDb: 27,
-    ringThresholdDb: 2,
-    growthRateThreshold: 0.5,
-    fftSize: 16384,
-    minFrequency: 60,
-    maxFrequency: 16000,
-    sustainMs: 160,
-    clearMs: 300,
-    confidenceThreshold: 0.30,
-    prominenceDb: 8,
-    eqPreset: 'surgical',
-    aWeightingEnabled: false,
-    defaultInputGainDb: 0,
-    defaultAutoGainTargetDb: -12,
     ignoreWhistle: false,
     defaultTrackTimeoutMs: 500,
   },
@@ -147,7 +126,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 8192,
     minFrequency: 80,
     maxFrequency: 12000,
-    sustainMs: 220,
+    sustainMs: 180,
     clearMs: 350,
     confidenceThreshold: 0.30,
     prominenceDb: 8,
@@ -168,7 +147,7 @@ export const MODE_BASELINES: Readonly<Record<ModeId, ModeBaseline>> = {
     fftSize: 4096,
     minFrequency: 100,
     maxFrequency: 12000,
-    sustainMs: 220,
+    sustainMs: 200,
     clearMs: 450,
     confidenceThreshold: 0.45,
     prominenceDb: 12,

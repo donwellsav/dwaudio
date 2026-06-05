@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import { AlertTriangle, Check, TrendingUp } from 'lucide-react'
+import { AlertTriangle, TrendingUp } from 'lucide-react'
 import { confidenceColor, RUNAWAY_COLOR } from '@/lib/canvas/canvasTokens'
 import { getSeverityText } from '@/lib/utils/advisoryDisplay'
 import { getRecommendationStrategyLabel } from '@/lib/utils/recommendationDisplay'
@@ -15,42 +15,41 @@ import {
 } from '@/components/analyzer/issueCardConfig'
 import { useIssueCardState } from '@/hooks/useIssueCardState'
 import type { Advisory } from '@/types/advisory'
-import type { CompanionAdvisoryState } from '@/contexts/AdvisoryContext'
 
 export interface IssueCardProps {
   advisory: Advisory
   occurrenceCount: number
+  isHeld?: boolean
   touchFriendly?: boolean
-  onFalsePositive?: (advisoryId: string) => void
-  isFalsePositive?: boolean
-  onConfirmFeedback?: (advisoryId: string) => void
-  isConfirmed?: boolean
-  swipeLabeling?: boolean
   showAlgorithmScores?: boolean
   showPeqDetails?: boolean
   onDismiss?: (advisoryId: string) => void
-  onSendToMixer?: (advisory: Advisory) => void
-  /** Companion ack/applied/failed state for this advisory (module → app feedback). */
-  companionState?: CompanionAdvisoryState
-  /** When true, animate a brief peek revealing swipe overlays (first card only, one-time). */
-  peekSwipe?: boolean
+}
+
+function getIssueAgeSec(nowMs: number, timestampMs: number): number {
+  const isWallClockTimestamp = timestampMs > 1_000_000_000_000
+  if (!isWallClockTimestamp) return 0
+
+  return Math.max(0, Math.round((nowMs - timestampMs) / 1000))
+}
+
+export function formatIssueAge(nowMs: number, timestampMs: number): string {
+  const ageSec = getIssueAgeSec(nowMs, timestampMs)
+  return ageSec < 5 ? 'just now' : ageSec < 60 ? `${ageSec}s` : `${Math.floor(ageSec / 60)}m`
+}
+
+function formatConfirmLatency(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
 export const IssueCard = memo(function IssueCard({
   advisory,
   occurrenceCount,
+  isHeld = false,
   touchFriendly,
-  onFalsePositive,
-  isFalsePositive,
-  onConfirmFeedback,
-  isConfirmed,
-  swipeLabeling,
   showAlgorithmScores,
   showPeqDetails,
   onDismiss,
-  onSendToMixer,
-  companionState,
-  peekSwipe,
 }: IssueCardProps) {
   const {
     pitchStr,
@@ -64,26 +63,21 @@ export const IssueCard = memo(function IssueCard({
     severityColor,
     copied,
     handleCopy,
-    swipeX,
-    swiping,
-    swipeProgress,
-    swipeDirection,
-    handlers,
     actionsLayout,
-    handleSendToMixer,
   } = useIssueCardState({
     advisory,
     touchFriendly,
-    swipeLabeling,
-    onFalsePositive,
-    onConfirmFeedback,
-    onDismiss,
-    onSendToMixer,
   })
 
-  const nowMs = useTickingNow(!isResolved)
-  const ageSec = Math.max(0, Math.round((nowMs - advisory.timestamp) / 1000))
-  const ageStr = ageSec < 5 ? 'just now' : ageSec < 60 ? `${ageSec}s` : `${Math.floor(ageSec / 60)}m`
+  const isInactive = isResolved || isHeld
+  const confirmLatencyMs =
+    typeof advisory.confirmLatencyMs === 'number' && Number.isFinite(advisory.confirmLatencyMs)
+      ? advisory.confirmLatencyMs
+      : null
+  const confirmLatencyLabel = confirmLatencyMs != null ? formatConfirmLatency(confirmLatencyMs) : null
+  const nowMs = useTickingNow(!isInactive)
+  const ageSec = getIssueAgeSec(nowMs, advisory.timestamp)
+  const ageStr = formatIssueAge(nowMs, advisory.timestamp)
   const SeverityIconEl = SEVERITY_ICON[advisory.severity] ?? null
   const isNonCorrectiveWhistle =
     advisory.label === 'WHISTLE' &&
@@ -100,74 +94,15 @@ export const IssueCard = memo(function IssueCard({
   return (
     <div
       className={`group relative flex flex-col rounded glass-card ${SEVERITY_ENTER_CLASS[advisory.severity] ?? 'animate-issue-enter'} overflow-hidden ${
-        isFalsePositive
-          ? 'border-red-500/30 opacity-50'
-          : isResolved
-            ? 'border-border/50'
-            : isRunaway
-              ? 'border-red-500/70 animate-emergency-glow'
-              : isWarning
-                ? 'border-amber-500/60 shadow-[0_0_8px_rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.3)] ring-1 ring-amber-500/15'
-                : 'border-border/40 hover:border-primary/30'
+        isInactive
+          ? 'border-border/50'
+          : isRunaway
+            ? 'border-red-500/70 animate-emergency-glow'
+            : isWarning
+              ? 'border-amber-500/60 shadow-[0_0_8px_rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.3)] ring-1 ring-amber-500/15'
+              : 'border-border/40 hover:border-primary/30'
       }`}
-      onTouchStart={handlers.onTouchStart}
-      onTouchMove={handlers.onTouchMove}
-      onTouchEnd={handlers.onTouchEnd}
     >
-      {/* Swipe peek: static dual overlay shown during one-time peek animation */}
-      {swipeLabeling && peekSwipe && !swiping ? (
-        <div className="absolute inset-0 flex items-center z-0 pointer-events-none" aria-hidden>
-          <div
-            className="absolute inset-0 flex items-center justify-end pr-4 rounded"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--muted-foreground) 12%, transparent)' }}
-          >
-            <span className="text-xs font-mono font-bold text-muted-foreground uppercase tracking-wider opacity-60">
-              DISMISS
-            </span>
-          </div>
-          <div
-            className="absolute inset-0 flex items-center justify-start pl-4 rounded"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--console-amber) 12%, transparent)' }}
-          >
-            <span className="text-xs font-mono font-bold text-[var(--console-amber)] uppercase tracking-wider opacity-60">
-              CONFIRM
-            </span>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Active swipe: dynamic overlay follows finger */}
-      {swipeLabeling && swiping ? (
-        <div className="absolute inset-0 flex items-center z-0" aria-hidden>
-          {swipeDirection === 'left' ? (
-            <div
-              className="absolute inset-0 flex items-center justify-end pr-4 rounded"
-              style={{ backgroundColor: `color-mix(in srgb, var(--muted-foreground) ${swipeProgress * 25}%, transparent)` }}
-            >
-              <span
-                className="text-xs font-mono font-bold text-muted-foreground uppercase tracking-wider"
-                style={{ opacity: swipeProgress }}
-              >
-                DISMISS
-              </span>
-            </div>
-          ) : null}
-          {swipeDirection === 'right' ? (
-            <div
-              className="absolute inset-0 flex items-center justify-start pl-4 rounded"
-              style={{ backgroundColor: `color-mix(in srgb, var(--console-amber) ${swipeProgress * 25}%, transparent)` }}
-            >
-              <span
-                className="text-xs font-mono font-bold text-[var(--console-amber)] uppercase tracking-wider"
-                style={{ opacity: swipeProgress }}
-              >
-                CONFIRM
-              </span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       <div
         className={`absolute left-0 top-0 bottom-0 ${SEVERITY_STRIP_CLASS[advisory.severity] ?? 'animate-strip-flash'} ${
           isRunaway
@@ -177,8 +112,8 @@ export const IssueCard = memo(function IssueCard({
               : 'severity-accent-strip'
         }`}
         style={{
-          backgroundColor: isResolved ? 'var(--muted)' : severityColor,
-          boxShadow: isResolved
+          backgroundColor: isInactive ? 'var(--muted)' : severityColor,
+          boxShadow: isInactive
             ? 'none'
             : isRunaway
               ? `3px 0 12px -1px ${severityColor}70, 0 0 6px -1px ${severityColor}50`
@@ -186,17 +121,7 @@ export const IssueCard = memo(function IssueCard({
         }}
       />
 
-      <div
-        className={`flex flex-col relative z-10 @container pl-2.5 pr-1 py-0.5${swipeLabeling && peekSwipe && !swiping ? ' animate-swipe-peek' : ''}`}
-        style={
-          swipeLabeling && swiping
-            ? {
-                transform: `translateX(${swipeX}px)`,
-                transition: swiping ? 'none' : 'transform 200ms ease-out',
-              }
-            : undefined
-        }
-      >
+      <div className="flex flex-col relative z-10 @container pl-2.5 pr-1 py-0.5">
         <div className="flex items-baseline gap-1">
           {SeverityIconEl ? (
             <span
@@ -213,11 +138,11 @@ export const IssueCard = memo(function IssueCard({
           <span
             className={`font-mono font-black leading-none tracking-tight ${
               isRunaway ? 'text-3xl @[320px]:text-4xl' : 'text-2xl @[320px]:text-3xl'
-            } ${isFalsePositive ? 'line-through opacity-50' : ''}`}
+            }`}
             style={{
               fontVariantNumeric: 'tabular-nums slashed-zero',
-              color: isFalsePositive ? undefined : isResolved ? 'var(--muted-foreground)' : severityColor,
-              textShadow: isFalsePositive || isResolved
+              color: isInactive ? 'var(--muted-foreground)' : severityColor,
+              textShadow: isInactive
                 ? 'none'
                 : isRunaway
                   ? `0 0 24px ${severityColor}90, 0 0 10px ${severityColor}60, 0 0 3px ${severityColor}40`
@@ -237,54 +162,22 @@ export const IssueCard = memo(function IssueCard({
           ) : null}
 
           <div className="ml-auto flex items-center gap-0 flex-shrink-0 self-center">
-            {companionState?.applied ? (
+            {isInactive ? (
               <span
-                className={badgeClass('success')}
-                aria-label={`Applied by Companion: ${companionState.applied.gainDb}dB${companionState.applied.slotIndex !== undefined ? ` on slot ${companionState.applied.slotIndex}` : ''}`}
-                title={`Applied by Companion: ${companionState.applied.gainDb}dB${companionState.applied.slotIndex !== undefined ? ` on slot ${companionState.applied.slotIndex}` : ''}`}
+                className={badgeClass('info', 'sm')}
+                aria-label="Cleared detection retained briefly"
+                title="Cleared detection retained briefly"
               >
-                <Check className="w-2.5 h-2.5" />
-                {companionState.applied.gainDb}dB
+                cleared
               </span>
             ) : null}
-            {companionState?.partialApply ? (
+            {confirmLatencyLabel ? (
               <span
-                className={badgeClass('warning')}
-                aria-label={`Partial apply: ${companionState.partialApply.peqApplied ? 'PEQ applied' : 'PEQ failed'}, ${companionState.partialApply.geqApplied ? 'GEQ applied' : 'GEQ failed'}${companionState.partialApply.failReason ? `; ${companionState.partialApply.failReason}` : ''}`}
-                title={`Partial apply: ${companionState.partialApply.peqApplied ? 'PEQ applied' : 'PEQ failed'}, ${companionState.partialApply.geqApplied ? 'GEQ applied' : 'GEQ failed'}${companionState.partialApply.failReason ? `; ${companionState.partialApply.failReason}` : ''}`}
+                className={badgeClass('info', 'sm')}
+                aria-label={`Confirmed in ${confirmLatencyLabel}`}
+                title={`Detector confirmed this issue in ${confirmLatencyLabel}`}
               >
-                <AlertTriangle className="w-2.5 h-2.5" />
-                PARTIAL
-              </span>
-            ) : null}
-            {companionState?.partialClear ? (
-              <span
-                className={badgeClass('warning')}
-                aria-label={`Partial clear: ${companionState.partialClear.peqCleared ? 'PEQ cleared' : 'PEQ failed'}, ${companionState.partialClear.geqCleared ? 'GEQ cleared' : 'GEQ failed'}${companionState.partialClear.failReason ? `; ${companionState.partialClear.failReason}` : ''}`}
-                title={`Partial clear: ${companionState.partialClear.peqCleared ? 'PEQ cleared' : 'PEQ failed'}, ${companionState.partialClear.geqCleared ? 'GEQ cleared' : 'GEQ failed'}${companionState.partialClear.failReason ? `; ${companionState.partialClear.failReason}` : ''}`}
-              >
-                <AlertTriangle className="w-2.5 h-2.5" />
-                CLR PART
-              </span>
-            ) : null}
-            {companionState?.failed ? (
-              <span
-                className={badgeClass('error')}
-                aria-label={`Apply failed: ${companionState.failed.reason}`}
-                title={`Apply failed: ${companionState.failed.reason}`}
-              >
-                <AlertTriangle className="w-2.5 h-2.5" />
-                FAIL
-              </span>
-            ) : null}
-            {companionState?.clearFailed ? (
-              <span
-                className={badgeClass('error')}
-                aria-label={`Clear failed: ${companionState.clearFailed.reason}`}
-                title={`Clear failed: ${companionState.clearFailed.reason}`}
-              >
-                <AlertTriangle className="w-2.5 h-2.5" />
-                CLR FAIL
+                {confirmLatencyLabel}
               </span>
             ) : null}
             {occurrenceCount >= 3 ? (
@@ -341,7 +234,7 @@ export const IssueCard = memo(function IssueCard({
                 </span>
               </span>
             ) : null}
-            {!isResolved ? (
+            {!isInactive ? (
               <span className="text-dwa-xs text-muted-foreground/70 font-mono leading-none">{ageStr}</span>
             ) : null}
           </div>
@@ -381,7 +274,7 @@ export const IssueCard = memo(function IssueCard({
               </>
             )
           ) : null}
-          {velocity > 0 && !isResolved ? (
+          {velocity > 0 && !isInactive ? (
             <span className={`flex items-center gap-0 ${
               isRunaway ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-muted-foreground/40'
             }`}
@@ -397,14 +290,9 @@ export const IssueCard = memo(function IssueCard({
               <IssueCardActions
                 advisoryId={advisory.id}
                 exactFreqStr={exactFreqStr}
-                onFalsePositive={onFalsePositive}
-                isFalsePositive={isFalsePositive}
-                onConfirmFeedback={onConfirmFeedback}
-                isConfirmed={isConfirmed}
                 onDismiss={onDismiss}
                 onCopy={handleCopy}
                 copied={copied}
-                onSendToMixer={handleSendToMixer}
                 layout={actionsLayout}
               />
             </div>
@@ -420,7 +308,6 @@ export const IssueCard = memo(function IssueCard({
               advisory.algorithmScores.comb != null && `CM:${advisory.algorithmScores.comb.toFixed(2)}`,
               advisory.algorithmScores.ihr != null && `IH:${advisory.algorithmScores.ihr.toFixed(2)}`,
               advisory.algorithmScores.ptmr != null && `PT:${advisory.algorithmScores.ptmr.toFixed(2)}`,
-              advisory.algorithmScores.ml != null && `ML:${advisory.algorithmScores.ml.toFixed(2)}`,
             ].filter(Boolean).join('  ')}
             {' -> '}{advisory.algorithmScores.fusedProbability.toFixed(2)}
           </div>
@@ -442,20 +329,15 @@ export const IssueCard = memo(function IssueCard({
           <IssueCardActions
             advisoryId={advisory.id}
             exactFreqStr={exactFreqStr}
-            onFalsePositive={onFalsePositive}
-            isFalsePositive={isFalsePositive}
-            onConfirmFeedback={onConfirmFeedback}
-            isConfirmed={isConfirmed}
             onDismiss={onDismiss}
             onCopy={handleCopy}
             copied={copied}
-            onSendToMixer={handleSendToMixer}
             layout="mobile"
           />
         ) : null}
       </div>
 
-      {!isResolved ? (
+      {!isInactive ? (
         <div className="h-[3px] w-full relative" aria-hidden title={`Freshness: ${Math.max(0, 60 - ageSec)}s remaining`}>
           <div
             className="absolute inset-0 h-full rounded-full transition-[width,background-color] duration-500 ease-linear"

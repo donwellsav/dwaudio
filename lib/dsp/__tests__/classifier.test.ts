@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import {
   classifyTrack,
   classifyTrackWithAlgorithms,
+  getReportGateDecision,
   shouldPromoteWhistleToFeedback,
   shouldReportIssue,
   getSeverityText,
@@ -166,6 +167,20 @@ describe('getSeverityUrgency', () => {
 // ── shouldReportIssue ───────────────────────────────────────────────────────
 
 describe('shouldReportIssue', () => {
+  it('explains the report gate that is blocking a visible issue', () => {
+    const classification = makeClassification({
+      fusionVerdict: 'UNCERTAIN',
+      confidence: 0.95,
+      label: 'ACOUSTIC_FEEDBACK',
+      severity: 'RESONANCE',
+    })
+
+    expect(getReportGateDecision(classification, makeSettings())).toMatchObject({
+      shouldReport: false,
+      gate: 'fusion-uncertain',
+    })
+  })
+
   it('always reports RUNAWAY regardless of confidence or mode', () => {
     const classification = makeClassification({
       severity: 'RUNAWAY',
@@ -175,6 +190,20 @@ describe('shouldReportIssue', () => {
     // Should report in every mode
     expect(shouldReportIssue(classification, makeSettings({ mode: 'speech' }))).toBe(true)
     expect(shouldReportIssue(classification, makeSettings({ mode: 'liveMusic' }))).toBe(true)
+  })
+
+  it('suppresses steady chromatic pure tones even when severity is over-promoted', () => {
+    const classification = makeClassification({
+      severity: 'RUNAWAY',
+      fusionVerdict: 'FEEDBACK',
+      confidence: 0.95,
+      label: 'ACOUSTIC_FEEDBACK',
+      frequencyHz: 440,
+      cumulativeGrowthDb: 0,
+      persistenceMs: 240,
+    })
+
+    expect(shouldReportIssue(classification, makeSettings({ mode: 'speech' }))).toBe(false)
   })
 
   it('keeps early possible rings reportable in liveMusic once they clear the main confidence gate', () => {
@@ -190,13 +219,41 @@ describe('shouldReportIssue', () => {
     }))).toBe(true)
   })
 
-  it('always reports GROWING regardless of confidence', () => {
+  it('suppresses liveMusic possible feedback when instrument posterior is still material', () => {
+    const classification = makeClassification({
+      fusionVerdict: 'POSSIBLE_FEEDBACK',
+      label: 'ACOUSTIC_FEEDBACK',
+      severity: 'RESONANCE',
+      pFeedback: 0.46,
+      pInstrument: 0.34,
+      confidence: 0.82,
+    })
+
+    expect(shouldReportIssue(classification, makeSettings({ mode: 'liveMusic' }))).toBe(false)
+  })
+
+  it('keeps established GROWING feedback reportable regardless of confidence', () => {
     const classification = makeClassification({
       severity: 'GROWING',
       confidence: 0.1,
       label: 'ACOUSTIC_FEEDBACK',
+      persistenceMs: 120,
     })
     expect(shouldReportIssue(classification, makeSettings())).toBe(true)
+  })
+
+  it('suppresses first-frame GROWING recommendations until conservative fusion has persistence', () => {
+    for (const fusionVerdict of ['UNCERTAIN', 'POSSIBLE_FEEDBACK'] as const) {
+      const classification = makeClassification({
+        severity: 'GROWING',
+        fusionVerdict,
+        confidence: 0.95,
+        label: 'ACOUSTIC_FEEDBACK',
+        persistenceMs: 20,
+      })
+
+      expect(shouldReportIssue(classification, makeSettings())).toBe(false)
+    }
   })
 
   it('suppresses speech-like growing advisories in speech mode unless fusion is definitive', () => {
@@ -205,6 +262,7 @@ describe('shouldReportIssue', () => {
       fusionVerdict: 'POSSIBLE_FEEDBACK',
       speechLikePattern: true,
       confidence: 0.95,
+      persistenceMs: 120,
     })
 
     expect(shouldReportIssue(classification, makeSettings({ mode: 'speech' }))).toBe(false)
@@ -213,29 +271,6 @@ describe('shouldReportIssue', () => {
       { ...classification, fusionVerdict: 'FEEDBACK' },
       makeSettings({ mode: 'speech' }),
     )).toBe(true)
-  })
-
-  it('suppresses low-band room-risk possible feedback outside monitor and ringOut modes', () => {
-    const classification = makeClassification({
-      fusionVerdict: 'POSSIBLE_FEEDBACK',
-      confidence: 0.8,
-      pFeedback: 0.49,
-      roomModeRisk: true,
-      frequencyBand: 'LOW',
-    })
-
-    expect(shouldReportIssue(classification, makeSettings({
-      mode: 'speech',
-      roomPreset: 'small',
-    }))).toBe(false)
-    expect(shouldReportIssue(classification, makeSettings({
-      mode: 'monitors',
-      roomPreset: 'small',
-    }))).toBe(true)
-    expect(shouldReportIssue(classification, makeSettings({
-      mode: 'ringOut',
-      roomPreset: 'small',
-    }))).toBe(true)
   })
 
   it('rejects low-confidence results below threshold', () => {
@@ -266,6 +301,21 @@ describe('shouldReportIssue', () => {
     })
 
     expect(shouldReportIssue(classification, makeSettings())).toBe(false)
+  })
+
+  it('suppresses NOT_FEEDBACK fusion verdicts even when older posterior math is confident', () => {
+    const classification = makeClassification({
+      fusionVerdict: 'NOT_FEEDBACK',
+      recommendationEligible: true,
+      confidence: 0.95,
+      label: 'ACOUSTIC_FEEDBACK',
+      severity: 'RESONANCE',
+      pFeedback: 0.72,
+      pInstrument: 0.14,
+    })
+
+    expect(shouldReportIssue(classification, makeSettings({ mode: 'speech' }))).toBe(false)
+    expect(shouldReportIssue(classification, makeSettings({ mode: 'liveMusic' }))).toBe(false)
   })
 
   it('suppresses speech-mode borderline possible feedback when instrument posterior stays materially high', () => {
@@ -341,15 +391,6 @@ describe('shouldReportIssue', () => {
       confidence: 0.9,
     })
     expect(shouldReportIssue(classification, makeSettings({ mode: 'monitors' }))).toBe(true)
-  })
-
-  it('ringOut mode reports everything (calibration)', () => {
-    const classification = makeClassification({
-      label: 'INSTRUMENT',
-      severity: 'INSTRUMENT',
-      confidence: 0.9,
-    })
-    expect(shouldReportIssue(classification, makeSettings({ mode: 'ringOut' }))).toBe(true)
   })
 
   it('liveMusic mode lets POSSIBLE_RING through once it clears the main confidence gate', () => {
@@ -535,7 +576,7 @@ describe('classifyTrack', () => {
 
     const result = classifyTrack(
       track,
-      makeSettings({ mode: 'speech', roomPreset: 'none' }),
+      makeSettings({ mode: 'speech' }),
       [550, 850, 2400],
     )
 
@@ -545,7 +586,7 @@ describe('classifyTrack', () => {
     expect(result.reasons.some((reason) => reason.includes('Formant gate'))).toBe(true)
   })
 
-  it('marks low-band room-mode clusters as room-risk and keeps building alerts at resonance', () => {
+  it('keeps building feedback active without room suppression', () => {
     const track = makeTrack({
       trueFrequencyHz: 90,
       trueAmplitudeDb: -18,
@@ -567,20 +608,11 @@ describe('classifyTrack', () => {
       bandwidthHz: 10,
     })
 
-    const result = classifyTrack(track, makeSettings({
-      mode: 'speech',
-      roomPreset: 'small',
-      roomRT60: 0.4,
-      roomVolume: 80,
-      roomLengthM: 6.1,
-      roomWidthM: 4.6,
-      roomHeightM: 2.9,
-    }), [82, 90, 99])
+    const result = classifyTrack(track, makeSettings({ mode: 'speech' }), [82, 90, 99])
 
-    expect(result.roomModeRisk).toBe(true)
-    expect(result.severity).toBe('RESONANCE')
-    expect(result.reasons).toContain('Early warning held at resonance: room-like low-frequency pattern')
-    expect(result.reasons.some((reason) => reason.includes('Room delta clamped'))).toBe(true)
+    expect(result.severity).toBe('GROWING')
+    expect(result.reasons).toContain('Early warning: slow buildup detected')
+    expect(result.reasons.some((reason) => /room|schroeder/i.test(reason))).toBe(false)
   })
 
   it('three-class probabilities (pFeedback + pWhistle + pInstrument) sum to >= 1', () => {
@@ -609,14 +641,7 @@ describe('classifyTrack', () => {
   })
 
   it('keeps a pure whistle candidate as WHISTLE with non-corrective copy', () => {
-    const result = classifyTrack(
-      makeWhistleTrack(),
-      makeSettings({
-        roomPreset: 'custom',
-        roomRT60: 2,
-        roomVolume: 300,
-      }),
-    )
+    const result = classifyTrack(makeWhistleTrack())
 
     expect(result.label).toBe('WHISTLE')
     expect(result.severity).toBe('WHISTLE')
@@ -635,11 +660,7 @@ describe('whistle promotion policy', () => {
 
   it('promotes a whistle candidate when fusion is definitive FEEDBACK', () => {
     const track = makeWhistleTrack()
-    const settings = makeSettings({
-      roomPreset: 'custom',
-      roomRT60: 2,
-      roomVolume: 300,
-    })
+    const settings = makeSettings()
     const scores = buildScores({ msd: 0.8, phase: 0.85, spectral: 0.8, ihr: 0.75, ptmr: 0.7 })
     const fusion = makeFusionResult(scores)
     fusion.feedbackProbability = 0.82
@@ -813,7 +834,7 @@ describe('Mains hum gate', () => {
   })
 })
 
-// ── Smooth Schroeder Penalty ────────────────────────────────────────────────
+// ── Fusion-driven demotion ──────────────────────────────────────────────────
 
 describe('fusion-driven demotion', () => {
   it('lets a NOT_FEEDBACK verdict demote a runaway base classification', () => {
@@ -859,7 +880,7 @@ describe('fusion-driven demotion', () => {
     expect(shouldReportIssue(result, makeSettings({ mode: 'speech' }))).toBe(false)
   })
 
-  it('keeps a feedback-led posterior on the recommendation path despite a soft NOT_FEEDBACK veto', () => {
+  it('keeps feedback-led posterior quiet when fusion rejects the peak', () => {
     const track = makeTrack({
       velocityDbPerSec: 10,
       features: {
@@ -894,12 +915,10 @@ describe('fusion-driven demotion', () => {
 
     const result = classifyTrackWithAlgorithms(track, scores, fusion, makeSettings())
 
-    expect(result.label).toBe('ACOUSTIC_FEEDBACK')
-    expect(result.severity).toBe('RESONANCE')
+    expect(result.label).toBe('POSSIBLE_RING')
     expect(result.fusionVerdict).toBe('NOT_FEEDBACK')
-    expect(result.recommendationEligible).toBe(true)
-    expect(result.confidence).toBeGreaterThanOrEqual(0.45)
-    expect(shouldReportIssue(result, makeSettings({ mode: 'speech', confidenceThreshold: 0.4 }))).toBe(true)
+    expect(result.recommendationEligible).toBe(false)
+    expect(shouldReportIssue(result, makeSettings({ mode: 'speech', confidenceThreshold: 0.4 }))).toBe(false)
   })
 
   it('removes the urgent bypass when fusion is uncertain about a growing peak', () => {
@@ -1028,8 +1047,8 @@ describe('fusion-driven demotion', () => {
       reasons: ['borderline voiced source'],
     }
 
-    const speechSettings = makeSettings({ mode: 'speech', roomPreset: 'none' })
-    const liveMusicSettings = makeSettings({ mode: 'liveMusic', roomPreset: 'none' })
+    const speechSettings = makeSettings({ mode: 'speech' })
+    const liveMusicSettings = makeSettings({ mode: 'liveMusic' })
     const result = classifyTrackWithAlgorithms(track, scores, fusion, speechSettings, [550, 850, 2400])
 
     expect(result.speechLikePattern).toBe(true)
@@ -1038,7 +1057,7 @@ describe('fusion-driven demotion', () => {
     expect(shouldReportIssue(result, liveMusicSettings)).toBe(true)
   })
 
-  it('low-band room-risk possible feedback stays suppressed outside monitor-focused modes', () => {
+  it('possible feedback is not suppressed by removed room-risk policy', () => {
     const track = makeTrack({
       trueFrequencyHz: 90,
       trueAmplitudeDb: -18,
@@ -1076,46 +1095,17 @@ describe('fusion-driven demotion', () => {
       reasons: ['borderline low-band evidence'],
     }
 
-    const speechSettings = makeSettings({
-      mode: 'speech',
-      roomPreset: 'small',
-      roomRT60: 0.4,
-      roomVolume: 80,
-      roomLengthM: 6.1,
-      roomWidthM: 4.6,
-      roomHeightM: 2.9,
-    })
-    const monitorsSettings = makeSettings({
-      mode: 'monitors',
-      roomPreset: 'small',
-      roomRT60: 0.4,
-      roomVolume: 80,
-      roomLengthM: 6.1,
-      roomWidthM: 4.6,
-      roomHeightM: 2.9,
-    })
+    const speechSettings = makeSettings({ mode: 'speech' })
+    const monitorsSettings = makeSettings({ mode: 'monitors' })
     const result = classifyTrackWithAlgorithms(track, scores, fusion, speechSettings, [82, 90, 99])
 
-    expect(result.roomModeRisk).toBe(true)
-    expect(result.severity).toBe('RESONANCE')
-    expect(shouldReportIssue(result, speechSettings)).toBe(false)
+    expect(result.reasons.some((reason) => /room|schroeder/i.test(reason))).toBe(false)
+    expect(shouldReportIssue(result, speechSettings)).toBe(true)
     expect(shouldReportIssue(result, monitorsSettings)).toBe(true)
   })
 })
 
-describe('Smooth Schroeder penalty (sigmoid transition)', () => {
-  // Configure a room so the Schroeder penalty is active.
-  // RT60=1.0, Volume=400 gives a Schroeder frequency via calculateSchroederFrequency.
-  // Zero out room dimensions so the room mode proximity penalty (step 10a) is inactive.
-  const roomSettings = makeSettings({
-    roomPreset: 'medium_hall' as DetectorSettings['roomPreset'],
-    roomRT60: 1.0,
-    roomVolume: 400,
-    roomLengthM: 0,
-    roomWidthM: 0,
-    roomHeightM: 0,
-  })
-
+describe('local-only classifier output', () => {
   function trackAtFreq(frequencyHz: number) {
     return makeTrack({
       trueFrequencyHz: frequencyHz,
@@ -1136,70 +1126,10 @@ describe('Smooth Schroeder penalty (sigmoid transition)', () => {
     })
   }
 
-  function pFeedbackWithRoom(frequencyHz: number): number {
-    return classifyTrack(trackAtFreq(frequencyHz), roomSettings).pFeedback
-  }
+  it('does not add room or Schroeder reasons', () => {
+    const result = classifyTrack(trackAtFreq(50))
 
-  it('well below Schroeder has lower pFeedback than well above', () => {
-    const pBelow = pFeedbackWithRoom(50)
-    const pAbove = pFeedbackWithRoom(200)
-    expect(pAbove).toBeGreaterThan(pBelow)
-  })
-
-  it('well above Schroeder: negligible penalty difference between 200 Hz and 250 Hz', () => {
-    const p200 = pFeedbackWithRoom(200)
-    const p250 = pFeedbackWithRoom(250)
-    expect(Math.abs(p200 - p250)).toBeLessThan(0.01)
-  })
-
-  it('monotonic: pFeedback increases as frequency rises through transition zone', () => {
-    const frequencies = [60, 70, 80, 90, 100, 110, 120, 130, 140]
-    const values = frequencies.map(f => pFeedbackWithRoom(f))
-    for (let i = 1; i < values.length; i++) {
-      expect(values[i]).toBeGreaterThanOrEqual(values[i - 1] - 0.001)
-    }
-  })
-
-  it('no Schroeder reason when roomPreset is none', () => {
-    const noRoomSettings = makeSettings({ roomPreset: 'none' as DetectorSettings['roomPreset'] })
-    const result = classifyTrack(trackAtFreq(50), noRoomSettings)
-    expect(result.reasons.some(r => r.includes('Schroeder'))).toBe(false)
-  })
-
-  it('at Schroeder frequency: partial weight between well-below and well-above', () => {
-    const pWellBelow = pFeedbackWithRoom(50)
-    const pAtSchroeder = pFeedbackWithRoom(100)
-    const pWellAbove = pFeedbackWithRoom(200)
-    // At the Schroeder frequency the penalty should be partial,
-    // so pFeedback sits between the well-below and well-above values.
-    expect(pAtSchroeder).toBeGreaterThan(pWellBelow)
-    expect(pAtSchroeder).toBeLessThan(pWellAbove)
-  })
-
-  it('reason string includes weight value', () => {
-    const result = classifyTrack(trackAtFreq(80), roomSettings)
-    const schroederReason = result.reasons.find(r => r.includes('Schroeder'))
-    expect(schroederReason).toBeDefined()
-    expect(schroederReason).toMatch(/weight \d+\.\d+/)
-  })
-
-  it('well below Schroeder: reason weight is near 1.00', () => {
-    const result = classifyTrack(trackAtFreq(50), roomSettings)
-    const schroederReason = result.reasons.find(r => r.includes('Schroeder'))
-    expect(schroederReason).toBeDefined()
-    // Extract weight from "weight 0.98" pattern
-    const match = schroederReason!.match(/weight (\d+\.\d+)/)
-    expect(match).not.toBeNull()
-    const weight = parseFloat(match![1])
-    expect(weight).toBeGreaterThan(0.95)
-  })
-
-  it('well above Schroeder: no Schroeder reason (weight below threshold)', () => {
-    const result = classifyTrack(trackAtFreq(200), roomSettings)
-    const schroederReason = result.reasons.find(r => r.includes('Schroeder'))
-    // At 200 Hz with Schroeder at 100 Hz, the sigmoid weight should be negligible
-    // and the reason should not appear (bw <= 0.001 check in code)
-    expect(schroederReason).toBeUndefined()
+    expect(result.reasons.some(r => /room|schroeder/i.test(r))).toBe(false)
   })
 })
 
@@ -1254,20 +1184,18 @@ describe('classifyTrack posterior consistency (F5)', () => {
   })
 })
 
-// ── Room-physics delta cap (14.6) ────────────────────────────────────────────
+// ── Local-only output hygiene ────────────────────────────────────────────────
 
-describe('room-physics delta cap', () => {
-  it('clamps cumulative room delta to MAX_ROOM_DELTA (0.30)', () => {
-    // Create a low-frequency peak in a configured room with extreme room conditions
-    // that would produce large negative room deltas (RT60, modal density, Schroeder, mode proximity)
+describe('room-model remnants stay absent', () => {
+  it('does not apply room-delta clamps', () => {
     const track = makeTrack({
-      trueFrequencyHz: 80,       // Low freq — below Schroeder, near room modes
+      trueFrequencyHz: 80,
       trueAmplitudeDb: -20,
       prominenceDb: 15,
       features: {
         stabilityCentsStd: 5,
         meanQ: 5,
-        minQ: 5,                 // Low Q — room-mode-like
+        minQ: 5,
         meanVelocityDbPerSec: 1,
         maxVelocityDbPerSec: 3,
         persistenceMs: 1000,
@@ -1279,49 +1207,15 @@ describe('room-physics delta cap', () => {
       bandwidthHz: 16,
     })
 
-    // Settings with configured room — high RT60 + dimensions to trigger all room adjustments
-    const roomSettings: DetectorSettings = {
-      ...DEFAULT_SETTINGS,
-      roomPreset: 'large',
-      roomRT60: 3.5,             // Very reverberant
-      roomVolume: 2000,
-      roomLengthM: 20,
-      roomWidthM: 10,
-      roomHeightM: 10,
-    }
+    const result = classifyTrack(track, DEFAULT_SETTINGS)
 
-    // Get result without room config as baseline
-    const noRoomSettings: DetectorSettings = {
-      ...DEFAULT_SETTINGS,
-      roomPreset: 'none',
-    }
-    classifyTrack(track, noRoomSettings)
-
-    // Get result with room config
-    const roomResult = classifyTrack(track, roomSettings)
-
-    // The room delta should be capped at 0.30
-    // Pre-normalization pFeedback change should not exceed 0.30 in magnitude
-    // We can verify indirectly: the room result should not diverge excessively
-    // from the baseline. With cap, |pFeedback_room - pFeedback_noroom| <= 0.30 (pre-normalization)
-    // After normalization both are valid probabilities
-    expect(roomResult.pFeedback).toBeGreaterThanOrEqual(0)
-    expect(roomResult.pFeedback).toBeLessThanOrEqual(1)
-    // Should have the clamping reason if room deltas stacked beyond 0.30
-    const hasClamped = roomResult.reasons.some(r => r.includes('Room delta clamped'))
-    // In this extreme scenario, room deltas should stack and get clamped
-    expect(hasClamped).toBe(true)
+    expect(result.reasons.some(r => /room|schroeder|clamp/i.test(r))).toBe(false)
   })
 
-  it('does not clamp when room preset is none', () => {
+  it('keeps low-band tracks free of room clamp reasons', () => {
     const track = makeTrack({ trueFrequencyHz: 80 })
-    const settings: DetectorSettings = {
-      ...DEFAULT_SETTINGS,
-      roomPreset: 'none',
-    }
-    const result = classifyTrack(track, settings)
-    const hasClamped = result.reasons.some(r => r.includes('Room delta clamped'))
-    expect(hasClamped).toBe(false)
+    const result = classifyTrack(track, DEFAULT_SETTINGS)
+    expect(result.reasons.some(r => /room|schroeder|clamp/i.test(r))).toBe(false)
   })
 })
 

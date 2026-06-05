@@ -62,22 +62,20 @@ describe('sessionStorageV2', () => {
     expect(loaded.liveOverrides.sensitivityOffsetDb).toBe(5)
   })
 
-  it('preserves all nested fields through round-trip', () => {
+  it('preserves environment mains-hum fields through round-trip', () => {
     const custom: DwaSessionState = {
       ...DEFAULT_SESSION_STATE,
       modeId: 'monitors',
       environment: {
         ...DEFAULT_SESSION_STATE.environment,
-        roomRT60: 2.5,
-        roomVolume: 5000,
-        treatment: 'untreated',
+        mainsHumEnabled: false,
+        mainsHumFundamental: 60,
       },
     }
     sessionStorageV2.save(custom)
     const loaded = sessionStorageV2.load()
-    expect(loaded.environment.roomRT60).toBe(2.5)
-    expect(loaded.environment.roomVolume).toBe(5000)
-    expect(loaded.environment.treatment).toBe('untreated')
+    expect(loaded.environment.mainsHumEnabled).toBe(false)
+    expect(loaded.environment.mainsHumFundamental).toBe(60)
   })
 
   it('clear resets to default', () => {
@@ -193,7 +191,6 @@ describe('presetsStorageV2', () => {
     id,
     name,
     modeId: mode as RigPresetV1['modeId'],
-    environment: DEFAULT_SESSION_STATE.environment,
     liveDefaults: DEFAULT_SESSION_STATE.liveOverrides,
     createdAt: '2026-03-25T00:00:00Z',
     updatedAt: '2026-03-25T00:00:00Z',

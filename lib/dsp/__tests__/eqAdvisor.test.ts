@@ -469,26 +469,16 @@ describe('generatePEQRecommendation', () => {
     expect(rec.qSource).toBe('measured')
   })
 
-  it('uses learned cut depth when it is more aggressive than recurrence depth', () => {
+  it('uses recurrence depth when a current-run frequency returns', () => {
     const track = makeTrack({ trueFrequencyHz: 1000 })
-    const rec = generatePEQRecommendation(track, 'RESONANCE', 'heavy', {
+    const baseline = generatePEQRecommendation(track, 'RESONANCE', 'heavy', {
       recurrenceCount: 0,
-      learnedCutDb: -8,
-      successfulCutCount: 2,
+    })
+    const rec = generatePEQRecommendation(track, 'RESONANCE', 'heavy', {
+      recurrenceCount: 2,
     })
 
-    expect(rec.gainDb).toBe(-8)
-  })
-
-  it('clamps learned cut depth inside the preset max-cut envelope', () => {
-    const track = makeTrack({ trueFrequencyHz: 5000 })
-    const rec = generatePEQRecommendation(track, 'RESONANCE', 'heavy', {
-      recurrenceCount: 0,
-      learnedCutDb: -20,
-      successfulCutCount: 2,
-    })
-
-    expect(rec.gainDb).toBe(-12)
+    expect(rec.gainDb).toBeLessThan(baseline.gainDb)
   })
 })
 

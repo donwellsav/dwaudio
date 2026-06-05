@@ -3,7 +3,6 @@ import {
   geqBg,
   geqCenter,
   GEQ_AXIS_LABEL_LIGHT,
-  GEQ_BAR_OUTLINE,
   geqGrid,
 } from '@/lib/canvas/canvasTokens'
 import type { BandRecommendation } from '@/lib/canvas/geqBarViewShared'
@@ -112,7 +111,6 @@ function drawBars(
   ctx: CanvasRenderingContext2D,
   metrics: GEQCanvasMetrics,
   bandRecommendations: ReadonlyMap<number, BandRecommendation>,
-  currentTimeMs: number,
 ) {
   const frequencyLabels: Array<{
     x: number
@@ -172,17 +170,6 @@ function drawBars(
       }
       continue
     }
-
-    const ghostHeight = (metrics.plotHeight - 10) * (0.08 + 0.04 * Math.sin(bandIndex * 0.7))
-    const breathe = 0.07 + 0.05 * Math.sin(currentTimeMs / 1500 + bandIndex * 0.5)
-    ctx.fillStyle = `rgba(75, 146, 255, ${breathe})`
-    const ghostY = metrics.centerY - ghostHeight / 2
-    ctx.beginPath()
-    ctx.roundRect(x, ghostY, metrics.barWidth, ghostHeight, 2)
-    ctx.fill()
-    ctx.strokeStyle = GEQ_BAR_OUTLINE
-    ctx.lineWidth = 0.5
-    ctx.stroke()
   }
 
   if (frequencyLabels.length === 0) {
@@ -275,13 +262,12 @@ export function drawGEQBarView(
   metrics: GEQCanvasMetrics,
   bandRecommendations: ReadonlyMap<number, BandRecommendation>,
   isDark: boolean,
-  currentTimeMs: number,
 ): void {
   ctx.save()
   ctx.translate(metrics.padding.left, metrics.padding.top)
 
   drawGEQGrid(ctx, metrics, isDark)
-  drawBars(ctx, metrics, bandRecommendations, currentTimeMs)
+  drawBars(ctx, metrics, bandRecommendations)
 
   ctx.restore()
 

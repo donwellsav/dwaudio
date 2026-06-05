@@ -28,6 +28,14 @@ const MIN_MODULATION_SAMPLES = 20
 const MAX_MODULATION_SAMPLES = 48
 const ARRAY_INDEX_PATTERN = /^(0|[1-9]\d*)$/
 
+function resolveOnsetTime(peak: DetectedPeak): number {
+  return typeof peak.firstSeenAt === 'number'
+    && Number.isFinite(peak.firstSeenAt)
+    && peak.firstSeenAt <= peak.timestamp
+    ? peak.firstSeenAt
+    : peak.timestamp
+}
+
 /** Snapshot of an evicted track for fast restoration */
 interface EvictedTrackSnapshot {
   frequencyHz: number
@@ -438,6 +446,8 @@ export class TrackManager {
     const id = generateId()
     const qEstimate = peak.qEstimate ?? 10
     const bandwidthHz = peak.bandwidthHz ?? 100
+    const onsetTime = resolveOnsetTime(peak)
+    const initialPersistenceMs = Math.max(0, peak.timestamp - onsetTime, peak.sustainedMs ?? 0)
     const historyEntry: TrackHistoryEntry = {
       time: peak.timestamp,
       freqHz: peak.trueFrequencyHz,
@@ -465,15 +475,22 @@ export class TrackManager {
       trueFrequencyHz: peak.trueFrequencyHz,
       trueAmplitudeDb: peak.trueAmplitudeDb,
       prominenceDb: peak.prominenceDb,
-      onsetTime: peak.timestamp,
+      onsetTime,
       onsetDb: peak.trueAmplitudeDb,
       lastUpdateTime: peak.timestamp,
       history: createHistoryProxy(historyState),
-      features: this.initializeFeatures(),
+      features: this.initializeFeatures({
+        meanQ: qEstimate,
+        minQ: qEstimate,
+        persistenceMs: initialPersistenceMs,
+      }),
       qEstimate,
       bandwidthHz,
       qMeasurementMode: peak.qMeasurementMode,
       phpr: peak.phpr,
+      firstSeenAt: peak.firstSeenAt,
+      confirmedAt: peak.confirmedAt,
+      confirmLatencyMs: peak.confirmLatencyMs,
       velocityDbPerSec: 0,
       harmonicOfHz: peak.harmonicOfHz,
       isSubHarmonicRoot: peak.isSubHarmonicRoot ?? false,
@@ -528,6 +545,9 @@ export class TrackManager {
     track.bandwidthHz = bandwidthHz
     track.qMeasurementMode = peak.qMeasurementMode ?? track.qMeasurementMode
     track.phpr = peak.phpr ?? track.phpr
+    track.firstSeenAt = peak.firstSeenAt ?? track.firstSeenAt
+    track.confirmedAt = peak.confirmedAt ?? track.confirmedAt
+    track.confirmLatencyMs = peak.confirmLatencyMs ?? track.confirmLatencyMs
     track.harmonicOfHz = peak.harmonicOfHz
     if (peak.isSubHarmonicRoot) track.isSubHarmonicRoot = true
     track.isActive = true
@@ -559,7 +579,7 @@ export class TrackManager {
     return track
   }
 
-  private initializeFeatures(): TrackFeatures {
+  private initializeFeatures(overrides: Partial<TrackFeatures> = {}): TrackFeatures {
     return {
       stabilityCentsStd: 0,
       meanQ: 10,
@@ -570,13 +590,18 @@ export class TrackManager {
       harmonicityScore: 0,
       modulationScore: 0,
       noiseSidebandScore: 0,
+      ...overrides,
     }
   }
 
   private extractFeatures(track: Track, historyState: TrackHistoryState): TrackFeatures {
     const count = historyState.count
     if (count < 2) {
-      return this.initializeFeatures()
+      return this.initializeFeatures({
+        meanQ: track.qEstimate,
+        minQ: track.qEstimate,
+        persistenceMs: Math.max(0, track.lastUpdateTime - track.onsetTime),
+      })
     }
 
     let sumVelocity = 0
