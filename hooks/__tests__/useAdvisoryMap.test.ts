@@ -6,7 +6,7 @@
  * sorted cache with dirty flag, identity-stable callbacks.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAdvisoryMap } from '../useAdvisoryMap'
 import type { Advisory } from '@/types/advisory'
@@ -165,6 +165,31 @@ describe('useAdvisoryMap', () => {
     act(() => result.current.onAdvisoryCleared('adv-1'))
     expect(result.current.advisories[0].resolved).toBe(true)
     expect(result.current.advisories[0].resolvedAt).toBeDefined()
+  })
+
+  it('auto-removes resolved provisional advisories after the fade hold', () => {
+    vi.useFakeTimers()
+    try {
+      const { result } = renderHook(() => useAdvisoryMap(50))
+
+      act(() => {
+        result.current.onAdvisory(makeAdvisory({
+          id: 'watch-1',
+          lifecycle: 'provisional',
+        }))
+      })
+      act(() => result.current.onAdvisoryCleared('watch-1'))
+
+      expect(result.current.advisories[0].resolved).toBe(true)
+
+      act(() => { vi.advanceTimersByTime(1599) })
+      expect(result.current.advisories).toHaveLength(1)
+
+      act(() => { vi.advanceTimersByTime(1) })
+      expect(result.current.advisories).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the updated maxDisplayedIssues cap when a visible advisory is cleared', () => {

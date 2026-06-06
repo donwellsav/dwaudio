@@ -82,7 +82,7 @@ export function useSignalTint(): void {
     if (!isRunning) return 0
     let worst = 0
     for (const a of advisories) {
-      if (!dismissedIds.has(a.id)) {
+      if (a.lifecycle !== 'provisional' && !dismissedIds.has(a.id)) {
         worst = Math.max(worst, getSeverityUrgency(a.severity))
       }
     }

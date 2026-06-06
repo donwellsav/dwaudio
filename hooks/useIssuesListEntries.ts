@@ -6,7 +6,7 @@ import { getSeverityUrgency } from '@/lib/dsp/severityUtils'
 import { hzToCents } from '@/lib/utils/pitchUtils'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
 
-export const MIN_ISSUE_DISPLAY_MS = 3000
+export const MIN_ISSUE_DISPLAY_MS = 1800
 
 /**
  * Cents tolerance for display-level merge. Advisories within this range

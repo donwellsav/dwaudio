@@ -15,6 +15,8 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { getSeverityUrgency } from '@/lib/dsp/classifier'
 import type { Advisory } from '@/types/advisory'
 
+const PROVISIONAL_RESOLVED_DISMISS_MS = 1600
+
 export interface UseAdvisoryMapReturn {
   advisories: Advisory[]
   onAdvisory: (advisory: Advisory) => void
@@ -31,6 +33,7 @@ export function useAdvisoryMap(
   const mapRef = useRef<Map<string, Advisory>>(new Map())
   const sortedCacheRef = useRef<Advisory[]>([])
   const dirtyRef = useRef(false)
+  const removalTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const frozenBufferRef = useRef<{ updates: Advisory[]; clears: string[] }>({
     updates: [],
     clears: [],
@@ -111,7 +114,31 @@ export function useAdvisoryMap(
     setAdvisories(sorted)
   }, [])
 
+  const clearRemovalTimer = useCallback((advisoryId: string) => {
+    const timerId = removalTimersRef.current.get(advisoryId)
+    if (!timerId) return
+    clearTimeout(timerId)
+    removalTimersRef.current.delete(advisoryId)
+  }, [])
+
+  const scheduleProvisionalRemoval = useCallback((advisoryId: string) => {
+    clearRemovalTimer(advisoryId)
+    const timerId = setTimeout(() => {
+      removalTimersRef.current.delete(advisoryId)
+      const current = mapRef.current.get(advisoryId)
+      if (!current?.resolved || current.lifecycle !== 'provisional') return
+
+      mapRef.current.delete(advisoryId)
+      dirtyRef.current = true
+      if (frozenRef?.current ?? false) return
+      setAdvisories(buildSortedRef.current())
+    }, PROVISIONAL_RESOLVED_DISMISS_MS)
+    removalTimersRef.current.set(advisoryId, timerId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- frozenRef is a stable ref, read imperatively
+  }, [clearRemovalTimer])
+
   const onAdvisory = useCallback((advisory: Advisory) => {
+    clearRemovalTimer(advisory.id)
     const isFrozen = frozenRef?.current ?? false
 
     if (isFrozen && advisory.severity !== 'RUNAWAY' && advisory.severity !== 'GROWING') {
@@ -123,7 +150,7 @@ export function useAdvisoryMap(
     applyToMap(advisory)
     flushToReact()
   // eslint-disable-next-line react-hooks/exhaustive-deps -- frozenRef is a stable ref, read imperatively
-  }, [applyToMap, flushToReact])
+  }, [applyToMap, clearRemovalTimer, flushToReact])
 
   const onAdvisoryCleared = useCallback((advisoryId: string) => {
     const existing = mapRef.current.get(advisoryId)
@@ -135,6 +162,9 @@ export function useAdvisoryMap(
       resolvedAt: Date.now(),
     })
     dirtyRef.current = true
+    if (existing.lifecycle === 'provisional') {
+      scheduleProvisionalRemoval(advisoryId)
+    }
 
     const isFrozen = frozenRef?.current ?? false
     if (isFrozen) {
@@ -144,6 +174,16 @@ export function useAdvisoryMap(
 
     setAdvisories(buildSortedRef.current())
   // eslint-disable-next-line react-hooks/exhaustive-deps -- frozenRef is a stable ref, read imperatively
+  }, [scheduleProvisionalRemoval])
+
+  useEffect(() => {
+    const timers = removalTimersRef.current
+    return () => {
+      for (const timerId of timers.values()) {
+        clearTimeout(timerId)
+      }
+      timers.clear()
+    }
   }, [])
 
   // frozenRef.current is imperative state, so this needs to run after every render.
@@ -169,6 +209,10 @@ export function useAdvisoryMap(
   }, [buildSorted])
 
   const clearMap = useCallback(() => {
+    for (const timerId of removalTimersRef.current.values()) {
+      clearTimeout(timerId)
+    }
+    removalTimersRef.current.clear()
     mapRef.current.clear()
     sortedCacheRef.current = []
     dirtyRef.current = false

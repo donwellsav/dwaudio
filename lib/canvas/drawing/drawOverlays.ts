@@ -154,7 +154,7 @@ export function drawNotchOverlays(
   void theme
   const notchedIds = new Set<string>()
   const visible = advisories
-    .filter(a => !clearedIds?.has(a.id))
+    .filter(a => a.lifecycle !== 'provisional' && !clearedIds?.has(a.id))
     .slice(-7) // Same cap as drawMarkers
 
   // Build pixel-space bars, then merge overlapping/adjacent ones into solid blocks
@@ -267,7 +267,7 @@ export function drawMarkers(
 
   // Advisory peak markers (persist until cleared, cap at 7)
   const visibleAdvisories = advisories
-    .filter(a => !clearedIds?.has(a.id))
+    .filter(a => a.lifecycle !== 'provisional' && !clearedIds?.has(a.id))
     .slice(-7)
 
   // Pre-compute label positions and determine which labels to show when overlapping.

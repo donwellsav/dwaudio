@@ -70,11 +70,12 @@ export const IssueCard = memo(function IssueCard({
   })
 
   const isInactive = isResolved || isHeld
+  const isProvisional = advisory.lifecycle === 'provisional' && !isInactive
   const confirmLatencyMs =
     typeof advisory.confirmLatencyMs === 'number' && Number.isFinite(advisory.confirmLatencyMs)
       ? advisory.confirmLatencyMs
       : null
-  const confirmLatencyLabel = confirmLatencyMs != null ? formatConfirmLatency(confirmLatencyMs) : null
+  const confirmLatencyLabel = !isProvisional && confirmLatencyMs != null ? formatConfirmLatency(confirmLatencyMs) : null
   const nowMs = useTickingNow(!isInactive)
   const ageSec = getIssueAgeSec(nowMs, advisory.timestamp)
   const ageStr = formatIssueAge(nowMs, advisory.timestamp)
@@ -82,6 +83,7 @@ export const IssueCard = memo(function IssueCard({
   const isNonCorrectiveWhistle =
     advisory.label === 'WHISTLE' &&
     advisory.severity === 'WHISTLE'
+  const shouldShowEq = !isProvisional && !isNonCorrectiveWhistle
   const strategyLabel = isNonCorrectiveWhistle
     ? null
     : getRecommendationStrategyLabel(advisory.advisory?.peq)
@@ -93,9 +95,11 @@ export const IssueCard = memo(function IssueCard({
 
   return (
     <div
-      className={`group relative flex flex-col rounded glass-card ${SEVERITY_ENTER_CLASS[advisory.severity] ?? 'animate-issue-enter'} overflow-hidden ${
+      className={`group relative flex flex-col rounded glass-card ${isProvisional ? 'animate-issue-enter-quiet' : SEVERITY_ENTER_CLASS[advisory.severity] ?? 'animate-issue-enter'} overflow-hidden ${
         isInactive
           ? 'border-border/50'
+          : isProvisional
+            ? 'border-amber-500/25 shadow-none opacity-90'
           : isRunaway
             ? 'border-red-500/70 animate-emergency-glow'
             : isWarning
@@ -104,7 +108,7 @@ export const IssueCard = memo(function IssueCard({
       }`}
     >
       <div
-        className={`absolute left-0 top-0 bottom-0 ${SEVERITY_STRIP_CLASS[advisory.severity] ?? 'animate-strip-flash'} ${
+        className={`absolute left-0 top-0 bottom-0 ${isProvisional ? '' : SEVERITY_STRIP_CLASS[advisory.severity] ?? 'animate-strip-flash'} ${
           isRunaway
             ? 'severity-accent-strip-runaway'
             : advisory.severity === 'GROWING'
@@ -112,8 +116,12 @@ export const IssueCard = memo(function IssueCard({
               : 'severity-accent-strip'
         }`}
         style={{
-          backgroundColor: isInactive ? 'var(--muted)' : severityColor,
-          boxShadow: isInactive
+          backgroundColor: isInactive
+            ? 'var(--muted)'
+            : isProvisional
+              ? 'rgba(245,158,11,0.45)'
+              : severityColor,
+          boxShadow: isInactive || isProvisional
             ? 'none'
             : isRunaway
               ? `3px 0 12px -1px ${severityColor}70, 0 0 6px -1px ${severityColor}50`
@@ -126,7 +134,10 @@ export const IssueCard = memo(function IssueCard({
           {SeverityIconEl ? (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center self-center"
-              style={{ color: severityColor, opacity: 0.8 }}
+              style={{
+                color: isProvisional ? 'var(--muted-foreground)' : severityColor,
+                opacity: isProvisional ? 0.55 : 0.8,
+              }}
               role="img"
               aria-label={`Severity: ${getSeverityText(advisory.severity)}`}
               title={getSeverityText(advisory.severity)}
@@ -141,8 +152,8 @@ export const IssueCard = memo(function IssueCard({
             }`}
             style={{
               fontVariantNumeric: 'tabular-nums slashed-zero',
-              color: isInactive ? 'var(--muted-foreground)' : severityColor,
-              textShadow: isInactive
+              color: isInactive || isProvisional ? 'var(--muted-foreground)' : severityColor,
+              textShadow: isInactive || isProvisional
                 ? 'none'
                 : isRunaway
                   ? `0 0 24px ${severityColor}90, 0 0 10px ${severityColor}60, 0 0 3px ${severityColor}40`
@@ -169,6 +180,15 @@ export const IssueCard = memo(function IssueCard({
                 title="Cleared detection retained briefly"
               >
                 cleared
+              </span>
+            ) : null}
+            {isProvisional ? (
+              <span
+                className={badgeClass('info', 'sm')}
+                aria-label="Watching possible feedback"
+                title="Watching possible feedback"
+              >
+                watch
               </span>
             ) : null}
             {confirmLatencyLabel ? (
@@ -250,7 +270,7 @@ export const IssueCard = memo(function IssueCard({
               >
                 warning only · no EQ cut
               </span>
-            ) : (
+            ) : shouldShowEq ? (
               <>
                 <span
                   style={{ color: severityColor, opacity: 0.8 }}
@@ -272,7 +292,7 @@ export const IssueCard = memo(function IssueCard({
                   </span>
                 ) : null}
               </>
-            )
+            ) : null
           ) : null}
           {velocity > 0 && !isInactive ? (
             <span className={`flex items-center gap-0 ${
@@ -313,7 +333,7 @@ export const IssueCard = memo(function IssueCard({
           </div>
         ) : null}
 
-        {showPeqDetails && advisory.advisory?.peq && peqNotchSvgPath && !isNonCorrectiveWhistle ? (
+        {showPeqDetails && advisory.advisory?.peq && peqNotchSvgPath && shouldShowEq ? (
           <div className="flex items-center gap-1.5">
             <svg width="40" height="14" viewBox="0 0 40 14" aria-hidden className="flex-shrink-0">
               <path d={peqNotchSvgPath} fill="none" stroke={severityColor} strokeWidth="1.2" strokeOpacity="0.5" />
@@ -337,7 +357,7 @@ export const IssueCard = memo(function IssueCard({
         ) : null}
       </div>
 
-      {!isInactive ? (
+      {!isInactive && !isProvisional ? (
         <div className="h-[3px] w-full relative" aria-hidden title={`Freshness: ${Math.max(0, 60 - ageSec)}s remaining`}>
           <div
             className="absolute inset-0 h-full rounded-full transition-[width,background-color] duration-500 ease-linear"

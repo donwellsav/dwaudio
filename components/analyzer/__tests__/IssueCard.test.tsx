@@ -73,6 +73,22 @@ describe('IssueCard', () => {
     expect(screen.getByText(/140ms/i)).toBeDefined()
   })
 
+  it('renders provisional cards as quiet watch states without EQ cuts', () => {
+    render(
+      <IssueCard
+        advisory={makeAdvisory({
+          lifecycle: 'provisional',
+          confidence: 0.34,
+        })}
+        occurrenceCount={1}
+      />,
+    )
+
+    expect(screen.getByText(/watch/i)).toBeDefined()
+    expect(screen.queryByText(/-6dB/i)).toBeNull()
+    expect(screen.queryByText(/Q:4/i)).toBeNull()
+  })
+
   it('labels held cards as cleared instead of active detections', () => {
     render(<IssueCard advisory={makeAdvisory()} occurrenceCount={1} isHeld />)
     expect(screen.getByText(/cleared/i)).toBeDefined()

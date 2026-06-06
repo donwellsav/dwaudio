@@ -15,6 +15,7 @@ export type SeverityLevel = 'RUNAWAY' | 'GROWING' | 'RESONANCE' | 'POSSIBLE_RING
 /** @deprecated Use SeverityLevel instead. Kept for backward compatibility. */
 export type Severity = SeverityLevel | 'unknown'
 export type IssueLabel = 'ACOUSTIC_FEEDBACK' | 'WHISTLE' | 'INSTRUMENT' | 'POSSIBLE_RING'
+export type AdvisoryLifecycle = 'provisional' | 'confirmed'
 export type PEQType = 'bell' | 'notch' | 'highShelf' | 'lowShelf' | 'HPF' | 'LPF'
 export type ShelfType = 'highShelf' | 'lowShelf' | 'HPF' | 'LPF'
 export type SpectrumSmoothingMode = 'raw' | 'perceptual'
@@ -258,6 +259,8 @@ export interface Advisory {
   timestamp: number
   label: IssueLabel
   severity: SeverityLevel
+  /** Provisional candidates are early warnings that may retract before EQ is shown. */
+  lifecycle?: AdvisoryLifecycle
   confidence: number
   why: string[]
   trueFrequencyHz: number

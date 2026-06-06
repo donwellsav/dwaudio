@@ -17,17 +17,20 @@ import { TrackManager } from './trackManager'
 import { classifyTrackWithAlgorithms, getReportGateDecision } from './classifier'
 import { generateEQAdvisory, analyzeSpectralTrends } from './eqAdvisor'
 import { fuseAlgorithmResults, buildFusionConfig, CombStabilityTracker, AgreementPersistenceTracker } from './advancedDetection'
-import type { CombPatternResult, FusedDetectionResult, FusionConfig } from './advancedDetection'
+import type { AlgorithmScores, CombPatternResult, FusedDetectionResult, FusionConfig } from './advancedDetection'
 import { AlgorithmEngine } from './workerFft'
-import { AdvisoryManager } from './advisoryManager'
+import { AdvisoryManager, type AdvisoryAction } from './advisoryManager'
 import type {
   Advisory,
   AlgorithmMode,
+  ClassificationResult,
   ContentType,
   DetectedPeak,
   DetectorSettings,
   RecommendationContext,
+  ReportGateDecision,
   ReportGateId,
+  Track,
   TrackSummary,
 } from '@/types/advisory'
 import { DEFAULT_SETTINGS } from './constants'
@@ -110,6 +113,15 @@ let sampleRate = 48000
 let fftSize = 8192
 let peakProcessCount = 0
 const REPORT_GATE_CLEAR_GRACE_MS = 1200
+const PROVISIONAL_MIN_CONFIDENCE = 0.30
+const PROVISIONAL_CONFIDENCE_MARGIN = 0.15
+const PROVISIONAL_MIN_FEEDBACK_PROBABILITY = 0.32
+const PROVISIONAL_MAX_ACTIVE_MS = 1800
+const PROVISIONAL_REJECT_CLEAR_GRACE_MS = 250
+const PROVISIONAL_REPORT_GATES: ReadonlySet<ReportGateId> = new Set([
+  'growing-waiting-persistence',
+  'low-confidence',
+])
 
 // ─── Cached FusionConfig (rebuilt only on settings change, not per-peak) ─────
 let _cachedFusionConfig: FusionConfig | null = null
@@ -174,6 +186,93 @@ function buildRecommendationContext(frequencyHz: number): RecommendationContext 
 
   return {
     recurrenceCount: hotspot.occurrences,
+  }
+}
+
+function provisionalConfidenceThreshold(settings: DetectorSettings): number {
+  const confirmedThreshold = settings.confidenceThreshold ?? 0.40
+  return Math.max(
+    PROVISIONAL_MIN_CONFIDENCE,
+    confirmedThreshold - PROVISIONAL_CONFIDENCE_MARGIN,
+  )
+}
+
+function advisoryStartTimestamp(advisory: Advisory): number {
+  return advisory.firstSeenAt ?? advisory.timestamp
+}
+
+function isExpiredProvisional(advisory: Advisory | undefined, now: number): boolean {
+  return Boolean(
+    advisory?.lifecycle === 'provisional' &&
+    now - advisoryStartTimestamp(advisory) >= PROVISIONAL_MAX_ACTIVE_MS,
+  )
+}
+
+function shouldShowProvisionalCandidate(
+  classification: ClassificationResult,
+  reportGate: ReportGateDecision,
+  fusionResult: FusedDetectionResult,
+  settings: DetectorSettings,
+  existingAdvisory: Advisory | undefined,
+  now: number,
+): boolean {
+  if (!PROVISIONAL_REPORT_GATES.has(reportGate.gate)) return false
+  if (isExpiredProvisional(existingAdvisory, now)) return false
+  if (!classification.recommendationEligible) return false
+  if (classification.speechLikePattern) return false
+  if (classification.label !== 'ACOUSTIC_FEEDBACK' && classification.label !== 'POSSIBLE_RING') return false
+  if (classification.fusionVerdict !== 'POSSIBLE_FEEDBACK' && classification.fusionVerdict !== 'FEEDBACK') return false
+  if (classification.confidence < provisionalConfidenceThreshold(settings)) return false
+  if (
+    classification.severity !== 'GROWING' &&
+    fusionResult.feedbackProbability < PROVISIONAL_MIN_FEEDBACK_PROBABILITY
+  ) {
+    return false
+  }
+  return true
+}
+
+function attachAdvisoryDebugData(
+  actions: AdvisoryAction[],
+  algorithmScores: AlgorithmScores,
+  fusionResult: FusedDetectionResult,
+  track: Track,
+  spectrum: Float32Array,
+  sampleRate: number,
+  fftSize: number,
+  isHarmonic: boolean,
+): void {
+  for (const action of actions) {
+    if (action.type !== 'advisory') continue
+
+    action.advisory.algorithmScores = {
+      msd: algorithmScores.msd?.feedbackScore ?? null,
+      phase: algorithmScores.phase?.feedbackScore ?? null,
+      spectral: algorithmScores.spectral?.feedbackScore ?? null,
+      comb: algorithmScores.comb?.confidence ?? null,
+      ihr: algorithmScores.ihr?.feedbackScore ?? null,
+      ptmr: algorithmScores.ptmr?.feedbackScore ?? null,
+      fusedProbability: fusionResult.feedbackProbability,
+    }
+
+    if (spectrum.length === 0) continue
+
+    const binHz = sampleRate / fftSize
+    const centerBin = Math.round(track.trueFrequencyHz / binHz)
+    const lowBin = Math.max(0, Math.round(track.trueFrequencyHz / 2 / binHz))
+    const highBin = Math.min(spectrum.length - 1, Math.round(track.trueFrequencyHz * 2 / binHz))
+    const profile: number[] = []
+    const step = Math.max(1, Math.round((highBin - lowBin) / 32))
+    for (let i = lowBin; i <= highBin; i += step) {
+      profile.push(Math.round(spectrum[i] * 10) / 10)
+    }
+    action.advisory.spectralProfile = {
+      lowHz: Math.round(lowBin * binHz),
+      highHz: Math.round(highBin * binHz),
+      peakHz: Math.round(centerBin * binHz),
+      samples: profile,
+      isHarmonic,
+    }
   }
 }
 
@@ -552,15 +651,62 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       lastReportGateReason = reportGate.reason
       lastReportFrequencyHz = track.trueFrequencyHz
       lastReportTimestamp = peak.timestamp
+      const existingAdvisory = advisoryManager.getAdvisoryForTrack(track.id)
 
       // Gate on reporting threshold
       if (!reportGate.shouldReport) {
-        const graceMs = Math.max(settings.clearMs ?? 0, REPORT_GATE_CLEAR_GRACE_MS)
-        const clearedId = advisoryManager.clearForTrackAfterReportGateMiss(
-          track.id,
+        if (shouldShowProvisionalCandidate(
+          classification,
+          reportGate,
+          fusionResult,
+          settings,
+          existingAdvisory,
           peak.timestamp,
-          graceMs,
-        )
+        )) {
+          if (cachedShelvesFrameId !== peakProcessCount) {
+            cachedShelves = analyzeSpectralTrends(spectrum, sampleRate, fftSize)
+            cachedShelvesFrameId = peakProcessCount
+          }
+
+          const recommendationContext = buildRecommendationContext(track.trueFrequencyHz)
+          const eqAdvisory = generateEQAdvisory(
+            track, classification.severity,
+            settings.eqPreset,
+            undefined,
+            undefined,
+            undefined,
+            cachedShelves ?? [],
+            recommendationContext,
+          )
+          const actions = advisoryManager.createOrUpdate(
+            track, peak, classification, eqAdvisory, settings, { lifecycle: 'provisional' }
+          )
+          attachAdvisoryDebugData(
+            actions,
+            algorithmScores,
+            fusionResult,
+            track,
+            spectrum,
+            sampleRate,
+            fftSize,
+            isHarmonic || false,
+          )
+          for (const action of actions) {
+            self.postMessage(action satisfies WorkerOutboundMessage)
+          }
+          publishTracksUpdate(actions.length > 0)
+          break
+        }
+
+        const clearedId = isExpiredProvisional(existingAdvisory, peak.timestamp)
+          ? advisoryManager.clearForTrack(track.id)
+          : advisoryManager.clearForTrackAfterReportGateMiss(
+              track.id,
+              peak.timestamp,
+              existingAdvisory?.lifecycle === 'provisional'
+                ? PROVISIONAL_REJECT_CLEAR_GRACE_MS
+                : Math.max(settings.clearMs ?? 0, REPORT_GATE_CLEAR_GRACE_MS),
+            )
         if (clearedId) {
           self.postMessage({ type: 'advisoryCleared', advisoryId: clearedId } satisfies WorkerOutboundMessage)
         }
@@ -590,41 +736,20 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
 
       // Create or update advisory (handles rate limit, band cooldown, dedup)
       const actions = advisoryManager.createOrUpdate(
-        track, peak, classification, eqAdvisory, settings
+        track, peak, classification, eqAdvisory, settings, { lifecycle: 'confirmed' }
       )
 
-      // Attach algorithm scores and spectral profile to advisory actions
+      attachAdvisoryDebugData(
+        actions,
+        algorithmScores,
+        fusionResult,
+        track,
+        spectrum,
+        sampleRate,
+        fftSize,
+        isHarmonic || false,
+      )
       for (const action of actions) {
-        if (action.type === 'advisory') {
-          action.advisory.algorithmScores = {
-            msd: algorithmScores.msd?.feedbackScore ?? null,
-            phase: algorithmScores.phase?.feedbackScore ?? null,
-            spectral: algorithmScores.spectral?.feedbackScore ?? null,
-            comb: algorithmScores.comb?.confidence ?? null,
-            ihr: algorithmScores.ihr?.feedbackScore ?? null,
-            ptmr: algorithmScores.ptmr?.feedbackScore ?? null,
-            fusedProbability: fusionResult.feedbackProbability,
-          }
-          // Attach ±1 octave spectral profile around detection for smarter notch decisions
-          if (spectrum && spectrum.length > 0) {
-            const binHz = sampleRate / fftSize
-            const centerBin = Math.round(track.trueFrequencyHz / binHz)
-            const lowBin = Math.max(0, Math.round(track.trueFrequencyHz / 2 / binHz))
-            const highBin = Math.min(spectrum.length - 1, Math.round(track.trueFrequencyHz * 2 / binHz))
-            const profile: number[] = []
-            const step = Math.max(1, Math.round((highBin - lowBin) / 32)) // max 32 samples
-            for (let i = lowBin; i <= highBin; i += step) {
-              profile.push(Math.round(spectrum[i] * 10) / 10)
-            }
-            action.advisory.spectralProfile = {
-              lowHz: Math.round(lowBin * binHz),
-              highHz: Math.round(highBin * binHz),
-              peakHz: Math.round(centerBin * binHz),
-              samples: profile,
-              isHarmonic: isHarmonic || false,
-            }
-          }
-        }
         self.postMessage(action satisfies WorkerOutboundMessage)
       }
 

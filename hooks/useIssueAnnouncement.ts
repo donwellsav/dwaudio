@@ -12,6 +12,9 @@ const ISSUE_ANNOUNCEMENT_RETAIN_COUNT = 100
 
 export function formatIssueAnnouncement(advisory: Advisory): string {
   const frequency = formatFrequency(advisory.trueFrequencyHz)
+  if (advisory.lifecycle === 'provisional') {
+    return `Possible feedback at ${frequency}`
+  }
   const severity = getSeverityText(advisory.severity)
   const peq = advisory.advisory?.peq
   const cutDetail = peq
@@ -39,7 +42,12 @@ export function useIssueAnnouncement(entries: IssueListEntry[]): string {
 
     for (const entry of entries) {
       const { advisory } = entry
-      if (entry.isHeld || announcedIdsRef.current.has(advisory.id) || advisory.resolved) continue
+      if (
+        entry.isHeld ||
+        announcedIdsRef.current.has(advisory.id) ||
+        advisory.resolved ||
+        advisory.lifecycle === 'provisional'
+      ) continue
 
       announcedIdsRef.current.add(advisory.id)
       lastAnnounceTimeRef.current = now

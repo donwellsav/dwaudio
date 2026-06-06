@@ -21,6 +21,7 @@ import type {
   DetectorSettings,
   EQAdvisory,
   Track,
+  AdvisoryLifecycle,
 } from '@/types/advisory'
 
 // ── Action types returned to the orchestrator ─────────────────────────────────
@@ -69,6 +70,12 @@ export class AdvisoryManager {
   /** Get advisory ID for a track (if one exists). */
   getAdvisoryIdForTrack(trackId: string): string | undefined {
     return this.trackToAdvisoryId.get(trackId)
+  }
+
+  /** Get the advisory for a track, if the track is already mapped. */
+  getAdvisoryForTrack(trackId: string): Advisory | undefined {
+    const advisoryId = this.trackToAdvisoryId.get(trackId)
+    return advisoryId ? this.advisories.get(advisoryId) : undefined
   }
 
   // ── Gate failure — clear advisory for a track ─────────────────────────────
@@ -161,8 +168,10 @@ export class AdvisoryManager {
     classification: ClassificationResult,
     eqAdvisory: EQAdvisory,
     settings: DetectorSettings,
+    options: { lifecycle?: AdvisoryLifecycle } = {},
   ): AdvisoryAction[] {
     const actions: AdvisoryAction[] = []
+    const requestedLifecycle = options.lifecycle ?? 'confirmed'
     this.reportGateMissStartedAt.delete(track.id)
     const mappedExistingId = this.trackToAdvisoryId.get(track.id)
     const existingAdvisory = mappedExistingId ? this.advisories.get(mappedExistingId) : undefined
@@ -247,12 +256,17 @@ export class AdvisoryManager {
     // ── Create / update advisory ──────────────────────────────────────────
 
     const advisoryId = existingId ?? generateId()
+    const lifecycle =
+      existingAdvisory?.lifecycle === 'confirmed'
+        ? 'confirmed'
+        : requestedLifecycle
     const advisory: Advisory = {
       id: advisoryId,
       trackId: track.id,
       timestamp: peak.timestamp,
       label: classification.label,
       severity: classification.severity,
+      lifecycle,
       confidence: classification.confidence,
       why: classification.reasons,
       trueFrequencyHz: track.trueFrequencyHz,

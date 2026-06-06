@@ -121,13 +121,19 @@ export function useAdvisoryClearState(
     () =>
       advisories.some(
         (advisory) =>
-          !effectiveClearState.geqCleared.has(advisory.id) && Boolean(advisory.advisory?.geq),
+          advisory.lifecycle !== 'provisional' &&
+          !effectiveClearState.geqCleared.has(advisory.id) &&
+          Boolean(advisory.advisory?.geq),
       ),
     [advisories, effectiveClearState.geqCleared],
   )
 
   const hasActiveRTAMarkers = useMemo(
-    () => advisories.some((advisory) => !effectiveClearState.rtaCleared.has(advisory.id)),
+    () => advisories.some(
+      (advisory) =>
+        advisory.lifecycle !== 'provisional' &&
+        !effectiveClearState.rtaCleared.has(advisory.id),
+    ),
     [advisories, effectiveClearState.rtaCleared],
   )
 

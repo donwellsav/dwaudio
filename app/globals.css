@@ -578,6 +578,10 @@ html {
     animation: issue-enter-slow 5s ease-out forwards;
   }
 
+  .animate-issue-enter-quiet {
+    animation: issue-enter-slow 180ms ease-out forwards;
+  }
+
   /* ── Severity accent strip flash on card enter ─────────────────────────── */
   @keyframes strip-flash {
     0%   { filter: brightness(0.5); }

@@ -28,6 +28,9 @@ export function buildBandRecommendations(
   const map = new Map<number, BandRecommendation>()
 
   for (const advisory of advisories) {
+    if (advisory.lifecycle === 'provisional') {
+      continue
+    }
     if (clearedIds?.has(advisory.id)) {
       continue
     }

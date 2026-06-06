@@ -49,7 +49,11 @@ export function hasCustomGateOverrides(session: DwaSessionState | null | undefin
 
 export function countActiveGeqCuts(advisories: Advisory[], geqClearedIds: Set<string>): number {
   return advisories.filter(
-    advisory => !advisory.resolved && !geqClearedIds.has(advisory.id) && advisory.advisory?.geq,
+    advisory =>
+      advisory.lifecycle !== 'provisional' &&
+      !advisory.resolved &&
+      !geqClearedIds.has(advisory.id) &&
+      advisory.advisory?.geq,
   ).length
 }
 

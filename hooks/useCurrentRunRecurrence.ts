@@ -17,6 +17,7 @@ export function useCurrentRunRecurrence(
 
     advisories.forEach((advisory) => {
       if (recordedIdsRef.current.has(advisory.id)) return
+      if (advisory.lifecycle === 'provisional') return
       if (
         advisory.confidence >= 0.6 &&
         (advisory.label === 'ACOUSTIC_FEEDBACK' || advisory.label === 'POSSIBLE_RING')

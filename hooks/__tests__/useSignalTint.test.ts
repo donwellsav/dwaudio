@@ -11,7 +11,7 @@ import { renderHook, act } from '@testing-library/react'
 
 // ── Mock contexts before importing hook ──────────────────────────────────────
 
-let mockAdvisories: { id: string; severity: string }[] = []
+let mockAdvisories: { id: string; severity: string; lifecycle?: 'provisional' | 'confirmed' }[] = []
 let mockDismissedIds = new Set<string>()
 let mockIsRunning = false
 let mockInputLevel = -30 // default: adequate signal
@@ -150,6 +150,17 @@ describe('useSignalTint', () => {
 
     const [r, g, b] = getTint()
     // All dismissed → green (adequate signal, no active feedback)
+    expect(r).toBe('34')
+    expect(g).toBe('197')
+    expect(b).toBe('94')
+  })
+
+  it('ignores provisional advisories for console tint', () => {
+    mockIsRunning = true
+    mockAdvisories = [{ id: '1', severity: 'RUNAWAY', lifecycle: 'provisional' }]
+    renderHook(() => useSignalTint())
+
+    const [r, g, b] = getTint()
     expect(r).toBe('34')
     expect(g).toBe('197')
     expect(b).toBe('94')

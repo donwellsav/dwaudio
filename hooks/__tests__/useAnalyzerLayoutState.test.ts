@@ -103,6 +103,7 @@ describe('useAnalyzerLayoutState helpers', () => {
       makeAdvisory('active'),
       makeAdvisory('resolved', { resolved: true }),
       makeAdvisory('cleared'),
+      makeAdvisory('provisional', { lifecycle: 'provisional' }),
     ]
 
     expect(countActiveGeqCuts(advisories, new Set(['cleared']))).toBe(1)

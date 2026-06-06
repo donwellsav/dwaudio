@@ -458,7 +458,9 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
   useEffect(() => { dirtyRef.current = true }, [advisories, clearedIds])
 
   const isKeyboardInteractive = Boolean(onFreqRangeChange || onThresholdChange)
-  const activeAdvisoryCount = advisories.filter((advisory) => !advisory.resolved).length
+  const activeAdvisoryCount = advisories.filter(
+    (advisory) => advisory.lifecycle !== 'provisional' && !advisory.resolved,
+  ).length
   const spectrumStatusDescription = formatSpectrumStatusDescription({
     isRunning,
     minFrequency,

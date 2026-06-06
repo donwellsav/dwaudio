@@ -78,6 +78,16 @@ describe('useCurrentRunRecurrence', () => {
     expect(mockRecord).not.toHaveBeenCalled()
   })
 
+  it('does NOT record provisional candidates', () => {
+    const advisory = makeAdvisory({
+      label: 'ACOUSTIC_FEEDBACK',
+      confidence: 0.8,
+      lifecycle: 'provisional',
+    })
+    renderHook(() => useCurrentRunRecurrence([advisory]))
+    expect(mockRecord).not.toHaveBeenCalled()
+  })
+
   it('does not re-record same advisory ID on rerender', () => {
     const advisory = makeAdvisory({ id: 'dedup-test', label: 'ACOUSTIC_FEEDBACK', confidence: 0.8 })
     const { rerender } = renderHook(
