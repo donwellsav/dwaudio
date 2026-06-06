@@ -10,6 +10,7 @@ import type { AudioDevice } from '@/hooks/useAudioDevices'
 
 export interface HeaderBarState {
   isRunning: boolean
+  isStarting: boolean
   inputLevel: number
   devices: AudioDevice[]
   selectedDeviceId: string
@@ -26,6 +27,7 @@ export interface HeaderBarState {
 export function useHeaderBarState(): HeaderBarState {
   const {
     isRunning,
+    isStarting,
     start,
     stop,
     devices,
@@ -47,12 +49,13 @@ export function useHeaderBarState(): HeaderBarState {
   )
 
   const handleToggleAnalysis = useCallback(() => {
+    if (isStarting) return
     if (isRunning) {
       stop()
       return
     }
     void start()
-  }, [isRunning, start, stop])
+  }, [isRunning, isStarting, start, stop])
 
   const handleClearDisplays = useCallback(() => {
     onClearAll()
@@ -66,6 +69,7 @@ export function useHeaderBarState(): HeaderBarState {
 
   return {
     isRunning,
+    isStarting,
     inputLevel,
     devices,
     selectedDeviceId,

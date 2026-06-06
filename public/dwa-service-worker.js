@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'dwaudio-local-v1'
+const CACHE_VERSION = 'dwaudio-local-v0.120.0'
 const CORE_CACHE = `${CACHE_VERSION}-core`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 const KNOWN_CACHES = new Set([CORE_CACHE, RUNTIME_CACHE])

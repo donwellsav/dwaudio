@@ -79,7 +79,7 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
         <span className="section-label text-muted-foreground">Mode</span>
         <div className="grid grid-cols-3 @sm:grid-cols-4 gap-0.5">
           {LIVE_MODES.map((mode) => (
-            <button
+            <button type="button"
               key={mode.id}
               onClick={() => ctx.setMode(mode.id)}
               className={`flex min-h-8 md:min-h-7 items-center justify-center overflow-hidden cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 px-1 rounded text-xs font-mono font-bold tracking-wide transition-[color,background-color,border-color,box-shadow] ${
@@ -98,7 +98,7 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
         <span className="section-label text-muted-foreground">EQ Action Style</span>
         <div className="flex items-center gap-0.5">
           {([['surgical', 'Surgical'], ['heavy', 'Heavy']] as const).map(([style, label]) => (
-            <button
+            <button type="button"
               key={style}
               onClick={() => ctx.setEqStyle(style)}
               className={`min-h-8 md:min-h-7 flex-1 px-2 rounded text-xs font-mono font-bold tracking-wide transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
@@ -136,7 +136,7 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
           {FREQ_RANGE_PRESETS.map((preset) => {
             const isActive = settings.minFrequency === preset.minFrequency && settings.maxFrequency === preset.maxFrequency
             return (
-              <button key={preset.label} onClick={() => handleFreqPresetClick(preset.minFrequency, preset.maxFrequency)}
+              <button type="button" key={preset.label} onClick={() => handleFreqPresetClick(preset.minFrequency, preset.maxFrequency)}
                 className={`min-h-8 px-1 py-0.5 rounded flex flex-col items-center gap-0.5 text-xs font-mono font-bold tracking-wide transition-[color,background-color,border-color,box-shadow] cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
                   isActive
                     ? 'bg-[rgba(75,146,255,0.12)] text-[var(--console-blue)] border border-[rgba(75,146,255,0.38)] shadow-[0_0_10px_rgba(75,146,255,0.16)]'

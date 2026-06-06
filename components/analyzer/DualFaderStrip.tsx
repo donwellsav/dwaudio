@@ -100,7 +100,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
     <div className="flex flex-col h-full items-center py-2 gap-1 select-none">
       <div className="flex-shrink-0 flex w-full rounded-md overflow-hidden border border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.22)] bg-[rgba(0,0,0,0.15)]">
         {LINK_MODES.map(({ mode, icon, title, ariaLabel }) => (
-          <button
+          <button type="button"
             key={mode}
             onClick={() => onLinkModeChange(mode)}
             className={`flex-1 py-1 text-center text-dwa-sm font-bold transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
@@ -118,7 +118,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
       </div>
 
       <div className="flex-shrink-0 flex w-full gap-0.5">
-        <button
+        <button type="button"
           onClick={goHome}
           className="flex-1 py-1 rounded text-dwa-sm font-bold uppercase tracking-wider text-center transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 bg-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.06)] text-[var(--console-amber)]/70 border border-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.18)] hover:bg-[rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.12)]"
           title={`Home: ${linkCenterGainDb}dB gain, ${linkCenterSensDb}dB sensitivity`}
@@ -127,7 +127,7 @@ export const DualFaderStrip = memo(function DualFaderStrip({
           Home
         </button>
 
-        <button
+        <button type="button"
           onClick={() => onAutoGainToggle(!autoGainEnabled)}
           className={`flex-1 py-1 rounded flex items-center justify-center gap-1 text-dwa-sm font-bold uppercase tracking-wider transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
             autoGainEnabled

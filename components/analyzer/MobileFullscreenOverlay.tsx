@@ -24,7 +24,7 @@ export const MobileFullscreenOverlay = memo(function MobileFullscreenOverlay({
         <span className="text-xs font-mono font-bold tracking-[0.15em] uppercase text-muted-foreground">
           Real-Time Analyzer + Graphic Equalizer
         </span>
-        <button
+        <button type="button"
           onClick={toggleRtaFullscreen}
           className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           aria-label="Collapse RTA"

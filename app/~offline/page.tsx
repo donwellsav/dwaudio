@@ -14,7 +14,7 @@ export default function OfflinePage() {
           The app could not load from cache. Once DoneWell Audio has loaded once,
           the analyzer shell and audio analysis run locally from this browser.
         </p>
-        <button
+        <button type="button"
           onClick={() => window.location.reload()}
           className="w-full cursor-pointer rounded-md bg-primary px-4 py-2.5 font-mono text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >

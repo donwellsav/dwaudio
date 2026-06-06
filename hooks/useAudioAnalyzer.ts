@@ -203,7 +203,7 @@ export function useAudioAnalyzer(
   const stop = useCallback(() => {
     if (!analyzerRef.current) return
 
-    analyzerRef.current.stop({ releaseMic: false })
+    analyzerRef.current.stop({ releaseMic: true })
     tracksRef.current = []
     setState((previous) => ({
       ...previous,
@@ -218,14 +218,38 @@ export function useAudioAnalyzer(
     const wasRunning = analyzerRef.current.getState().isRunning
     if (!wasRunning) return
 
-    analyzerRef.current.stop({ releaseMic: true })
-    await analyzerRef.current.start({ deviceId: deviceId || undefined })
-    const analyzerState = analyzerRef.current.getState()
-    dspWorkerRef.current.init(
-      pickWorkerRuntimeSettings(settingsRef.current),
-      analyzerState.sampleRate,
-      analyzerState.fftSize,
-    )
+    try {
+      setState((previous) => ({
+        ...previous,
+        isStarting: true,
+        isRunning: false,
+      }))
+      analyzerRef.current.stop({ releaseMic: true })
+      await analyzerRef.current.start({ deviceId: deviceId || undefined })
+      const analyzerState = analyzerRef.current.getState()
+      dspWorkerRef.current.init(
+        pickWorkerRuntimeSettings(settingsRef.current),
+        analyzerState.sampleRate,
+        analyzerState.fftSize,
+      )
+      setState((previous) => ({
+        ...previous,
+        isStarting: false,
+        error: null,
+        isRunning: true,
+        hasPermission: analyzerState.hasPermission,
+        sampleRate: analyzerState.sampleRate,
+        fftSize: analyzerState.fftSize,
+      }))
+    } catch (error) {
+      setState((previous) => ({
+        ...previous,
+        isStarting: false,
+        error: error instanceof Error ? error.message : 'Failed to switch input device',
+        isRunning: false,
+        hasPermission: false,
+      }))
+    }
   }, [])
 
   const resetSettings = useCallback(() => {

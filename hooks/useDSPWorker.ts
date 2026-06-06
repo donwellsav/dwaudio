@@ -77,39 +77,43 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
     callbacksRef.current = callbacks
   }, [callbacks])
 
-  const setupWorkerHandlers = useCallback((worker: Worker) => {
-    const handlerRefs = {
-      workerRef,
-      callbacksRef,
-      isReadyRef,
-      busyRef,
-      pendingPeakQueueRef,
-      droppedFramesRef,
-      crashedRef,
-      permanentlyDeadRef,
-      restartCountRef,
-      restartTimerRef,
-      lastInitRef,
-      pendingHistorySyncRef,
-      specPoolRef,
-      tdPoolRef,
-      specUpdatePoolRef,
-      poolFftSizeRef,
-      outboundMessagesRef,
-      inboundMessagesRef,
-      tracksUpdatesRef,
-      lastTracksPayloadBytesRef,
-      maxTracksPayloadBytesRef,
+  const setupWorkerHandlers = useMemo(() => {
+    const setup = (worker: Worker) => {
+      const handlerRefs = {
+        workerRef,
+        callbacksRef,
+        isReadyRef,
+        busyRef,
+        pendingPeakQueueRef,
+        droppedFramesRef,
+        crashedRef,
+        permanentlyDeadRef,
+        restartCountRef,
+        restartTimerRef,
+        lastInitRef,
+        pendingHistorySyncRef,
+        specPoolRef,
+        tdPoolRef,
+        specUpdatePoolRef,
+        poolFftSizeRef,
+        outboundMessagesRef,
+        inboundMessagesRef,
+        tracksUpdatesRef,
+        lastTracksPayloadBytesRef,
+        maxTracksPayloadBytesRef,
+      }
+
+      worker.onmessage = createDSPWorkerMessageHandler(worker, handlerRefs)
+      worker.onerror = createDSPWorkerErrorHandler(worker, handlerRefs, () => {
+        const nextWorker = createDSPWorker()
+        setup(nextWorker)
+        workerRef.current = nextWorker
+        crashedRef.current = false
+        return nextWorker
+      })
     }
 
-    worker.onmessage = createDSPWorkerMessageHandler(worker, handlerRefs)
-    worker.onerror = createDSPWorkerErrorHandler(worker, handlerRefs, () => {
-      const nextWorker = createDSPWorker()
-      setupWorkerHandlers(nextWorker)
-      workerRef.current = nextWorker
-      crashedRef.current = false
-      return nextWorker
-    })
+    return setup
   }, [])
 
   const spawnWorker = useCallback(() => {

@@ -47,6 +47,16 @@ describe('typedStorage', () => {
     expect(store.load()).toBe(99)
   })
 
+  it('rejects object and array shape mismatches', () => {
+    localStorage.setItem('test-array-store', JSON.stringify({ 0: 1, length: 1 }))
+    const arrayStore = typedStorage<number[]>('test-array-store', [1, 2, 3])
+    expect(arrayStore.load()).toEqual([1, 2, 3])
+
+    localStorage.setItem('test-object-store', JSON.stringify(['not', 'an', 'object']))
+    const objectStore = typedStorage<{ enabled: boolean }>('test-object-store', { enabled: false })
+    expect(objectStore.load()).toEqual({ enabled: false })
+  })
+
   it('silently handles QuotaExceededError on save', () => {
     const store = typedStorage<string>('test-quota', '')
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {

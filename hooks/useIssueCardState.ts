@@ -1,7 +1,7 @@
 'use client'
 
 import { useTheme } from 'next-themes'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getSeverityColor } from '@/lib/utils/advisoryDisplay'
 import {
   formatFrequency,
@@ -147,15 +147,33 @@ export function useIssueCardState({
   )
 
   const [copied, setCopied] = useState(false)
+  const mountedRef = useRef(true)
+  const copiedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+      if (copiedResetTimerRef.current) {
+        clearTimeout(copiedResetTimerRef.current)
+        copiedResetTimerRef.current = null
+      }
+    }
+  }, [])
 
   const handleCopy = useCallback(() => {
     const parts = [derivedState.exactFreqStr]
     if (derivedState.pitchStr) parts.push(`(${derivedState.pitchStr})`)
 
     copyTextToClipboard(parts.join(' ')).then((didCopy) => {
-      if (!didCopy) return
+      if (!didCopy || !mountedRef.current) return
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      if (copiedResetTimerRef.current) {
+        clearTimeout(copiedResetTimerRef.current)
+      }
+      copiedResetTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setCopied(false)
+        copiedResetTimerRef.current = null
+      }, 1500)
     })
   }, [derivedState.exactFreqStr, derivedState.pitchStr])
 

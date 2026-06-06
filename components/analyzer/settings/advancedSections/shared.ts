@@ -24,7 +24,11 @@ export interface AdvancedSectionProps {
 }
 
 export function parseFftSize(value: string): 4096 | 8192 | 16384 {
-  return parseInt(value, 10) as 4096 | 8192 | 16384
+  if (value === '8192' || value === '16384') {
+    return Number(value) as 8192 | 16384
+  }
+
+  return 4096
 }
 
 export type { DiagnosticsProfile }

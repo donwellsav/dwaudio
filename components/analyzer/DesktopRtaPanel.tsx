@@ -47,7 +47,7 @@ export const DesktopRtaPanel = memo(function DesktopRtaPanel({
               <span className="lg:hidden">RTA</span>
             </span>
             {isRunning ? (
-              <button
+              <button type="button"
                 onClick={toggleFreeze}
                 className={`px-1.5 py-0.5 rounded text-sm font-medium transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
                   isFrozen ? 'text-blue-400' : 'text-muted-foreground hover:text-foreground'
@@ -57,7 +57,7 @@ export const DesktopRtaPanel = memo(function DesktopRtaPanel({
               </button>
             ) : null}
             {hasActiveRTAMarkers ? (
-              <button
+              <button type="button"
                 onClick={onClearRTA}
                 className="px-1.5 py-0.5 rounded text-sm font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
@@ -72,7 +72,7 @@ export const DesktopRtaPanel = memo(function DesktopRtaPanel({
             >
               {isRunning && noiseFloorDb != null ? `${noiseFloorDb.toFixed(0)}dB` : 'Ready'}
             </span>
-            <button
+            <button type="button"
               onClick={toggleRtaFullscreen}
               className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               aria-label={isRtaFullscreen ? 'Collapse RTA' : 'Expand RTA'}

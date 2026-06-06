@@ -42,7 +42,7 @@ export const EarlyWarningPanel = memo(function EarlyWarningPanel({ earlyWarning 
 
   return (
     <div className="mt-2 rounded border border-amber-400 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/5 overflow-hidden">
-      <button
+      <button type="button"
         onClick={toggleExpanded}
         className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-amber-800 dark:text-amber-400 font-medium uppercase tracking-wide hover:bg-amber-100 dark:hover:bg-amber-500/10 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-amber-500/50"
         aria-expanded={isExpanded}

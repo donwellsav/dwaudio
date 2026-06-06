@@ -88,7 +88,7 @@ export const MobilePortraitLayout = memo(function MobilePortraitLayout({
                 <MobileGraphModeToggle mode={inlineGraphMode} onModeChange={setInlineGraphMode} />
               </div>
 
-              <button
+              <button type="button"
                 onClick={toggleRtaFullscreen}
                 className="absolute top-0.5 right-0.5 z-20 p-1 rounded text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                 aria-label="Expand RTA"

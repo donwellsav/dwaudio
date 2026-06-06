@@ -116,7 +116,7 @@ export const DesktopLayout = memo(function DesktopLayout({
                 aria-label="Sidebar sections"
               >
                 {!issuesPanelOpen ? (
-                  <button
+                  <button type="button"
                     onClick={() => setActiveSidebarTab('issues')}
                     onKeyDown={handleTabKeyDown}
                     role="tab"
@@ -137,7 +137,7 @@ export const DesktopLayout = memo(function DesktopLayout({
                     ) : null}
                   </button>
                 ) : null}
-                <button
+                <button type="button"
                   onClick={() => setActiveSidebarTab('controls')}
                   onKeyDown={handleTabKeyDown}
                   role="tab"
@@ -156,7 +156,7 @@ export const DesktopLayout = memo(function DesktopLayout({
 
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
+                  <button type="button"
                     onClick={issuesPanelOpen ? closeIssuesPanel : openIssuesPanel}
                     className={`flex-shrink-0 px-2 py-1 rounded transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
                       issuesPanelOpen
@@ -181,13 +181,15 @@ export const DesktopLayout = memo(function DesktopLayout({
                 aria-label="Settings sections"
               >
                 {SETTINGS_TABS.map(({ id, label, shortLabel, Icon }) => (
-                  <button
+                  <button type="button"
                     key={id}
+                    id={`sidebar-settings-tab-${id}`}
                     onClick={() => setControlsTab(id)}
                     onKeyDown={handleTabKeyDown}
                     aria-label={label}
                     role="tab"
                     aria-selected={controlsTab === id}
+                    aria-controls={`sidebar-settings-panel-${id}`}
                     tabIndex={controlsTab === id ? 0 : -1}
                     data-active={controlsTab === id}
                     className={`tab-track-item relative flex-1 min-h-[30px] flex items-center justify-center gap-1 text-dwa-sm font-bold uppercase tracking-[0.08em] cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
@@ -238,6 +240,8 @@ export const DesktopLayout = memo(function DesktopLayout({
                       settings={settings}
                       activeTab={controlsTab}
                       onTabChange={setControlsTab}
+                      tabIdPrefix="sidebar-settings-tab"
+                      panelIdPrefix="sidebar-settings-panel"
                     />
                   </div>
                 ) : null}

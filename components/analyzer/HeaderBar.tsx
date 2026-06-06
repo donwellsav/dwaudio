@@ -12,6 +12,7 @@ export const HeaderBar = memo(function HeaderBar() {
 
   const {
     isRunning,
+    isStarting,
     inputLevel,
     devices,
     selectedDeviceId,
@@ -36,6 +37,7 @@ export const HeaderBar = memo(function HeaderBar() {
     >
       <HeaderBarDeviceControls
         isRunning={isRunning}
+        isStarting={isStarting}
         inputLevel={inputLevel}
         devices={devices}
         selectedDeviceId={selectedDeviceId}
@@ -45,6 +47,7 @@ export const HeaderBar = memo(function HeaderBar() {
 
       <HeaderBarTransportControls
         isRunning={isRunning}
+        isStarting={isStarting}
         isFrozen={isFrozen}
         hasClearableContent={hasClearableContent}
         onToggleAnalysis={handleToggleAnalysis}

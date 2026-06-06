@@ -59,7 +59,7 @@ export default function GlobalError({
         <div className="ge-root">
           <h2 className="ge-title">Something went wrong</h2>
           <p className="ge-msg">{error.message || 'An unexpected error occurred.'}</p>
-          <button onClick={reset} className="ge-btn">Try again</button>
+          <button type="button" onClick={reset} className="ge-btn">Try again</button>
         </div>
       </body>
     </html>

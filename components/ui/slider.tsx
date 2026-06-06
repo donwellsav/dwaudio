@@ -12,27 +12,38 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
   const step = (props.step as number) ?? 1
-  const currentValue = Array.isArray(value) ? value[0] : Array.isArray(defaultValue) ? defaultValue[0] : min
+  const _values = React.useMemo(
+    () =>
+      Array.isArray(value) && value.length > 0
+        ? value
+        : Array.isArray(defaultValue) && defaultValue.length > 0
+          ? defaultValue
+          : [min],
+    [value, defaultValue, min],
+  )
+  const firstValue = _values[0]
+  const currentValue = Number.isFinite(firstValue) ? firstValue : min
   const sliderRef = React.useRef<HTMLSpanElement>(null)
   useWheelStep(sliderRef, {
     value: currentValue,
     min,
     max,
     step,
-    onChange: (v) => props.onValueChange?.([v]),
+    onChange: (v) => {
+      if (_values.length === 1) {
+        onValueChange?.([v])
+      }
+    },
   })
-  const _values = React.useMemo(
-    () =>
-      Array.isArray(value)
-        ? value
-        : Array.isArray(defaultValue)
-          ? defaultValue
-          : [min, max],
-    [value, defaultValue, min, max],
-  )
+  const handleValueChange = React.useCallback((nextValue: number[]) => {
+    if (nextValue.length === _values.length && nextValue.every(Number.isFinite)) {
+      onValueChange?.(nextValue)
+    }
+  }, [_values.length, onValueChange])
 
   return (
     <SliderPrimitive.Root
@@ -42,6 +53,7 @@ function Slider({
       value={value}
       min={min}
       max={max}
+      onValueChange={handleValueChange}
       className={cn(
         'relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col',
         className,

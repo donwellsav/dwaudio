@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+
+import { act, renderHook } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildDesktopLinkModePatch,
   getDesktopSidebarViewState,
+  useDesktopLayoutState,
 } from '@/hooks/useDesktopLayoutState'
 
 describe('useDesktopLayoutState helpers', () => {
@@ -33,6 +37,32 @@ describe('useDesktopLayoutState helpers', () => {
   it('leaves existing centers alone when link mode is set back to unlinked', () => {
     expect(buildDesktopLinkModePatch('unlinked', 6, 23)).toEqual({
       faderLinkMode: 'unlinked',
+    })
+  })
+
+  it('tracks controls tab state and writes link-mode display patches', () => {
+    const updateDisplay = vi.fn()
+    const { result } = renderHook(() => useDesktopLayoutState({
+      activeSidebarTab: 'controls',
+      issuesPanelOpen: false,
+      inputGainDb: 4,
+      feedbackThresholdDb: 28,
+      updateDisplay,
+    }))
+
+    expect(result.current.controlsTab).toBe('live')
+    expect(result.current.showSidebarControls).toBe(true)
+
+    act(() => {
+      result.current.setControlsTab('expert')
+      result.current.handleLinkModeChange('linked')
+    })
+
+    expect(result.current.controlsTab).toBe('expert')
+    expect(updateDisplay).toHaveBeenCalledWith({
+      faderLinkMode: 'linked',
+      faderLinkCenterGainDb: 4,
+      faderLinkCenterSensDb: 28,
     })
   })
 })

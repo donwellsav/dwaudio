@@ -469,24 +469,37 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
     totalAdvisoryCount: advisories.length,
     isFrozen,
     isKeyboardInteractive,
+    canAdjustFrequency: Boolean(onFreqRangeChange),
     canAdjustThreshold: Boolean(onThresholdChange),
   })
+  const ariaLabel = onFreqRangeChange
+    ? onThresholdChange
+      ? 'Frequency range and detection threshold'
+      : 'Frequency range'
+    : onThresholdChange
+      ? 'Detection threshold'
+      : undefined
   const ariaValueText = onFreqRangeChange
     ? onThresholdChange && feedbackThresholdDb != null
       ? `${minFrequency} Hz to ${maxFrequency} Hz, threshold ${feedbackThresholdDb} dB`
       : `${minFrequency} Hz to ${maxFrequency} Hz`
-    : undefined
+    : onThresholdChange && feedbackThresholdDb != null
+      ? `${feedbackThresholdDb} dB threshold`
+      : undefined
+  const ariaValueMin = onFreqRangeChange ? CANVAS_SETTINGS.RTA_FREQ_MIN : onThresholdChange ? rtaDbMin : undefined
+  const ariaValueMax = onFreqRangeChange ? CANVAS_SETTINGS.RTA_FREQ_MAX : onThresholdChange ? rtaDbMax : undefined
+  const ariaValueNow = onFreqRangeChange ? minFrequency : onThresholdChange ? feedbackThresholdDb : undefined
 
   return (
     <div
       ref={containerRef}
       className="relative w-full h-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
       tabIndex={isKeyboardInteractive ? 0 : undefined}
-      role={onFreqRangeChange ? 'slider' : undefined}
-      aria-label={onFreqRangeChange ? 'Frequency range and detection threshold' : undefined}
-      aria-valuemin={onFreqRangeChange ? CANVAS_SETTINGS.RTA_FREQ_MIN : undefined}
-      aria-valuemax={onFreqRangeChange ? CANVAS_SETTINGS.RTA_FREQ_MAX : undefined}
-      aria-valuenow={onFreqRangeChange ? minFrequency : undefined}
+      role={isKeyboardInteractive ? 'slider' : undefined}
+      aria-label={ariaLabel}
+      aria-valuemin={ariaValueMin}
+      aria-valuemax={ariaValueMax}
+      aria-valuenow={ariaValueNow}
       aria-valuetext={ariaValueText}
       onKeyDown={isKeyboardInteractive ? handleKeyDown : undefined}
     >

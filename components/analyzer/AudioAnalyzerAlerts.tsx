@@ -43,14 +43,14 @@ export const AudioAnalyzerAlerts = memo(function AudioAnalyzerAlerts({
               <p className="text-sm text-muted-foreground font-mono leading-snug">{guidance}</p>
             </div>
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
+              <button type="button"
                 onClick={onRetry}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-sm font-mono font-medium bg-destructive/15 text-destructive hover:bg-destructive/25 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-destructive/50"
               >
                 <RotateCcw className="w-3 h-3" />
                 Try Again
               </button>
-              <button
+              <button type="button"
                 onClick={onDismissError}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-card/40 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 aria-label="Dismiss error"
@@ -84,7 +84,7 @@ export const AudioAnalyzerAlerts = memo(function AudioAnalyzerAlerts({
                 ? 'Analysis engine stopped - detection is offline.'
                 : 'Analysis engine hiccup — restarting automatically.'}
             </p>
-            <button
+            <button type="button"
               onClick={onRetry}
               className={`ml-auto text-sm font-mono underline underline-offset-2 flex-shrink-0 transition-colors cursor-pointer outline-none focus-visible:ring-[3px] ${
                 isWorkerPermanentlyDead

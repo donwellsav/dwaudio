@@ -7,8 +7,13 @@
  * the full audible range and edge cases.
  */
 
-import { describe, it, expect } from 'vitest'
-import { freqToLogPosition, freqToLogPositionFast } from '@/lib/utils/mathHelpers'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import {
+  autocorrelation,
+  freqToLogPosition,
+  freqToLogPositionFast,
+  generateId,
+} from '@/lib/utils/mathHelpers'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -86,5 +91,39 @@ describe('freqToLogPositionFast', () => {
       expect(val).toBeGreaterThan(prev)
       prev = val
     }
+  })
+})
+
+describe('generateId', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('uses crypto.randomUUID when available', () => {
+    vi.stubGlobal('crypto', {
+      randomUUID: vi.fn(() => '00000000-0000-4000-8000-000000000000'),
+    })
+
+    expect(generateId()).toBe('00000000-0000-4000-8000-000000000000')
+  })
+
+  it('falls back to crypto.getRandomValues before Math.random', () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: vi.fn((array: Uint32Array) => {
+        array[0] = 123
+        array[1] = 456
+        return array
+      }),
+    })
+
+    expect(generateId()).toMatch(/^[a-z0-9]+-3fco$/)
+  })
+})
+
+describe('autocorrelation', () => {
+  it('returns 0 for invalid lags instead of NaN', () => {
+    expect(autocorrelation([1, 2, 3], -1)).toBe(0)
+    expect(autocorrelation([1, 2, 3], 1.5)).toBe(0)
+    expect(autocorrelation([1, 2, 3], 3)).toBe(0)
   })
 })

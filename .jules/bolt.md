@@ -1,4 +1,0 @@
-
-## 2024-03-30 - Memoizing Inline Prop Functions to Prevent Re-renders
-**Learning:** In a highly interactive React application with complex child components (like `SpectrumCanvas`), passing inline arrow functions as props (e.g., `onThresholdChange={(db) => ...}`) defeats `React.memo()`. The inline function is re-created on every render, causing the child component to unnecessarily re-render and potentially causing performance bottlenecks, especially during high-frequency updates like audio processing.
-**Action:** Always extract inline callback functions into memoized `useCallback` hooks, especially when passing them down to expensive child components wrapped in `React.memo()`. Be careful to include only the necessary dependencies in the `useCallback` dependency array to maximize the memoization benefit.

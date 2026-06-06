@@ -40,7 +40,7 @@ export const ResetDefault = memo(function ResetDefault({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
+        <button type="button"
           onClick={onReset}
           className="inline-flex items-center justify-center w-4 h-4 rounded-sm text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer flex-shrink-0 focus-visible:outline-none focus-visible:ring-[2px] focus-visible:ring-ring/50"
           aria-label={label ?? `Reset to default (${defaultValue})`}

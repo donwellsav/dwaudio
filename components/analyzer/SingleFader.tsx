@@ -135,7 +135,7 @@ export const SingleFader = memo(function SingleFader({
           }}
         />
       ) : (
-        <button
+        <button type="button"
           ref={readoutRef}
           className={`fader-readout w-full overflow-hidden whitespace-nowrap px-0.5 font-mono text-center transition-colors cursor-text flex-shrink-0 tabular-nums text-sm font-bold leading-tight ${
             isSensitivity

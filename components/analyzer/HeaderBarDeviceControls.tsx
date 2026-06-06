@@ -16,6 +16,7 @@ import { DwaLogo } from './DwaLogo'
 
 interface HeaderBarDeviceControlsProps {
   isRunning: boolean
+  isStarting: boolean
   inputLevel: number
   devices: AudioDevice[]
   selectedDeviceId: string
@@ -25,6 +26,7 @@ interface HeaderBarDeviceControlsProps {
 
 export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
   isRunning,
+  isStarting,
   inputLevel,
   devices,
   selectedDeviceId,
@@ -34,10 +36,11 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
   return (
     <div className="flex items-center gap-2 sm:gap-2.5 flex-1 min-w-0">
       <div className="relative">
-        <button
+        <button type="button"
           onClick={onToggleAnalysis}
-          aria-label={isRunning ? 'Stop analysis' : 'Start analysis'}
-          className="relative flex items-center justify-center flex-shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary rounded"
+          disabled={isStarting}
+          aria-label={isRunning ? 'Stop analysis' : isStarting ? 'Starting analysis' : 'Start analysis'}
+          className="relative flex items-center justify-center flex-shrink-0 cursor-pointer disabled:cursor-wait disabled:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary rounded"
         >
           <DwaLogo
             className={`size-10 tablet:size-16 ${

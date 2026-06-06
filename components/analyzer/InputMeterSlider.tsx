@@ -93,7 +93,7 @@ export const InputMeterSlider = memo(function InputMeterSlider({
   return (
     <div className={`flex items-center gap-2 ${fullWidth ? 'w-full' : ''}`}>
       {handleToggleAutoGain ? (
-        <button
+        <button type="button"
           onClick={handleToggleAutoGain}
           className={`min-h-7 md:min-h-6 flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-bold uppercase tracking-wider transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${autoGainButtonClassName}`}
           title={autoGainTitle}
@@ -149,7 +149,7 @@ export const InputMeterSlider = memo(function InputMeterSlider({
           onKeyDown={handleEditKeyDown}
         />
       ) : (
-        <button
+        <button type="button"
           ref={readoutRef}
           className={`font-mono text-right transition-colors cursor-text flex-shrink-0 tabular-nums ${compact ? 'text-xs w-9' : 'text-sm w-12'} ${readoutClassName}`}
           onClick={handleReadoutClick}

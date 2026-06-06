@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMobileFaderState } from '@/hooks/useMobileFaderState'
 import type { DetectorSettings } from '@/types/advisory'
 
@@ -15,6 +15,10 @@ function makeSettings(overrides: Partial<Pick<DetectorSettings, 'feedbackThresho
 describe('useMobileFaderState', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('routes sensitivity changes to the threshold handler by default', () => {

@@ -374,6 +374,17 @@ export function nearestPowerOfTwo(n: number): number {
  * Generate a unique ID
  */
 export function generateId(): string {
+  const cryptoApi = globalThis.crypto
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return cryptoApi.randomUUID()
+  }
+
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    const bytes = new Uint32Array(2)
+    cryptoApi.getRandomValues(bytes)
+    return `${Date.now().toString(36)}-${bytes[0].toString(36)}${bytes[1].toString(36)}`
+  }
+
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
 }
 
@@ -383,7 +394,7 @@ export function generateId(): string {
  */
 export function autocorrelation(signal: number[], lag: number): number {
   const n = signal.length
-  if (lag >= n) return 0
+  if (!Number.isInteger(lag) || lag < 0 || lag >= n) return 0
 
   let sum = 0
   let sumSq1 = 0

@@ -128,7 +128,7 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
           Standby
         </span>
 
-        <button
+        <button type="button"
           onClick={onStart}
           aria-label="Start analysis"
           className="group relative flex flex-col items-center justify-center gap-3 w-full max-w-[220px] py-5 px-5 rounded-xl border border-primary/20 hover:border-primary/40 bg-primary/5 hover:bg-primary/10 active:scale-[0.97] transition-[box-shadow,transform] duration-300 cursor-pointer animate-start-glow focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary"

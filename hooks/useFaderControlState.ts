@@ -98,8 +98,10 @@ export function useFaderControlState({
 
     const handleTouchMove = (event: TouchEvent) => {
       if (!isDraggingRef.current) return
+      const touch = event.touches[0]
+      if (!touch) return
       event.preventDefault()
-      updateValueFromYRef.current(event.touches[0].clientY)
+      updateValueFromYRef.current(touch.clientY)
     }
 
     const handleTouchEnd = () => {
@@ -140,9 +142,10 @@ export function useFaderControlState({
   }, [disableAutoGain, max, min, mode, onChange, value])
 
   const commitEdit = useCallback((raw: string) => {
-    const parsed = parseInt(raw, 10)
+    const trimmed = raw.trim()
+    const parsed = Number(trimmed)
 
-    if (!Number.isNaN(parsed)) {
+    if (trimmed !== '' && Number.isFinite(parsed)) {
       disableAutoGain()
       onChange(clampFaderValue({
         mode,

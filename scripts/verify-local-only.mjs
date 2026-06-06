@@ -224,7 +224,7 @@ function listPaths(root) {
 }
 
 function checkIgnoredPath(path) {
-  return spawnSync('git', ['check-ignore', '-q', path], { encoding: 'utf8' }).status === 0
+  return spawnSync('git', ['check-ignore', '-q', '--no-index', path], { encoding: 'utf8' }).status === 0
 }
 
 function isIgnoredFinderMetadata(path) {
@@ -240,7 +240,7 @@ if (existingForbiddenPaths.length > 0) {
   console.log('PASS removed local-only bloat paths')
 }
 
-const unignoredGeneratedDirs = ['out', 'dist'].filter((path) => !checkIgnoredPath(path))
+const unignoredGeneratedDirs = ['out/', 'dist/'].filter((path) => !checkIgnoredPath(path))
 if (unignoredGeneratedDirs.length > 0) {
   failed = true
   console.error('FAIL generated package output is ignored')

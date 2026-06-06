@@ -5,10 +5,8 @@
  * and exposes semantic actions. Produces `derivedSettings: DetectorSettings` via
  * the derivation function for backward compatibility with the existing pipeline.
  *
- * This hook also exposes a legacy shim (`applyLegacyPartial`) that routes
- * old-style `Partial<DetectorSettings>` calls to the appropriate semantic
- * actions. The shim exists only for the transition period (Phases 3–5) and
- * is deleted in Phase 6.
+ * Runtime components use semantic actions directly; removed transition shims
+ * are no longer part of this hook's public contract.
  *
  * @see lib/settings/deriveSettings.ts for the derivation function
  * @see types/settings.ts for the layered type hierarchy
@@ -334,6 +332,13 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   const displayPersistRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
+    return () => {
+      clearTimeout(sessionPersistRef.current)
+      clearTimeout(displayPersistRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!initialState.shouldPersistSessionOnMount) return
     sessionStorageV2.save(initialState.session)
   }, [initialState])
@@ -366,7 +371,7 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   const setMode = useCallback((modeId: ModeId) => {
     updateSession(prev => ({
       ...prev,
-      modeId,
+      modeId: sanitizeModeId(modeId),
       // Reset live overrides to defaults when switching modes,
       // but preserve gain and auto-gain settings
       liveOverrides: {
@@ -381,14 +386,20 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   const setSensitivityOffset = useCallback((db: number) => {
     updateSession(prev => ({
       ...prev,
-      liveOverrides: { ...prev.liveOverrides, sensitivityOffsetDb: db },
+      liveOverrides: {
+        ...prev.liveOverrides,
+        sensitivityOffsetDb: clampNumber(db, prev.liveOverrides.sensitivityOffsetDb, -30, 30),
+      },
     }))
   }, [updateSession])
 
   const setInputGain = useCallback((db: number) => {
     updateSession(prev => ({
       ...prev,
-      liveOverrides: { ...prev.liveOverrides, inputGainDb: db },
+      liveOverrides: {
+        ...prev.liveOverrides,
+        inputGainDb: clampNumber(db, prev.liveOverrides.inputGainDb, -24, 24),
+      },
     }))
   }, [updateSession])
 
@@ -398,7 +409,9 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
       liveOverrides: {
         ...prev.liveOverrides,
         autoGainEnabled: enabled,
-        ...(targetDb !== undefined ? { autoGainTargetDb: targetDb } : {}),
+        ...(targetDb !== undefined
+          ? { autoGainTargetDb: clampNumber(targetDb, prev.liveOverrides.autoGainTargetDb, -48, -3) }
+          : {}),
       },
     }))
   }, [updateSession])
@@ -406,14 +419,19 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   const setFocusRange = useCallback((range: FocusRange) => {
     updateSession(prev => ({
       ...prev,
-      liveOverrides: { ...prev.liveOverrides, focusRange: range },
+      liveOverrides: { ...prev.liveOverrides, focusRange: sanitizeFocusRange(range) },
     }))
   }, [updateSession])
 
   const setEqStyle = useCallback((style: LiveOverrides['eqStyle']) => {
     updateSession(prev => ({
       ...prev,
-      liveOverrides: { ...prev.liveOverrides, eqStyle: style },
+      liveOverrides: {
+        ...prev.liveOverrides,
+        eqStyle: style === 'surgical' || style === 'heavy' || style === 'mode-default'
+          ? style
+          : prev.liveOverrides.eqStyle,
+      },
     }))
   }, [updateSession])
 

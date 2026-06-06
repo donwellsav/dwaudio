@@ -39,7 +39,7 @@ export const MobileSidecarFader = memo(function MobileSidecarFader({
 
   return (
     <>
-      <button
+      <button type="button"
         onClick={toggleMobileFaderMode}
         className={`flex-shrink-0 font-bold uppercase tracking-wider text-center cursor-pointer transition-colors ${
           compact ? 'py-0.5 text-dwa-sm' : 'py-1 text-dwa-sm'

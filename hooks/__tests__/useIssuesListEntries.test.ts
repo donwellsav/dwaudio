@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildIssueListEntries,
   MIN_ISSUE_DISPLAY_MS,
@@ -52,6 +52,10 @@ function makeEntry(id: string, frequencyHz: number, occurrenceCount: number): Is
 describe('useIssuesListEntries', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('sorts unresolved repeat offenders ahead of other entries', () => {

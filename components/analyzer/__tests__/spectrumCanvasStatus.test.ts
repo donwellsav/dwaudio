@@ -9,6 +9,7 @@ describe('formatSpectrumStatusDescription', () => {
     rtaDbMax: 0,
     isFrozen: false,
     isKeyboardInteractive: false,
+    canAdjustFrequency: false,
     canAdjustThreshold: false,
   }
 
@@ -41,5 +42,25 @@ describe('formatSpectrumStatusDescription', () => {
       activeAdvisoryCount: 0,
       totalAdvisoryCount: 0,
     })).toBe('Spectrum analyzer stopped. Press Enter or click Start to begin analysis.')
+  })
+
+  it('reports only the keyboard controls that are actually wired', () => {
+    expect(formatSpectrumStatusDescription({
+      ...base,
+      isRunning: true,
+      activeAdvisoryCount: 0,
+      totalAdvisoryCount: 0,
+      isKeyboardInteractive: true,
+      canAdjustThreshold: true,
+    })).toContain('Keyboard: Up and Down arrows adjust threshold. Hold Shift for larger steps.')
+
+    expect(formatSpectrumStatusDescription({
+      ...base,
+      isRunning: true,
+      activeAdvisoryCount: 0,
+      totalAdvisoryCount: 0,
+      isKeyboardInteractive: true,
+      canAdjustFrequency: true,
+    })).toContain('Keyboard: Left and Right arrows adjust frequency range. Hold Shift for larger steps.')
   })
 })

@@ -112,14 +112,22 @@ export const ConsoleSlider = memo(function ConsoleSlider({
   // Click-to-edit state for the value readout
   const [editing, setEditing] = useState(false)
   const commitEdit = useCallback((raw: string) => {
-    const parsed = parseFloat(raw.replace(',', '.'))
-    if (!isNaN(parsed)) {
+    const normalized = raw.trim().replace(',', '.')
+    const parsed = Number(normalized)
+    if (normalized !== '' && Number.isFinite(parsed)) {
       // Round to step precision and clamp
       const rounded = Math.round(parsed / step) * step
       onChange(Math.min(max, Math.max(min, rounded)))
     }
     setEditing(false)
   }, [min, max, step, onChange])
+
+  const handleValueChange = useCallback((nextValue: number[]) => {
+    const [next] = nextValue
+    if (Number.isFinite(next)) {
+      onChange(next)
+    }
+  }, [onChange])
 
   return (
       <div className={cn('space-y-0.5', className)}>
@@ -162,7 +170,7 @@ export const ConsoleSlider = memo(function ConsoleSlider({
               }}
             />
           ) : (
-            <button
+            <button type="button"
               onClick={() => setEditing(true)}
               className="console-readout shrink-0 cursor-text hover:opacity-80 transition-opacity"
               style={{ color: c.text, textShadow: `0 0 8px ${c.thumbBorder}40` }}
@@ -179,9 +187,11 @@ export const ConsoleSlider = memo(function ConsoleSlider({
           ref={sliderRef}
           aria-label={label}
           value={[sliderValue]}
-          onValueChange={([v]) => onChange(v)}
+          onValueChange={handleValueChange}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onLostPointerCapture={handlePointerUp}
           min={min}
           max={max}
           step={step}

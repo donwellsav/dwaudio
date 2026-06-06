@@ -190,6 +190,26 @@ describe('useLayeredSettings — regression', () => {
     expect(result.current.derivedSettings.mode).toBe('speech')
     expect(result.current.derivedSettings.feedbackThresholdDb).toBe(FRESH_START_FEEDBACK_THRESHOLD_DB)
   })
+
+  it('sanitizes invalid live setter input before deriving active settings', () => {
+    const { result } = renderHook(() => useLayeredSettings())
+
+    act(() => {
+      result.current.setSensitivityOffset(Number.POSITIVE_INFINITY)
+      result.current.setInputGain(Number.NaN)
+      result.current.setAutoGain(true, 999)
+      result.current.setFocusRange({ kind: 'custom', minHz: 20000, maxHz: 20 })
+    })
+
+    expect(Number.isFinite(result.current.session.liveOverrides.sensitivityOffsetDb)).toBe(true)
+    expect(Number.isFinite(result.current.session.liveOverrides.inputGainDb)).toBe(true)
+    expect(result.current.session.liveOverrides.autoGainTargetDb).toBe(-3)
+    expect(result.current.session.liveOverrides.focusRange).toEqual(
+      DEFAULT_SESSION_STATE.liveOverrides.focusRange,
+    )
+    expect(result.current.derivedSettings.minFrequency).toBe(MODE_BASELINES.speech.minFrequency)
+    expect(result.current.derivedSettings.maxFrequency).toBe(MODE_BASELINES.speech.maxFrequency)
+  })
 })
 
 // ─── Persistence ─────────────────────────────────────────────────────────────

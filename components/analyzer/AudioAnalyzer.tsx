@@ -17,7 +17,7 @@ export const AudioAnalyzer = memo(function AudioAnalyzerComponent() {
   const frozenRef = useRef(false)
 
   return (
-    <div id="main" className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background">
       <AudioAnalyzerProvider frozenRef={frozenRef}>
         <AudioAnalyzerInner
           frozenRef={frozenRef}

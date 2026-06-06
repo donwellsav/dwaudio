@@ -74,8 +74,9 @@ export function useInputMeterSliderState({
   }, [autoGainEnabled, onAutoGainToggle])
 
   const commitEdit = useCallback((raw: string) => {
-    const parsed = parseInt(raw, 10)
-    if (!Number.isNaN(parsed)) {
+    const trimmed = raw.trim()
+    const parsed = Number(trimmed)
+    if (trimmed !== '' && Number.isFinite(parsed)) {
       disableAutoGain()
       onChange(clampInputMeterValue(parsed, min, max))
     }
@@ -127,8 +128,10 @@ export function useInputMeterSliderState({
 
     const handleTouchMove = (event: globalThis.TouchEvent) => {
       if (!isDraggingRef.current) return
+      const touch = event.touches[0]
+      if (!touch) return
       event.preventDefault()
-      updateValueFromXRef.current(event.touches[0].clientX)
+      updateValueFromXRef.current(touch.clientX)
     }
 
     const handleTouchEnd = () => {
@@ -159,17 +162,21 @@ export function useInputMeterSliderState({
 
   const handleTrackTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
     if (editing) return
+    const touch = event.touches[0]
+    if (!touch) return
     isDraggingRef.current = true
-    updateValueFromXRef.current(event.touches[0].clientX)
+    updateValueFromXRef.current(touch.clientX)
   }, [editing])
 
   const handleTrackKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault()
       disableAutoGain()
       onChange(stepInputMeterValue(value, 1, min, max))
     }
 
     if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault()
       disableAutoGain()
       onChange(stepInputMeterValue(value, -1, min, max))
     }

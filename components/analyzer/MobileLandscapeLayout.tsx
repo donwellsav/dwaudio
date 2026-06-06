@@ -67,7 +67,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
           role="tablist"
           aria-label="Landscape panel"
         >
-          <button
+          <button type="button"
             role="tab"
             aria-selected={landscapePanel === 'issues'}
             onClick={() => setLandscapePanel('issues')}
@@ -82,7 +82,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
               <span className="text-[var(--console-amber)]">{activeAdvisoryCount}</span>
             ) : null}
           </button>
-          <button
+          <button type="button"
             role="tab"
             aria-selected={landscapePanel === 'settings'}
             onClick={() => setLandscapePanel('settings')}
@@ -111,7 +111,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
           />
           {inlineGraphMode === 'rta' ? (
             <>
-              <button
+              <button type="button"
                 onClick={toggleRtaFullscreen}
                 className="cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 p-1 rounded text-muted-foreground/60 hover:text-foreground transition-colors"
                 aria-label={isRtaFullscreen ? 'Collapse RTA' : 'Expand RTA'}
@@ -119,7 +119,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
                 {isRtaFullscreen ? <Shrink className="w-3.5 h-3.5" /> : <Expand className="w-3.5 h-3.5" />}
               </button>
               {isRunning ? (
-                <button
+                <button type="button"
                   onClick={toggleFreeze}
                   className={`cursor-pointer outline-none text-dwa-sm font-mono font-bold uppercase px-1.5 py-0.5 rounded transition-colors ${
                     isFrozen ? 'text-blue-400' : 'text-muted-foreground/50 hover:text-foreground'
@@ -129,7 +129,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
                 </button>
               ) : null}
               {hasActiveRTAMarkers ? (
-                <button
+                <button type="button"
                   onClick={onClearRTA}
                   className="cursor-pointer text-dwa-sm font-mono text-muted-foreground/50 hover:text-foreground px-1.5 py-0.5 rounded transition-colors"
                 >
@@ -139,7 +139,7 @@ export const MobileLandscapeLayout = memo(function MobileLandscapeLayout({
             </>
           ) : null}
           {inlineGraphMode === 'geq' && hasActiveGEQBars ? (
-            <button
+            <button type="button"
               onClick={onClearGEQ}
               className="cursor-pointer text-dwa-sm font-mono text-muted-foreground/50 hover:text-foreground px-1.5 py-0.5 rounded transition-colors"
             >

@@ -8,6 +8,7 @@ interface SpectrumStatusDescriptionParams {
   totalAdvisoryCount: number
   isFrozen: boolean
   isKeyboardInteractive: boolean
+  canAdjustFrequency: boolean
   canAdjustThreshold: boolean
 }
 
@@ -21,6 +22,7 @@ export function formatSpectrumStatusDescription({
   totalAdvisoryCount,
   isFrozen,
   isKeyboardInteractive,
+  canAdjustFrequency,
   canAdjustThreshold,
 }: SpectrumStatusDescriptionParams): string {
   if (!isRunning) {
@@ -42,7 +44,12 @@ export function formatSpectrumStatusDescription({
   }
 
   if (isKeyboardInteractive) {
-    description += ` Keyboard: Left and Right arrows adjust frequency range${canAdjustThreshold ? '; Up and Down arrows adjust threshold' : ''}. Hold Shift for larger steps.`
+    const controls: string[] = []
+    if (canAdjustFrequency) controls.push('Left and Right arrows adjust frequency range')
+    if (canAdjustThreshold) controls.push('Up and Down arrows adjust threshold')
+    if (controls.length > 0) {
+      description += ` Keyboard: ${controls.join('; ')}. Hold Shift for larger steps.`
+    }
   }
 
   return description

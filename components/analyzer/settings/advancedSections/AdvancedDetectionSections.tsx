@@ -144,7 +144,7 @@ export const AdvancedAlgorithmsSection = memo(function AdvancedAlgorithmsSection
           tooltip={settings.showTooltips ? 'Skip phase FFT when MSD is decisive. Saves CPU in speech/monitor modes. Always runs full phase in music/worship.' : undefined}
         />
         <div className="space-y-1">
-          <button
+          <button type="button"
             onClick={actions.toggleAlgorithmMode}
             className={`min-h-8 md:min-h-7 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 w-full px-1.5 rounded text-xs font-mono font-bold tracking-wide transition-colors ${
               settings.algorithmMode === 'auto'
@@ -160,7 +160,7 @@ export const AdvancedAlgorithmsSection = memo(function AdvancedAlgorithmsSection
               const enabled = isAuto || (settings.enabledAlgorithms?.includes(key) ?? true)
 
               return (
-                <button
+                <button type="button"
                   key={key}
                   onClick={() => actions.toggleAlgorithm(key)}
                   className={`min-h-8 md:min-h-7 cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 px-1 rounded text-xs font-mono font-bold text-center transition-colors ${

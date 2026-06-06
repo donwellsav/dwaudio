@@ -6,8 +6,11 @@
  * core O(1) circular buffer which is the critical correctness concern.
  */
 
-import { describe, it, expect } from 'vitest'
-import { CircularTimestampBuffer } from '../useFpsMonitor'
+// @vitest-environment jsdom
+
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { CircularTimestampBuffer, useFpsMonitor } from '../useFpsMonitor'
 
 describe('CircularTimestampBuffer', () => {
   it('starts empty with count 0', () => {
@@ -68,5 +71,50 @@ describe('CircularTimestampBuffer', () => {
     const frameCount = buf.count - 1
     const fps = (frameCount / span) * 1000
     expect(fps).toBeCloseTo(60, 0)
+  })
+})
+
+describe('useFpsMonitor', () => {
+  const frames: FrameRequestCallback[] = []
+
+  beforeEach(() => {
+    frames.length = 0
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns zeroed stats and does not schedule frames while disabled', () => {
+    const { result } = renderHook(() => useFpsMonitor(false, 60))
+
+    expect(result.current).toEqual({ actualFps: 0, droppedPercent: 0 })
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
+  })
+
+  it('updates measured FPS and dropped-frame percentage from RAF timestamps', () => {
+    const { result } = renderHook(() => useFpsMonitor(true, 60))
+
+    act(() => {
+      frames[0](0)
+      frames[1](16)
+      frames[2](600)
+    })
+
+    expect(result.current.actualFps).toBe(3)
+    expect(result.current.droppedPercent).toBe(50)
+  })
+
+  it('cancels the RAF loop on unmount', () => {
+    const { unmount } = renderHook(() => useFpsMonitor(true, 60))
+
+    unmount()
+
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(1)
   })
 })

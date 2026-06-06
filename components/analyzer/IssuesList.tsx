@@ -137,7 +137,7 @@ export const IssuesList = memo(function IssuesList({
           {sortedEntries.length > 1 ? (
             <div className="flex items-center justify-end gap-2">
               {onClearResolved && hasResolved ? (
-                <button
+                <button type="button"
                   onClick={onClearResolved}
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide"
                 >
@@ -145,7 +145,7 @@ export const IssuesList = memo(function IssuesList({
                 </button>
               ) : null}
               {onClearAll ? (
-                <button
+                <button type="button"
                   onClick={onClearAll}
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wide"
                 >

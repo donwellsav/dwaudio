@@ -85,8 +85,10 @@ export const FaderTrack = memo(function FaderTrack({
         }}
         onTouchStart={(event) => {
           if (editing) return
+          const touch = event.touches[0]
+          if (!touch) return
           onTrackTouchStart?.()
-          onBeginPointerDrag(event.touches[0].clientY)
+          onBeginPointerDrag(touch.clientY)
         }}
         role="slider"
         aria-orientation="vertical"
@@ -96,8 +98,14 @@ export const FaderTrack = memo(function FaderTrack({
         aria-label={ariaLabel}
         tabIndex={0}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowUp' || event.key === 'ArrowRight') onKeyStep(1)
-          if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') onKeyStep(-1)
+          if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+            event.preventDefault()
+            onKeyStep(1)
+          }
+          if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+            event.preventDefault()
+            onKeyStep(-1)
+          }
         }}
       >
         <div

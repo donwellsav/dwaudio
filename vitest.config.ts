@@ -12,7 +12,7 @@ export default defineConfig({
       'lib/**/__tests__/**/*.test.ts',
       'tests/**/*.test.ts',
       'hooks/__tests__/**/*.test.ts',
-      'contexts/__tests__/**/*.test.ts',
+      'contexts/__tests__/**/*.test.{ts,tsx}',
       'app/**/__tests__/**/*.test.ts',
       'components/**/__tests__/**/*.test.{ts,tsx}',
     ],

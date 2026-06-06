@@ -5,7 +5,7 @@ import { useEngine } from '@/contexts/EngineContext'
 import { useUI } from '@/contexts/UIContext'
 
 export const AnalyzerKeyboardShortcuts = memo(function AnalyzerKeyboardShortcuts() {
-  const { isRunning, start, stop } = useEngine()
+  const { isRunning, isStarting, start, stop } = useEngine()
   const { toggleFreeze } = useUI()
 
   useEffect(() => {
@@ -17,7 +17,7 @@ export const AnalyzerKeyboardShortcuts = memo(function AnalyzerKeyboardShortcuts
           event.preventDefault()
           if (isRunning) {
             stop()
-          } else {
+          } else if (!isStarting) {
             void start()
           }
           break
@@ -32,7 +32,7 @@ export const AnalyzerKeyboardShortcuts = memo(function AnalyzerKeyboardShortcuts
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isRunning, start, stop, toggleFreeze])
+  }, [isRunning, isStarting, start, stop, toggleFreeze])
 
   return null
 })

@@ -36,7 +36,7 @@ export const DesktopGeqPanel = memo(function DesktopGeqPanel({
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-dwa-sm font-mono font-bold leading-none bg-[var(--console-amber)]/15 text-[var(--console-amber)] border border-[var(--console-amber)]/30">
                   {activeGeqCutCount} cuts
                 </span>
-                <button
+                <button type="button"
                   onClick={onClearGEQ}
                   className="px-1.5 py-0.5 rounded text-sm font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 >

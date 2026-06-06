@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePanelRef } from '@/components/ui/resizable'
 
 export interface AnalyzerShellState {
@@ -24,6 +24,7 @@ export function useAnalyzerShellState(
   const [activeSidebarTab, setActiveSidebarTab] = useState<'issues' | 'controls'>('controls')
   const [issuesPanelOpen, setIssuesPanelOpen] = useState(true)
   const issuesPanelRef = usePanelRef()
+  const resizeRafRef = useRef<number>(0)
 
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   const isErrorDismissed = error !== null && dismissedError === error
@@ -33,14 +34,28 @@ export function useAnalyzerShellState(
 
   const handleRetry = useCallback(() => {
     setDismissedError(null)
-    void start()
+    start().catch(() => {
+      // start() owns analyzer error state; this prevents an unhandled rejection.
+    })
   }, [start])
 
   const openIssuesPanel = useCallback(() => {
     setIssuesPanelOpen(true)
     setActiveSidebarTab(prev => (prev === 'issues' ? 'controls' : prev))
-    requestAnimationFrame(() => issuesPanelRef.current?.resize('22%'))
+    if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current)
+    resizeRafRef.current = requestAnimationFrame(() => {
+      resizeRafRef.current = 0
+      issuesPanelRef.current?.resize('22%')
+    })
   }, [issuesPanelRef])
+
+  useEffect(() => {
+    return () => {
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current)
+      }
+    }
+  }, [])
 
   const closeIssuesPanel = useCallback(() => {
     issuesPanelRef.current?.collapse()

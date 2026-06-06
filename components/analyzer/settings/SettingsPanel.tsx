@@ -16,6 +16,8 @@ export interface SettingsPanelProps {
   settings: DetectorSettings
   activeTab?: SettingsTab
   onTabChange?: (tab: SettingsTab) => void
+  tabIdPrefix?: string
+  panelIdPrefix?: string
 }
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string; shortLabel?: string; Icon: typeof Zap }[] = [
@@ -28,6 +30,8 @@ export const SettingsPanel = memo(function SettingsPanel({
   settings,
   activeTab: controlledTab,
   onTabChange,
+  tabIdPrefix = 'settings-tab',
+  panelIdPrefix = 'settings-tabpanel',
 }: SettingsPanelProps) {
   const {
     activeTab,
@@ -38,6 +42,8 @@ export const SettingsPanel = memo(function SettingsPanel({
     activeTab: controlledTab,
     onTabChange,
   })
+  const activePanelId = `${panelIdPrefix}-${activeTab}`
+  const activeTabId = `${tabIdPrefix}-${activeTab}`
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -45,10 +51,12 @@ export const SettingsPanel = memo(function SettingsPanel({
         {!controlledTab && (
           <div className="mb-1 flex gap-1" role="tablist" aria-label="Settings tabs">
             {SETTINGS_TABS.map(({ id, label, shortLabel, Icon }) => (
-              <button
+              <button type="button"
                 key={id}
+                id={`${tabIdPrefix}-${id}`}
                 role="tab"
                 aria-selected={activeTab === id}
+                aria-controls={`${panelIdPrefix}-${id}`}
                 onClick={() => setActiveTab(id)}
                 className={`flex-1 flex min-h-8 md:min-h-7 items-center justify-center gap-1 rounded px-1.5 py-0.5 text-dwa-sm font-mono font-bold uppercase tracking-wide transition-colors cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
                   activeTab === id
@@ -66,7 +74,13 @@ export const SettingsPanel = memo(function SettingsPanel({
           </div>
         )}
 
-        <div key={activeTab} className="tab-content-fade">
+        <div
+          key={activeTab}
+          id={activePanelId}
+          role="tabpanel"
+          aria-labelledby={activeTabId}
+          className="tab-content-fade"
+        >
           {activeTab === 'live' && <LiveTab settings={settings} />}
 
           {activeTab === 'display' && <DisplayTab settings={settings} />}

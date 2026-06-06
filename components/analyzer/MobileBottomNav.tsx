@@ -42,7 +42,7 @@ export const MobileBottomNav = memo(function MobileBottomNav({
           const badge = tab.id === 'issues' ? activeAdvisoryCount : 0
 
           return (
-            <button
+            <button type="button"
               key={tab.id}
               ref={(element) => {
                 tabRefs.current[index] = element

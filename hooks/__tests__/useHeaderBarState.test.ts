@@ -14,6 +14,7 @@ const mockOnClearGEQ = vi.fn()
 const mockOnClearRTA = vi.fn()
 
 let mockIsRunning = false
+let mockIsStarting = false
 let mockAdvisories: Array<{ id: string }> = []
 let mockDismissedIds = new Set<string>()
 let mockHasActiveGEQBars = false
@@ -29,6 +30,7 @@ vi.mock('next-themes', () => ({
 vi.mock('@/contexts/EngineContext', () => ({
   useEngine: () => ({
     isRunning: mockIsRunning,
+    isStarting: mockIsStarting,
     start: mockStart,
     stop: mockStop,
     devices: [{ deviceId: 'mic-1', label: 'Test Mic', kind: 'audioinput' }],
@@ -89,6 +91,7 @@ describe('useHeaderBarState', () => {
   beforeEach(() => {
     mockResolvedTheme = 'dark'
     mockIsRunning = false
+    mockIsStarting = false
     mockAdvisories = []
     mockDismissedIds = new Set()
     mockHasActiveGEQBars = false
@@ -147,6 +150,18 @@ describe('useHeaderBarState', () => {
       result.current.handleToggleAnalysis()
     })
     expect(mockStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not queue another start while analysis is already starting', () => {
+    mockIsStarting = true
+    const { result } = renderHook(() => useHeaderBarState())
+
+    act(() => {
+      result.current.handleToggleAnalysis()
+    })
+
+    expect(mockStart).not.toHaveBeenCalled()
+    expect(mockStop).not.toHaveBeenCalled()
   })
 
   it('toggles the theme using the resolved theme', () => {

@@ -57,7 +57,7 @@ export const MobileGraphModeToggle = memo(function MobileGraphModeToggle({
       role="group"
       aria-label="Graph mode"
     >
-      <button
+      <button type="button"
         onClick={() => {
           haptic()
           onModeChange('rta')
@@ -70,7 +70,7 @@ export const MobileGraphModeToggle = memo(function MobileGraphModeToggle({
       >
         RTA
       </button>
-      <button
+      <button type="button"
         onClick={() => {
           haptic()
           onModeChange('geq')
