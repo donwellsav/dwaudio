@@ -63,10 +63,6 @@ vi.mock('@/components/ui/console-slider', () => ({
   },
 }))
 
-vi.mock('@/components/ui/slider', () => ({
-  Slider: () => <div data-testid="frequency-range-slider" />,
-}))
-
 vi.mock('@/components/ui/led-toggle', () => ({
   LEDToggle: ({ label }: { label: string }) => <div>{label}</div>,
 }))

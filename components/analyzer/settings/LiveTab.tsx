@@ -1,13 +1,12 @@
 'use client'
 
-import { memo, useCallback } from 'react'
-import { Slider } from '@/components/ui/slider'
+import { memo, useCallback, type CSSProperties } from 'react'
 import { ConsoleSlider } from '@/components/ui/console-slider'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { DetectorSettings } from '@/types/advisory'
 import { FREQ_RANGE_PRESETS } from '@/lib/dsp/constants'
 import { formatFreqLabel } from '@/lib/utils/pitchUtils'
-import { roundFreqToNice } from '@/lib/utils/mathHelpers'
+import { clamp, roundFreqToNice } from '@/lib/utils/mathHelpers'
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
 import { FRESH_START_SENSITIVITY_OFFSET_DB } from '@/lib/settings/defaults'
 import type { ModeId } from '@/types/settings'
@@ -16,6 +15,8 @@ import type { ModeId } from '@/types/settings'
 
 const LOG_MIN = Math.log10(20)
 const LOG_MAX = Math.log10(20000)
+const FREQ_LOG_STEP = 0.005
+const FREQ_LOG_MIN_GAP = 0.1
 const LIVE_MODES: Array<{ id: ModeId; label: string }> = [
   { id: 'speech', label: 'Speech' },
   { id: 'worship', label: 'Worship' },
@@ -25,6 +26,17 @@ const LIVE_MODES: Array<{ id: ModeId; label: string }> = [
   { id: 'broadcast', label: 'Bcast' },
   { id: 'outdoor', label: 'Outdoor' },
 ]
+
+function getBlueRangeStyle(percent: number): CSSProperties {
+  return {
+    '--console-range-start': 'rgba(75,146,255,0.28)',
+    '--console-range-end': 'rgba(75,146,255,0.65)',
+    '--console-range-percent': `${clamp(percent, 0, 100)}%`,
+    '--console-range-glow': '0 0 6px var(--console-blue-glow)',
+    '--console-thumb-border': 'var(--console-blue)',
+    '--console-thumb-glow': '0 0 8px var(--console-blue-glow), 0 0 2px var(--console-blue-glow)',
+  } as CSSProperties
+}
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -63,9 +75,16 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
     }
   }, [ctx, defaultSensitivityOffsetDb])
 
-  const handleFreqSliderChange = useCallback(([logMin, logMax]: number[]) => {
-    const newMin = roundFreqToNice(Math.pow(10, logMin))
-    const newMax = roundFreqToNice(Math.pow(10, logMax))
+  const freqLogMin = clamp(Math.log10(Math.max(20, settings.minFrequency)), LOG_MIN, LOG_MAX - FREQ_LOG_MIN_GAP)
+  const freqLogMax = clamp(Math.log10(Math.min(20000, settings.maxFrequency)), freqLogMin + FREQ_LOG_MIN_GAP, LOG_MAX)
+  const freqMinPercent = ((freqLogMin - LOG_MIN) / (LOG_MAX - LOG_MIN)) * 100
+  const freqMaxPercent = ((freqLogMax - LOG_MIN) / (LOG_MAX - LOG_MIN)) * 100
+
+  const handleFreqRangeChange = useCallback((logMin: number, logMax: number) => {
+    const boundedMin = clamp(logMin, LOG_MIN, LOG_MAX - FREQ_LOG_MIN_GAP)
+    const boundedMax = clamp(logMax, boundedMin + FREQ_LOG_MIN_GAP, LOG_MAX)
+    const newMin = roundFreqToNice(Math.pow(10, boundedMin))
+    const newMax = roundFreqToNice(Math.pow(10, boundedMax))
     ctx.setFocusRange({ kind: 'custom', minHz: newMin, maxHz: newMax })
   }, [ctx])
 
@@ -153,7 +172,36 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
           <span className="section-label" style={{ color: 'var(--console-blue)' }}>Freq Range</span>
           <span className="font-mono text-[13px] font-semibold tabular-nums" style={{ color: 'var(--console-blue)' }}>{formatFreqLabel(settings.minFrequency)} – {formatFreqLabel(settings.maxFrequency)}</span>
         </div>
-        <Slider value={[Math.log10(Math.max(20, settings.minFrequency)), Math.log10(Math.min(20000, settings.maxFrequency))]} onValueChange={handleFreqSliderChange} min={LOG_MIN} max={LOG_MAX} step={0.005} minStepsBetweenThumbs={0.1} />
+        <div className="space-y-1" aria-label="Frequency range controls">
+          <label className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+            <span className="section-label text-muted-foreground">Min</span>
+            <input
+              type="range"
+              aria-label="Minimum frequency"
+              min={LOG_MIN}
+              max={freqLogMax - FREQ_LOG_MIN_GAP}
+              step={FREQ_LOG_STEP}
+              value={freqLogMin}
+              onChange={(event) => handleFreqRangeChange(Number(event.currentTarget.value), freqLogMax)}
+              className="console-native-range h-4 w-full"
+              style={getBlueRangeStyle(freqMinPercent)}
+            />
+          </label>
+          <label className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+            <span className="section-label text-muted-foreground">Max</span>
+            <input
+              type="range"
+              aria-label="Maximum frequency"
+              min={freqLogMin + FREQ_LOG_MIN_GAP}
+              max={LOG_MAX}
+              step={FREQ_LOG_STEP}
+              value={freqLogMax}
+              onChange={(event) => handleFreqRangeChange(freqLogMin, Number(event.currentTarget.value))}
+              className="console-native-range h-4 w-full"
+              style={getBlueRangeStyle(freqMaxPercent)}
+            />
+          </label>
+        </div>
       </div>
 
     </div>
