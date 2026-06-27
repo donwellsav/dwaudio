@@ -65,9 +65,10 @@ describe('createAudioAnalyzer', () => {
 
   beforeEach(() => {
     vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock)
-    startMock.mockClear()
-    stopMock.mockClear()
-    updateSettingsMock.mockClear()
+    startMock.mockReset()
+    startMock.mockImplementation(async () => {})
+    stopMock.mockReset()
+    updateSettingsMock.mockReset()
     requestAnimationFrameMock.mockClear()
     Object.assign(mockState, {
       noiseFloorDb: -82,
@@ -130,5 +131,25 @@ describe('createAudioAnalyzer', () => {
       autoGainTargetDb: DEFAULT_SETTINGS.autoGainTargetDb,
       trackTimeoutMs: DEFAULT_SETTINGS.trackTimeoutMs,
     }))
+  })
+
+  it('coalesces concurrent starts into one detector start and spectrum loop', async () => {
+    const pendingResolves: Array<() => void> = []
+    startMock.mockImplementation(() => new Promise<void>((resolve) => {
+      pendingResolves.push(resolve)
+    }))
+
+    const analyzer = createAudioAnalyzer()
+    const firstStart = analyzer.start()
+    const secondStart = analyzer.start()
+    const detectorStartCalls = startMock.mock.calls.length
+
+    for (const resolve of pendingResolves) {
+      resolve()
+    }
+    await Promise.allSettled([firstStart, secondStart])
+
+    expect(detectorStartCalls).toBe(1)
+    expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1)
   })
 })

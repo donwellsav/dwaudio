@@ -58,6 +58,7 @@ export class AudioAnalyzer {
   private _isRunning: boolean = false
   private _hasPermission: boolean = false
   private _error: string | null = null
+  private startPromise: Promise<void> | null = null
 
   constructor(
     settings: Partial<AudioRuntimeSettings> = {},
@@ -95,7 +96,15 @@ export class AudioAnalyzer {
 
   async start(options: { deviceId?: string } = {}): Promise<void> {
     if (this._isRunning) return
+    if (this.startPromise) return this.startPromise
 
+    this.startPromise = this.startInternal(options).finally(() => {
+      this.startPromise = null
+    })
+    return this.startPromise
+  }
+
+  private async startInternal(options: { deviceId?: string } = {}): Promise<void> {
     try {
       await this.detector.start({ deviceId: options.deviceId })
       this._isRunning = true
