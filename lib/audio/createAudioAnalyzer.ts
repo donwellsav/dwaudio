@@ -58,6 +58,8 @@ export class AudioAnalyzer {
   private _isRunning: boolean = false
   private _hasPermission: boolean = false
   private _error: string | null = null
+  private startPromise: Promise<void> | null = null
+  private startGeneration: number = 0
 
   constructor(
     settings: Partial<AudioRuntimeSettings> = {},
@@ -83,6 +85,9 @@ export class AudioAnalyzer {
       onCombPatternDetected: (pattern) => {
         this.callbacks.onCombPatternDetected?.(pattern)
       },
+      onStopped: (message) => {
+        this.handleDetectorStopped(message)
+      },
     })
 
     // Apply initial settings via the mapping layer (DetectorSettings → AnalysisConfig)
@@ -95,9 +100,21 @@ export class AudioAnalyzer {
 
   async start(options: { deviceId?: string } = {}): Promise<void> {
     if (this._isRunning) return
+    if (this.startPromise) return this.startPromise
 
+    const generation = ++this.startGeneration
+    this.startPromise = this.startInternal(options, generation).finally(() => {
+      if (this.startGeneration === generation) {
+        this.startPromise = null
+      }
+    })
+    return this.startPromise
+  }
+
+  private async startInternal(options: { deviceId?: string } = {}, generation: number): Promise<void> {
     try {
       await this.detector.start({ deviceId: options.deviceId })
+      if (!this.isCurrentStart(generation)) return
       this._isRunning = true
       this._hasPermission = true
       this._error = null
@@ -116,6 +133,8 @@ export class AudioAnalyzer {
   }
 
   stop(options: { releaseMic?: boolean } = {}): void {
+    this.startGeneration += 1
+    this.startPromise = null
     this._isRunning = false
 
     if (this.rafId) {
@@ -125,6 +144,23 @@ export class AudioAnalyzer {
 
     this.detector.stop(options)
     this.callbacks.onStateChange?.(false)
+  }
+
+  private handleDetectorStopped(message: string): void {
+    this._error = message
+    this._isRunning = false
+
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId)
+      this.rafId = 0
+    }
+
+    this.callbacks.onStateChange?.(false)
+    this.callbacks.onError?.(new Error(message))
+  }
+
+  private isCurrentStart(generation: number): boolean {
+    return this.startGeneration === generation
   }
 
   updateSettings(settings: Partial<AudioRuntimeSettings>): void {

@@ -25,6 +25,7 @@ export interface FeedbackDetectorCallbacks {
   onPeakCleared?: (peak: { binIndex: number; frequencyHz: number; timestamp: number }) => void
   onCombPatternDetected?: (pattern: CombPatternResult) => void
   onError?: (message: string) => void
+  onStopped?: (message: string) => void
 }
 
 /** Frame timing breakdown from performance.now() instrumentation (debug only) */
@@ -79,6 +80,8 @@ export class FeedbackDetector {
   private _deviceChangeHandler: (() => void) | null = null
   private _stateChangeHandler: (() => void) | null = null
   private analyser: AnalyserNode | null = null
+  private startPromise: Promise<void> | null = null
+  private startGeneration: number = 0
 
   // Preallocated buffers
   private freqDb: Float32Array<ArrayBuffer> | null = null
@@ -203,6 +206,22 @@ export class FeedbackDetector {
 
   async start(options: { stream?: MediaStream; audioContext?: AudioContext; deviceId?: string } = {}): Promise<void> {
     if (this.isRunning) return
+    if (this.startPromise) return this.startPromise
+
+    const generation = ++this.startGeneration
+    this.startPromise = this.startInternal(options, generation).finally(() => {
+      if (this.startGeneration === generation) {
+        this.startPromise = null
+      }
+    })
+    return this.startPromise
+  }
+
+  private async startInternal(options: { stream?: MediaStream; audioContext?: AudioContext; deviceId?: string } = {}, generation: number): Promise<void> {
+    if (this.audioContext?.state === 'closed') {
+      this.audioContext = null
+      this.analyser = null
+    }
 
     // Initialize AudioContext
     if (!this.audioContext) {
@@ -216,47 +235,61 @@ export class FeedbackDetector {
     // Get microphone stream
     if (options.stream) {
       this.stream = options.stream
-    } else if (!this.stream) {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('getUserMedia not supported')
+    } else {
+      if (this.stream && !this.hasLiveAudioTrack(this.stream)) {
+        this.stream = null
       }
-      try {
-        this.stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-          }
-        })
-      } catch (e) {
-        // Surface specific error messages for common getUserMedia failures
-        if (e instanceof DOMException) {
-          switch (e.name) {
-            case 'NotAllowedError':
-              throw new Error('Microphone permission denied. Please allow microphone access and try again.')
-            case 'NotFoundError':
-              throw new Error('No microphone found. Please connect a microphone and try again.')
-            case 'NotReadableError':
-              throw new Error('Microphone is in use by another application. Please close it and try again.')
-            case 'OverconstrainedError':
-              throw new Error('Microphone does not support the requested audio settings.')
-          }
+
+      if (!this.stream) {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('getUserMedia not supported')
         }
-        throw e
-      }
-      // Monitor mic disconnection — track end signals device removal
-      const audioTrack = this.stream.getAudioTracks()[0]
-      if (audioTrack) {
-        audioTrack.onended = () => {
-          if (this.isRunning) {
-            this.callbacks.onError?.('Microphone disconnected')
-            try {
-              this.stop()
-            } catch {
-              // stop() cleanup is best-effort — prevent cascade failure
-              // from leaving dangling listeners or buffers
-              this.isRunning = false
+        try {
+          const acquiredStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            }
+          })
+          if (!this.isCurrentStart(generation)) {
+            this.releaseStream(acquiredStream)
+            return
+          }
+          this.stream = acquiredStream
+        } catch (e) {
+          // Surface specific error messages for common getUserMedia failures
+          if (e instanceof DOMException) {
+            switch (e.name) {
+              case 'NotAllowedError':
+                throw new Error('Microphone permission denied. Please allow microphone access and try again.')
+              case 'NotFoundError':
+                throw new Error('No microphone found. Please connect a microphone and try again.')
+              case 'NotReadableError':
+                throw new Error('Microphone is in use by another application. Please close it and try again.')
+              case 'OverconstrainedError':
+                throw new Error('Microphone does not support the requested audio settings.')
+            }
+          }
+          throw e
+        }
+        // Monitor mic disconnection — track end signals device removal
+        const audioTrack = this.stream.getAudioTracks()[0]
+        if (audioTrack) {
+          audioTrack.onended = () => {
+            if (this.isRunning) {
+              const message = 'Microphone disconnected'
+              this.callbacks.onError?.(message)
+              this.callbacks.onStopped?.(message)
+              try {
+                this.stop({ releaseMic: true })
+              } catch {
+                // stop() cleanup is best-effort — prevent cascade failure
+                // from leaving dangling listeners or buffers
+                this.isRunning = false
+                this.stream = null
+              }
             }
           }
         }
@@ -294,6 +327,7 @@ export class FeedbackDetector {
     // Resume context if needed
     if (this.audioContext.state !== 'running') {
       await this.audioContext.resume()
+      if (!this.isCurrentStart(generation)) return
     }
 
     // Listen for device changes (mic unplugged/plugged)
@@ -302,8 +336,10 @@ export class FeedbackDetector {
         // Check if current stream's track is still alive
         const track = this.stream?.getAudioTracks()[0]
         if (track && track.readyState === 'ended' && this.isRunning) {
-          this.callbacks.onError?.('Audio device changed — microphone disconnected')
-          this.stop()
+          const message = 'Audio device changed — microphone disconnected'
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
+          this.stop({ releaseMic: true })
         }
       }
       navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler)
@@ -321,14 +357,19 @@ export class FeedbackDetector {
         } else if (ctx.state === 'closed') {
           // AudioContext is permanently closed (cannot be resumed) — stop analysis
           // and surface error so user can restart
-          this.callbacks.onError?.('Audio context closed unexpectedly — tap Restart to resume analysis.')
-          this.stop()
+          const message = 'Audio context closed unexpectedly — tap Restart to resume analysis.'
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
+          this.stop({ releaseMic: true })
+          this.audioContext = null
+          this.analyser = null
         }
       }
       this.audioContext.addEventListener('statechange', this._stateChangeHandler)
     }
 
     // Start analysis loop
+    if (!this.isCurrentStart(generation)) return
     this.isRunning = true
     this.lastRafTs = 0
     this.lastAnalysisTs = 0
@@ -336,6 +377,8 @@ export class FeedbackDetector {
   }
 
   stop(options: { releaseMic?: boolean } = {}): void {
+    this.startGeneration += 1
+    this.startPromise = null
     this.isRunning = false
 
     if (this.rafId) {
@@ -353,9 +396,7 @@ export class FeedbackDetector {
     }
 
     if (options.releaseMic && this.stream) {
-      for (const track of this.stream.getTracks()) {
-        track.stop()
-      }
+      this.releaseStream(this.stream)
       this.stream = null
     }
 
@@ -369,6 +410,20 @@ export class FeedbackDetector {
     if (this._stateChangeHandler) {
       this.audioContext?.removeEventListener('statechange', this._stateChangeHandler)
       this._stateChangeHandler = null
+    }
+  }
+
+  private hasLiveAudioTrack(stream: MediaStream): boolean {
+    return stream.getAudioTracks().some((track) => track.readyState === 'live')
+  }
+
+  private isCurrentStart(generation: number): boolean {
+    return this.startGeneration === generation
+  }
+
+  private releaseStream(stream: MediaStream): void {
+    for (const track of stream.getTracks()) {
+      track.stop()
     }
   }
 

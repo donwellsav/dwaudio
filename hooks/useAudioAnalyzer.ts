@@ -174,6 +174,19 @@ export function useAudioAnalyzer(
       await analyzerRef.current.start({ deviceId: deviceId || undefined })
       const analyzerState = analyzerRef.current.getState()
 
+      if (!analyzerState.isRunning) {
+        setState((previous) => ({
+          ...previous,
+          isStarting: false,
+          isRunning: false,
+          hasPermission: analyzerState.hasPermission,
+          error: analyzerState.error,
+          sampleRate: analyzerState.sampleRate,
+          fftSize: analyzerState.fftSize,
+        }))
+        return
+      }
+
       dspWorkerRef.current.init(
         pickWorkerRuntimeSettings(settingsRef.current),
         analyzerState.sampleRate,
@@ -227,6 +240,19 @@ export function useAudioAnalyzer(
       analyzerRef.current.stop({ releaseMic: true })
       await analyzerRef.current.start({ deviceId: deviceId || undefined })
       const analyzerState = analyzerRef.current.getState()
+      if (!analyzerState.isRunning) {
+        setState((previous) => ({
+          ...previous,
+          isStarting: false,
+          error: analyzerState.error,
+          isRunning: false,
+          hasPermission: analyzerState.hasPermission,
+          sampleRate: analyzerState.sampleRate,
+          fftSize: analyzerState.fftSize,
+        }))
+        return
+      }
+
       dspWorkerRef.current.init(
         pickWorkerRuntimeSettings(settingsRef.current),
         analyzerState.sampleRate,
