@@ -330,13 +330,6 @@ html {
     color: var(--foreground);
   }
 
-  /* ── Sheet overlays stay amber — reference UI, not live status ─────────── */
-  [data-slot="sheet-content"] {
-    --tint-r: 245;
-    --tint-g: 158;
-    --tint-b: 11;
-  }
-
   /* ── Amber sidecar — rack-unit instrument bay, matches LIVE tab language ─── */
   .amber-sidecar {
     background: linear-gradient(180deg, #0d1520 0%, #080e16 40%, #070c12 100%);
@@ -401,7 +394,6 @@ html {
     );
   }
 
-  /* ── Accordion — amber rack-unit style inside amber sidecars ─────────────── */
   /* Groove separator gets amber shimmer instead of white */
   .amber-sidecar .panel-groove {
     box-shadow:
@@ -412,38 +404,6 @@ html {
     box-shadow:
       inset 0 1px 0 rgba(0, 0, 0, 0.08),
       0 1px 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.12);
-  }
-  /* Trigger: hover state — subtle amber tint */
-  .amber-sidecar [data-radix-accordion-trigger]:hover {
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.035);
-  }
-  /* Trigger: open/active state — amber rack indicator via inset shadow
-     (no layout shift — replaces a former border-left accent that caused
-     padding to be recalculated per state). */
-  .amber-sidecar [data-radix-accordion-trigger][data-state="open"] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.50);
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.05);
-  }
-  .amber-sidecar [data-radix-accordion-trigger][data-state="open"] .section-label {
-    color: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.80);
-  }
-  /* Content area: left amber rail via inset shadow */
-  .amber-sidecar [data-radix-accordion-content] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.18);
-    margin-left: 0;
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger]:hover {
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.04);
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger][data-state="open"] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.45);
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.06);
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger][data-state="open"] .section-label {
-    color: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.85);
-  }
-  .light .amber-sidecar [data-radix-accordion-content] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.20);
   }
 
   /* Channel strip vertical gradient — recessed rack-unit feel */

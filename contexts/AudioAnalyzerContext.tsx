@@ -11,12 +11,7 @@ import { MeteringContext, useMetering } from '@/contexts/MeteringContext'
 import type { MeteringContextValue } from '@/contexts/MeteringContext'
 import { DetectionContext, useDetection } from '@/contexts/DetectionContext'
 import type { DetectionContextValue } from '@/contexts/DetectionContext'
-import {
-  createDetectionContextValue,
-  createEngineContextValue,
-  createMeteringContextValue,
-  createSettingsContextValue,
-} from '@/contexts/audioAnalyzerContextValues'
+import type { ModeId } from '@/types/settings'
 
 export { useEngine, useSettings, useMetering, useDetection }
 
@@ -26,13 +21,6 @@ export type {
   MeteringContextValue,
   DetectionContextValue,
 }
-
-/**
- * @deprecated Use `EngineContextValue`, `SettingsContextValue`, `MeteringContextValue`,
- * or `DetectionContextValue` instead.
- */
-export type AudioAnalyzerContextValue =
-  EngineContextValue & SettingsContextValue & MeteringContextValue & DetectionContextValue
 
 interface AudioAnalyzerProviderProps {
   frozenRef?: React.RefObject<boolean>
@@ -86,12 +74,12 @@ export function AudioAnalyzerProvider({
     updateLiveOverrides,
   } = layered
 
-  const engineValue = useMemo(() => createEngineContextValue({
+  const engineValue = useMemo<EngineContextValue>(() => ({
     isRunning,
     isStarting,
     error,
     workerError,
-    startWithDevice,
+    start: startWithDevice,
     stop,
     switchDevice,
     devices,
@@ -112,22 +100,22 @@ export function AudioAnalyzerProvider({
     dspWorker,
   ])
 
-  const settingsValue = useMemo(() => createSettingsContextValue({
+  const settingsValue = useMemo<SettingsContextValue>(() => ({
     settings,
     resetSettings,
-    layeredSession,
-    layeredDisplay,
-    layered: {
-      setMode,
-      setSensitivityOffset,
-      setInputGain,
-      setAutoGain,
-      setFocusRange,
-      setEqStyle,
-      updateDisplay,
-      updateDiagnostics,
-      updateLiveOverrides,
-    },
+    handleModeChange: (mode) => setMode(mode as ModeId),
+    handleFreqRangeChange: (min, max) => setFocusRange({ kind: 'custom', minHz: min, maxHz: max }),
+    session: layeredSession,
+    displayPrefs: layeredDisplay,
+    setMode,
+    setSensitivityOffset,
+    setInputGain,
+    setAutoGain,
+    setFocusRange,
+    setEqStyle,
+    updateDisplay,
+    updateDiagnostics,
+    updateLiveOverrides,
   }), [
     settings,
     resetSettings,
@@ -144,7 +132,7 @@ export function AudioAnalyzerProvider({
     updateLiveOverrides,
   ])
 
-  const meteringValue = useMemo(() => createMeteringContextValue({
+  const meteringValue = useMemo<MeteringContextValue>(() => ({
     spectrumRef,
     tracksRef,
     spectrumStatus,
@@ -168,7 +156,7 @@ export function AudioAnalyzerProvider({
     autoGainLocked,
   ])
 
-  const detectionValue = useMemo(() => createDetectionContextValue({
+  const detectionValue = useMemo<DetectionContextValue>(() => ({
     advisories,
     earlyWarning,
   }), [
@@ -187,22 +175,4 @@ export function AudioAnalyzerProvider({
       </SettingsContext.Provider>
     </EngineContext.Provider>
   )
-}
-
-/**
- * @deprecated Use `useEngine()`, `useSettings()`, `useMetering()`, or `useDetection()` instead.
- * This hook reads all 4 contexts and re-renders on ANY context change.
- */
-export function useAudio(): AudioAnalyzerContextValue {
-  if (process.env.NODE_ENV === 'development') {
-    // eslint-disable-next-line no-console
-    console.warn('[DWA] useAudio() is deprecated â€” use useEngine(), useSettings(), useMetering(), or useDetection() for granular re-renders')
-  }
-
-  const engine = useEngine()
-  const settingsCtx = useSettings()
-  const metering = useMetering()
-  const detection = useDetection()
-
-  return { ...engine, ...settingsCtx, ...metering, ...detection }
 }

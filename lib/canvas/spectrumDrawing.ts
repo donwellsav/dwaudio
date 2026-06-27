@@ -10,7 +10,7 @@ export type { CanvasTheme, DbRange } from './drawing/canvasTypes'
 export {
   DARK_CANVAS_THEME, LIGHT_CANVAS_THEME,
   DB_MAJOR, DB_MINOR, DB_ALL, FREQ_LABELS,
-  PEAK_HOLD_DECAY_DB_PER_SEC, PEAK_HOLD_MAX_DT_SEC, PEAK_HOLD_DECAY_DB,
+  PEAK_HOLD_DECAY_DB_PER_SEC, PEAK_HOLD_MAX_DT_SEC,
   calcPadding,
   cachedMeasureText,
 } from './drawing/canvasTypes'
