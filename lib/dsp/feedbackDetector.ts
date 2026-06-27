@@ -80,6 +80,7 @@ export class FeedbackDetector {
   private _stateChangeHandler: (() => void) | null = null
   private analyser: AnalyserNode | null = null
   private startPromise: Promise<void> | null = null
+  private startGeneration: number = 0
 
   // Preallocated buffers
   private freqDb: Float32Array<ArrayBuffer> | null = null
@@ -206,13 +207,16 @@ export class FeedbackDetector {
     if (this.isRunning) return
     if (this.startPromise) return this.startPromise
 
-    this.startPromise = this.startInternal(options).finally(() => {
-      this.startPromise = null
+    const generation = ++this.startGeneration
+    this.startPromise = this.startInternal(options, generation).finally(() => {
+      if (this.startGeneration === generation) {
+        this.startPromise = null
+      }
     })
     return this.startPromise
   }
 
-  private async startInternal(options: { stream?: MediaStream; audioContext?: AudioContext; deviceId?: string } = {}): Promise<void> {
+  private async startInternal(options: { stream?: MediaStream; audioContext?: AudioContext; deviceId?: string } = {}, generation: number): Promise<void> {
     if (this.audioContext?.state === 'closed') {
       this.audioContext = null
       this.analyser = null
@@ -240,7 +244,7 @@ export class FeedbackDetector {
           throw new Error('getUserMedia not supported')
         }
         try {
-          this.stream = await navigator.mediaDevices.getUserMedia({
+          const acquiredStream = await navigator.mediaDevices.getUserMedia({
             audio: {
               ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
               echoCancellation: false,
@@ -248,6 +252,11 @@ export class FeedbackDetector {
               autoGainControl: false,
             }
           })
+          if (!this.isCurrentStart(generation)) {
+            this.releaseStream(acquiredStream)
+            return
+          }
+          this.stream = acquiredStream
         } catch (e) {
           // Surface specific error messages for common getUserMedia failures
           if (e instanceof DOMException) {
@@ -315,6 +324,7 @@ export class FeedbackDetector {
     // Resume context if needed
     if (this.audioContext.state !== 'running') {
       await this.audioContext.resume()
+      if (!this.isCurrentStart(generation)) return
     }
 
     // Listen for device changes (mic unplugged/plugged)
@@ -352,6 +362,7 @@ export class FeedbackDetector {
     }
 
     // Start analysis loop
+    if (!this.isCurrentStart(generation)) return
     this.isRunning = true
     this.lastRafTs = 0
     this.lastAnalysisTs = 0
@@ -359,6 +370,8 @@ export class FeedbackDetector {
   }
 
   stop(options: { releaseMic?: boolean } = {}): void {
+    this.startGeneration += 1
+    this.startPromise = null
     this.isRunning = false
 
     if (this.rafId) {
@@ -376,9 +389,7 @@ export class FeedbackDetector {
     }
 
     if (options.releaseMic && this.stream) {
-      for (const track of this.stream.getTracks()) {
-        track.stop()
-      }
+      this.releaseStream(this.stream)
       this.stream = null
     }
 
@@ -397,6 +408,16 @@ export class FeedbackDetector {
 
   private hasLiveAudioTrack(stream: MediaStream): boolean {
     return stream.getAudioTracks().some((track) => track.readyState === 'live')
+  }
+
+  private isCurrentStart(generation: number): boolean {
+    return this.startGeneration === generation
+  }
+
+  private releaseStream(stream: MediaStream): void {
+    for (const track of stream.getTracks()) {
+      track.stop()
+    }
   }
 
   // ==================== Configuration ====================

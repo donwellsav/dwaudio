@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { dbToLinearLut } from '@/lib/dsp/expLut'
 import { createAudioAnalyzer } from '@/lib/audio/createAudioAnalyzer'
 import { DEFAULT_SETTINGS } from '@/lib/dsp/constants'
+import type { FeedbackDetectorCallbacks } from '@/lib/dsp/feedbackDetector'
 import type { SpectrumData } from '@/types/advisory'
 
 interface MockDetectorState {
@@ -42,10 +43,13 @@ const mockState: MockDetectorState = {
 const startMock = vi.fn(async () => {})
 const stopMock = vi.fn()
 const updateSettingsMock = vi.fn()
+let mockDetectorCallbacks: FeedbackDetectorCallbacks | null = null
 
 vi.mock('@/lib/dsp/feedbackDetector', () => {
   class MockFeedbackDetector {
-    constructor() {}
+    constructor(_config: unknown, callbacks: FeedbackDetectorCallbacks = {}) {
+      mockDetectorCallbacks = callbacks
+    }
 
     start = startMock
     stop = stopMock
@@ -62,14 +66,18 @@ vi.mock('@/lib/dsp/feedbackDetector', () => {
 
 describe('createAudioAnalyzer', () => {
   const requestAnimationFrameMock = vi.fn(() => 1)
+  const cancelAnimationFrameMock = vi.fn()
 
   beforeEach(() => {
     vi.stubGlobal('requestAnimationFrame', requestAnimationFrameMock)
+    vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrameMock)
     startMock.mockReset()
     startMock.mockImplementation(async () => {})
     stopMock.mockReset()
     updateSettingsMock.mockReset()
     requestAnimationFrameMock.mockClear()
+    cancelAnimationFrameMock.mockClear()
+    mockDetectorCallbacks = null
     Object.assign(mockState, {
       noiseFloorDb: -82,
       effectiveThresholdDb: -35,
@@ -151,5 +159,44 @@ describe('createAudioAnalyzer', () => {
 
     expect(detectorStartCalls).toBe(1)
     expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops the wrapper when the detector reports an automatic shutdown', async () => {
+    const onError = vi.fn()
+    const onStateChange = vi.fn()
+    const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
+
+    await analyzer.start()
+    mockDetectorCallbacks?.onError?.('Microphone disconnected')
+
+    expect(cancelAnimationFrameMock).toHaveBeenCalledWith(1)
+    expect(analyzer.getState().isRunning).toBe(false)
+    expect(onStateChange).toHaveBeenLastCalledWith(false)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Microphone disconnected',
+    }))
+
+    await analyzer.start()
+
+    expect(startMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not mark the wrapper running after a pending start is stopped', async () => {
+    const pendingResolves: Array<() => void> = []
+    startMock.mockImplementation(() => new Promise<void>((resolve) => {
+      pendingResolves.push(resolve)
+    }))
+
+    const analyzer = createAudioAnalyzer()
+    const startPromise = analyzer.start()
+
+    analyzer.stop({ releaseMic: true })
+    for (const resolve of pendingResolves) {
+      resolve()
+    }
+    await startPromise
+
+    expect(analyzer.getState().isRunning).toBe(false)
+    expect(requestAnimationFrameMock).not.toHaveBeenCalled()
   })
 })

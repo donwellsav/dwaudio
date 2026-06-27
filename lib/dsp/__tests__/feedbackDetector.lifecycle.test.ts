@@ -24,6 +24,7 @@ type MockAudioContextInstance = {
 }
 
 const createdContexts: MockAudioContextInstance[] = []
+let deviceChangeListener: (() => void) | null = null
 
 function createMockStream(): MockStream {
   const track: MockTrack = {
@@ -92,8 +93,16 @@ function installBrowserMocks(getUserMedia: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('navigator', {
     mediaDevices: {
       getUserMedia,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      addEventListener: vi.fn((eventName: string, listener: () => void) => {
+        if (eventName === 'devicechange') {
+          deviceChangeListener = listener
+        }
+      }),
+      removeEventListener: vi.fn((eventName: string, listener: () => void) => {
+        if (eventName === 'devicechange' && deviceChangeListener === listener) {
+          deviceChangeListener = null
+        }
+      }),
     },
   })
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
@@ -103,6 +112,7 @@ function installBrowserMocks(getUserMedia: ReturnType<typeof vi.fn>) {
 describe('FeedbackDetector lifecycle', () => {
   beforeEach(() => {
     createdContexts.length = 0
+    deviceChangeListener = null
   })
 
   afterEach(() => {
@@ -131,6 +141,28 @@ describe('FeedbackDetector lifecycle', () => {
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
   })
 
+  it('does not start after stop cancels a pending microphone acquisition', async () => {
+    const pendingResolves: Array<(stream: MediaStream) => void> = []
+    const acquiredStream = createMockStream()
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => {
+      pendingResolves.push(resolve)
+    }))
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector()
+    const startPromise = detector.start()
+
+    detector.stop({ releaseMic: true })
+    for (const resolve of pendingResolves) {
+      resolve(acquiredStream.stream)
+    }
+    await startPromise
+
+    expect(acquiredStream.track.stop).toHaveBeenCalled()
+    expect(detector.getState().isRunning).toBe(false)
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
+  })
+
   it('reacquires the microphone after an active track ends', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()
@@ -145,6 +177,26 @@ describe('FeedbackDetector lifecycle', () => {
 
     firstStream.track.readyState = 'ended'
     firstStream.track.onended?.()
+    await detector.start()
+
+    expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(createdContexts[0].createMediaStreamSource).toHaveBeenLastCalledWith(secondStream.stream)
+  })
+
+  it('reacquires the microphone after devicechange reports an ended track', async () => {
+    const firstStream = createMockStream()
+    const secondStream = createMockStream()
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(firstStream.stream)
+      .mockResolvedValueOnce(secondStream.stream)
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector()
+    await detector.start()
+
+    firstStream.track.readyState = 'ended'
+    deviceChangeListener?.()
     await detector.start()
 
     expect(getUserMedia).toHaveBeenCalledTimes(2)
