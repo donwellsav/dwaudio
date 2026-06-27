@@ -157,4 +157,31 @@ describe('useAudioAnalyzer', () => {
     })
     expect(result.current.isStarting).toBe(false)
   })
+
+  it('does not initialize the DSP worker when a pending start resolves stopped', async () => {
+    let resolveStart: (() => void) | null = null
+    mocks.analyzer.start.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveStart = resolve
+    }))
+    mocks.analyzer.getState.mockReturnValueOnce({
+      isRunning: false,
+      hasPermission: false,
+      sampleRate: 48_000,
+      fftSize: 8192,
+      noiseFloorDb: null,
+      effectiveThresholdDb: -35,
+    })
+    const { result } = renderHook(() => useAudioAnalyzer())
+
+    await act(async () => {
+      const startPromise = result.current.start()
+      result.current.stop()
+      resolveStart?.()
+      await startPromise
+    })
+
+    expect(mocks.dspWorker.init).not.toHaveBeenCalled()
+    expect(result.current.isStarting).toBe(false)
+    expect(result.current.isRunning).toBe(false)
+  })
 })

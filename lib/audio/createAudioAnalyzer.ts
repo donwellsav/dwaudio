@@ -85,8 +85,8 @@ export class AudioAnalyzer {
       onCombPatternDetected: (pattern) => {
         this.callbacks.onCombPatternDetected?.(pattern)
       },
-      onError: (message) => {
-        this.handleDetectorError(message)
+      onStopped: (message) => {
+        this.handleDetectorStopped(message)
       },
     })
 
@@ -146,7 +146,7 @@ export class AudioAnalyzer {
     this.callbacks.onStateChange?.(false)
   }
 
-  private handleDetectorError(message: string): void {
+  private handleDetectorStopped(message: string): void {
     this._error = message
     this._isRunning = false
 

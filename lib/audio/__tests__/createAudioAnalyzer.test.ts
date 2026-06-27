@@ -161,13 +161,23 @@ describe('createAudioAnalyzer', () => {
     expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the wrapper running when the detector reports a recoverable analysis error', async () => {
+    const analyzer = createAudioAnalyzer()
+
+    await analyzer.start()
+    mockDetectorCallbacks?.onError?.('Analysis error: bad frame')
+
+    expect(cancelAnimationFrameMock).not.toHaveBeenCalled()
+    expect(analyzer.getState().isRunning).toBe(true)
+  })
+
   it('stops the wrapper when the detector reports an automatic shutdown', async () => {
     const onError = vi.fn()
     const onStateChange = vi.fn()
     const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
 
     await analyzer.start()
-    mockDetectorCallbacks?.onError?.('Microphone disconnected')
+    mockDetectorCallbacks?.onStopped?.('Microphone disconnected')
 
     expect(cancelAnimationFrameMock).toHaveBeenCalledWith(1)
     expect(analyzer.getState().isRunning).toBe(false)

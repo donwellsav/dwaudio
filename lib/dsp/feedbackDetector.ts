@@ -25,6 +25,7 @@ export interface FeedbackDetectorCallbacks {
   onPeakCleared?: (peak: { binIndex: number; frequencyHz: number; timestamp: number }) => void
   onCombPatternDetected?: (pattern: CombPatternResult) => void
   onError?: (message: string) => void
+  onStopped?: (message: string) => void
 }
 
 /** Frame timing breakdown from performance.now() instrumentation (debug only) */
@@ -278,7 +279,9 @@ export class FeedbackDetector {
         if (audioTrack) {
           audioTrack.onended = () => {
             if (this.isRunning) {
-              this.callbacks.onError?.('Microphone disconnected')
+              const message = 'Microphone disconnected'
+              this.callbacks.onError?.(message)
+              this.callbacks.onStopped?.(message)
               try {
                 this.stop({ releaseMic: true })
               } catch {
@@ -333,7 +336,9 @@ export class FeedbackDetector {
         // Check if current stream's track is still alive
         const track = this.stream?.getAudioTracks()[0]
         if (track && track.readyState === 'ended' && this.isRunning) {
-          this.callbacks.onError?.('Audio device changed — microphone disconnected')
+          const message = 'Audio device changed — microphone disconnected'
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
           this.stop({ releaseMic: true })
         }
       }
@@ -352,7 +357,9 @@ export class FeedbackDetector {
         } else if (ctx.state === 'closed') {
           // AudioContext is permanently closed (cannot be resumed) — stop analysis
           // and surface error so user can restart
-          this.callbacks.onError?.('Audio context closed unexpectedly — tap Restart to resume analysis.')
+          const message = 'Audio context closed unexpectedly — tap Restart to resume analysis.'
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
           this.stop({ releaseMic: true })
           this.audioContext = null
           this.analyser = null
