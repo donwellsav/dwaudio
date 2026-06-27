@@ -184,4 +184,40 @@ describe('useAudioAnalyzer', () => {
     expect(result.current.isStarting).toBe(false)
     expect(result.current.isRunning).toBe(false)
   })
+
+  it('does not initialize the DSP worker when a pending device switch resolves stopped', async () => {
+    let resolveStart: (() => void) | null = null
+    mocks.analyzer.start.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolveStart = resolve
+    }))
+    mocks.analyzer.getState
+      .mockReturnValueOnce({
+        isRunning: true,
+        hasPermission: true,
+        sampleRate: 48_000,
+        fftSize: 8192,
+        noiseFloorDb: null,
+        effectiveThresholdDb: -35,
+      })
+      .mockReturnValueOnce({
+        isRunning: false,
+        hasPermission: false,
+        sampleRate: 48_000,
+        fftSize: 8192,
+        noiseFloorDb: null,
+        effectiveThresholdDb: -35,
+      })
+    const { result } = renderHook(() => useAudioAnalyzer())
+
+    await act(async () => {
+      const switchPromise = result.current.switchDevice('front-of-house')
+      result.current.stop()
+      resolveStart?.()
+      await switchPromise
+    })
+
+    expect(mocks.dspWorker.init).not.toHaveBeenCalled()
+    expect(result.current.isStarting).toBe(false)
+    expect(result.current.isRunning).toBe(false)
+  })
 })
