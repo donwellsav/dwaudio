@@ -1,17 +1,27 @@
 'use client'
 
-import { useRef, memo, useLayoutEffect } from 'react'
+import { useCallback, useEffect, useRef, memo, useLayoutEffect } from 'react'
 import { AnalyzerKeyboardShortcuts } from './AnalyzerKeyboardShortcuts'
 import { AudioAnalyzerAlerts } from './AudioAnalyzerAlerts'
 import { AudioAnalyzerFooter } from './AudioAnalyzerFooter'
 import { HeaderBar } from './HeaderBar'
 import { MobileLayout } from './MobileLayout'
 import { DesktopLayout } from './DesktopLayout'
-import { useAudioAnalyzerViewState } from '@/hooks/useAudioAnalyzerViewState'
 
 import { AudioAnalyzerProvider } from '@/contexts/AudioAnalyzerContext'
 import { AdvisoryProvider } from '@/contexts/AdvisoryContext'
 import { UIProvider, useUI } from '@/contexts/UIContext'
+import { useDetection } from '@/contexts/DetectionContext'
+import { useEngine } from '@/contexts/EngineContext'
+import { useMetering } from '@/contexts/MeteringContext'
+import { useSettings } from '@/contexts/SettingsContext'
+import { useAnalyzerShellState } from '@/hooks/useAnalyzerShellState'
+import { useCurrentRunRecurrence } from '@/hooks/useCurrentRunRecurrence'
+import { useFpsMonitor } from '@/hooks/useFpsMonitor'
+import {
+  getFeedbackHotspotSummaries,
+  getFeedbackHistory,
+} from '@/lib/dsp/feedbackHistory'
 
 export const AudioAnalyzer = memo(function AudioAnalyzerComponent() {
   const frozenRef = useRef(false)
@@ -42,14 +52,23 @@ interface AudioAnalyzerInnerProps {
 const AudioAnalyzerInner = memo(function AudioAnalyzerInner({
   frozenRef,
 }: AudioAnalyzerInnerProps) {
-  const {
-    error,
-    workerError,
-    isWorkerPermanentlyDead,
-    actualFps,
-    droppedPercent,
-    shellState,
-  } = useAudioAnalyzerViewState()
+  const { isRunning, error, workerError, start, dspWorker } = useEngine()
+  const { settings } = useSettings()
+  const { spectrumRef } = useMetering()
+  const { advisories } = useDetection()
+  const { actualFps, droppedPercent } = useFpsMonitor(isRunning, settings.canvasTargetFps)
+  const shellState = useAnalyzerShellState(error, start)
+  const syncFeedbackHistory = useCallback(() => {
+    dspWorker.syncFeedbackHistory(getFeedbackHotspotSummaries())
+  }, [dspWorker])
+
+  useEffect(() => {
+    getFeedbackHistory().setMode(settings.mode)
+    syncFeedbackHistory()
+  }, [settings.mode, syncFeedbackHistory])
+
+  useCurrentRunRecurrence(advisories, syncFeedbackHistory)
+  void spectrumRef
 
   return (
     <AdvisoryProvider>
@@ -60,7 +79,7 @@ const AudioAnalyzerInner = memo(function AudioAnalyzerInner({
           error={error}
           workerError={workerError}
           isErrorDismissed={shellState.isErrorDismissed}
-          isWorkerPermanentlyDead={isWorkerPermanentlyDead}
+          isWorkerPermanentlyDead={dspWorker.isPermanentlyDead}
           onDismissError={() => shellState.setIsErrorDismissed(true)}
           onRetry={shellState.handleRetry}
         />
