@@ -4,7 +4,6 @@ import { memo } from 'react'
 import { FlaskConical, RotateCcw, SlidersHorizontal, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ResetConfirmDialog } from '../ResetConfirmDialog'
 import { LiveTab } from './LiveTab'
 import { DisplayTab } from './DisplayTab'
 import { AdvancedTab } from './AdvancedTab'
@@ -44,6 +43,11 @@ export const SettingsPanel = memo(function SettingsPanel({
   })
   const activePanelId = `${panelIdPrefix}-${activeTab}`
   const activeTabId = `${tabIdPrefix}-${activeTab}`
+  const resetSettingsWithConfirm = () => {
+    if (window.confirm('Reset settings? This will restore all detection settings to their defaults and clear active issues.')) {
+      resetSettings()
+    }
+  }
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -93,15 +97,15 @@ export const SettingsPanel = memo(function SettingsPanel({
         </div>
 
         <div className="panel-groove mt-1 pt-1">
-          <ResetConfirmDialog
-            onConfirm={resetSettings}
-            trigger={(
-              <Button variant="ghost" size="sm" className="h-6 w-full text-xs text-muted-foreground/50 hover:text-muted-foreground">
-                <RotateCcw className="h-3 w-3 mr-1.5" />
-                Reset Defaults
-              </Button>
-            )}
-          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-full text-xs text-muted-foreground/50 hover:text-muted-foreground"
+            onClick={resetSettingsWithConfirm}
+          >
+            <RotateCcw className="h-3 w-3 mr-1.5" />
+            Reset Defaults
+          </Button>
         </div>
       </div>
     </TooltipProvider>
