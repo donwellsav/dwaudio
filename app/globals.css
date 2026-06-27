@@ -330,13 +330,6 @@ html {
     color: var(--foreground);
   }
 
-  /* ── Sheet overlays stay amber — reference UI, not live status ─────────── */
-  [data-slot="sheet-content"] {
-    --tint-r: 245;
-    --tint-g: 158;
-    --tint-b: 11;
-  }
-
   /* ── Amber sidecar — rack-unit instrument bay, matches LIVE tab language ─── */
   .amber-sidecar {
     background: linear-gradient(180deg, #0d1520 0%, #080e16 40%, #070c12 100%);
@@ -401,7 +394,6 @@ html {
     );
   }
 
-  /* ── Accordion — amber rack-unit style inside amber sidecars ─────────────── */
   /* Groove separator gets amber shimmer instead of white */
   .amber-sidecar .panel-groove {
     box-shadow:
@@ -412,38 +404,6 @@ html {
     box-shadow:
       inset 0 1px 0 rgba(0, 0, 0, 0.08),
       0 1px 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.12);
-  }
-  /* Trigger: hover state — subtle amber tint */
-  .amber-sidecar [data-radix-accordion-trigger]:hover {
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.035);
-  }
-  /* Trigger: open/active state — amber rack indicator via inset shadow
-     (no layout shift — replaces a former border-left accent that caused
-     padding to be recalculated per state). */
-  .amber-sidecar [data-radix-accordion-trigger][data-state="open"] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.50);
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.05);
-  }
-  .amber-sidecar [data-radix-accordion-trigger][data-state="open"] .section-label {
-    color: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.80);
-  }
-  /* Content area: left amber rail via inset shadow */
-  .amber-sidecar [data-radix-accordion-content] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.18);
-    margin-left: 0;
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger]:hover {
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.04);
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger][data-state="open"] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.45);
-    background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.06);
-  }
-  .light .amber-sidecar [data-radix-accordion-trigger][data-state="open"] .section-label {
-    color: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.85);
-  }
-  .light .amber-sidecar [data-radix-accordion-content] {
-    box-shadow: inset 2px 0 0 0 rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.20);
   }
 
   /* Channel strip vertical gradient — recessed rack-unit feel */
@@ -657,27 +617,75 @@ html {
       0 1px 2px rgba(0, 0, 0, 0.04);
   }
 
-  /* ── Console slider — pro-audio recessed track + amber fill ─────────── */
-  .console-range {
-    background: linear-gradient(90deg, rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.3), rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.7));
-    box-shadow: 0 0 6px var(--console-amber-glow);
+  /* ── Native console slider — pro-audio recessed track + glowing thumb ── */
+  .console-native-range {
+    --console-range-start: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.3);
+    --console-range-end: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.7);
+    --console-range-percent: 0%;
+    --console-range-glow: 0 0 6px var(--console-amber-glow);
+    --console-thumb-border: var(--console-amber);
+    --console-thumb-glow: 0 0 8px var(--console-amber-glow), 0 0 2px var(--console-amber-glow);
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    cursor: pointer;
   }
-  .light .console-range {
-    background: linear-gradient(90deg, rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.2), rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.5));
-    box-shadow: none;
+  .console-native-range:focus-visible {
+    outline: none;
   }
-  .console-thumb {
+  .console-native-range::-webkit-slider-runnable-track {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--console-range-start) 0%, var(--console-range-end) var(--console-range-percent), var(--card) var(--console-range-percent), var(--card) 100%);
+    box-shadow: var(--console-range-glow), inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .console-native-range::-moz-range-track {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: var(--card);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .console-native-range::-moz-range-progress {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--console-range-start), var(--console-range-end));
+    box-shadow: var(--console-range-glow);
+  }
+  .console-native-range::-webkit-slider-thumb {
+    width: 1rem;
+    height: 1rem;
+    margin-top: -0.3125rem;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid var(--console-thumb-border);
+    border-radius: 9999px;
     background: linear-gradient(135deg, #2a2d32, #1a1d22);
-    border: 2px solid var(--console-amber);
-    box-shadow: 0 0 8px var(--console-amber-glow), 0 2px 4px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--console-thumb-glow), 0 2px 4px rgba(0, 0, 0, 0.5);
+    transition: box-shadow 100ms ease, transform 100ms ease;
   }
-  .console-thumb:hover,
-  .console-thumb:focus-visible {
-    box-shadow: 0 0 12px var(--console-amber-glow), 0 0 4px var(--console-amber-glow);
+  .console-native-range::-moz-range-thumb {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--console-thumb-border);
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #2a2d32, #1a1d22);
+    box-shadow: var(--console-thumb-glow), 0 2px 4px rgba(0, 0, 0, 0.5);
+    transition: box-shadow 100ms ease, transform 100ms ease;
   }
-  .light .console-thumb {
+  .console-native-range:hover::-webkit-slider-thumb,
+  .console-native-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: var(--console-thumb-glow), 0 0 0 4px rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.14);
+  }
+  .console-native-range:hover::-moz-range-thumb,
+  .console-native-range:focus-visible::-moz-range-thumb {
+    box-shadow: var(--console-thumb-glow), 0 0 0 4px rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.14);
+  }
+  .light .console-native-range::-webkit-slider-thumb {
     background: linear-gradient(135deg, #f0f1f4, #e0e2e6);
-    border-color: var(--console-amber);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+  .light .console-native-range::-moz-range-thumb {
+    background: linear-gradient(135deg, #f0f1f4, #e0e2e6);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
   .console-readout {
@@ -1024,8 +1032,13 @@ html {
   }
 
   /* ── Console thumb — active drag state ─────────────────────────────────── */
-  .console-thumb:active {
-    box-shadow: 0 0 16px var(--console-amber), 0 0 6px var(--console-amber-glow), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+  .console-native-range:active::-webkit-slider-thumb {
+    box-shadow: 0 0 16px var(--console-thumb-border), var(--console-thumb-glow), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+    transform: scale(1.14);
+    transition: transform 60ms ease, box-shadow 60ms ease !important;
+  }
+  .console-native-range:active::-moz-range-thumb {
+    box-shadow: 0 0 16px var(--console-thumb-border), var(--console-thumb-glow), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
     transform: scale(1.14);
     transition: transform 60ms ease, box-shadow 60ms ease !important;
   }

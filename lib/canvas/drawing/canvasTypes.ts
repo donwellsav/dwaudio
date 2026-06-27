@@ -129,9 +129,6 @@ export const PEAK_HOLD_DECAY_DB_PER_SEC = 12.5
  */
 export const PEAK_HOLD_MAX_DT_SEC = 0.25
 
-/** @deprecated Use PEAK_HOLD_DECAY_DB_PER_SEC with time-based decay instead. */
-export const PEAK_HOLD_DECAY_DB = 0.5
-
 // ─── Utility Functions ──────────────────────────────────────────────────────────
 
 export function calcPadding(width: number, height: number) {

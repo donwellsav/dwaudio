@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useState, useCallback, useRef } from 'react'
-import * as SliderPrimitive from '@radix-ui/react-slider'
 import { useWheelStep } from '@/hooks/useWheelStep'
 import { ResetDefault } from '@/components/ui/reset-default'
 import {
@@ -17,28 +16,32 @@ import { cn } from '@/lib/utils'
 type SliderColor = 'amber' | 'blue' | 'green'
 
 const COLOR_CONFIG: Record<SliderColor, {
-  rangeGradient: string
+  rangeStart: string
+  rangeEnd: string
   rangeGlow: string
   thumbBorder: string
   thumbGlow: string
   text: string
 }> = {
   amber: {
-    rangeGradient: 'linear-gradient(90deg, rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.30), rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.70))',
+    rangeStart: 'rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.30)',
+    rangeEnd: 'rgba(var(--tint-r),var(--tint-g),var(--tint-b),0.70)',
     rangeGlow: '0 0 6px var(--console-amber-glow)',
     thumbBorder: 'var(--console-amber)',
     thumbGlow: '0 0 8px var(--console-amber-glow), 0 0 2px var(--console-amber-glow)',
     text: 'var(--console-amber)',
   },
   blue: {
-    rangeGradient: 'linear-gradient(90deg, rgba(75,146,255,0.28), rgba(75,146,255,0.65))',
+    rangeStart: 'rgba(75,146,255,0.28)',
+    rangeEnd: 'rgba(75,146,255,0.65)',
     rangeGlow: '0 0 6px var(--console-blue-glow)',
     thumbBorder: 'var(--console-blue)',
     thumbGlow: '0 0 8px var(--console-blue-glow), 0 0 2px var(--console-blue-glow)',
     text: 'var(--console-blue)',
   },
   green: {
-    rangeGradient: 'linear-gradient(90deg, rgba(74,222,128,0.22), rgba(74,222,128,0.55))',
+    rangeStart: 'rgba(74,222,128,0.22)',
+    rangeEnd: 'rgba(74,222,128,0.55)',
     rangeGlow: '0 0 6px var(--console-green-glow)',
     thumbBorder: 'var(--console-green)',
     thumbGlow: '0 0 8px var(--console-green-glow), 0 0 2px var(--console-green-glow)',
@@ -106,8 +109,9 @@ export const ConsoleSlider = memo(function ConsoleSlider({
   const [isDragging, setIsDragging] = useState(false)
   const handlePointerDown = useCallback(() => setIsDragging(true), [])
   const handlePointerUp = useCallback(() => setIsDragging(false), [])
-  const sliderRef = useRef<HTMLSpanElement>(null)
+  const sliderRef = useRef<HTMLInputElement>(null)
   useWheelStep(sliderRef, { value: sliderValue, min, max, step, onChange })
+  const rangePercent = Math.min(100, Math.max(0, ((sliderValue - min) / (max - min)) * 100))
 
   // Click-to-edit state for the value readout
   const [editing, setEditing] = useState(false)
@@ -122,8 +126,8 @@ export const ConsoleSlider = memo(function ConsoleSlider({
     setEditing(false)
   }, [min, max, step, onChange])
 
-  const handleValueChange = useCallback((nextValue: number[]) => {
-    const [next] = nextValue
+  const handleValueChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = Number(event.currentTarget.value)
     if (Number.isFinite(next)) {
       onChange(next)
     }
@@ -183,46 +187,37 @@ export const ConsoleSlider = memo(function ConsoleSlider({
         </div>
 
         {/* Slider track */}
-        <SliderPrimitive.Root
-          ref={sliderRef}
-          aria-label={label}
-          value={[sliderValue]}
-          onValueChange={handleValueChange}
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onLostPointerCapture={handlePointerUp}
-          min={min}
-          max={max}
-          step={step}
-          className="relative flex h-4 w-full touch-none items-center select-none"
-        >
-          <SliderPrimitive.Track
-            className="relative h-1.5 grow overflow-hidden rounded-full panel-recessed"
-            style={{ background: 'var(--card)' }}
-          >
-            <SliderPrimitive.Range
-              className="absolute h-full"
-              style={{ background: c.rangeGradient, boxShadow: c.rangeGlow }}
+        <Tooltip open={isDragging}>
+          <TooltipTrigger asChild>
+            <input
+              ref={sliderRef}
+              type="range"
+              aria-label={label}
+              aria-valuetext={value}
+              value={sliderValue}
+              min={min}
+              max={max}
+              step={step}
+              onChange={handleValueChange}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onLostPointerCapture={handlePointerUp}
+              className="console-native-range h-4 w-full"
+              style={{
+                '--console-range-start': c.rangeStart,
+                '--console-range-end': c.rangeEnd,
+                '--console-range-percent': `${rangePercent}%`,
+                '--console-range-glow': c.rangeGlow,
+                '--console-thumb-border': c.thumbBorder,
+                '--console-thumb-glow': c.thumbGlow,
+              } as React.CSSProperties}
             />
-          </SliderPrimitive.Track>
-          <Tooltip open={isDragging}>
-            <TooltipTrigger asChild>
-              <SliderPrimitive.Thumb
-                aria-label={label}
-                className="console-thumb block shrink-0 rounded-full motion-safe:transition-[box-shadow,transform] motion-safe:duration-100 focus-visible:outline-hidden cursor-grab active:cursor-grabbing"
-                style={{
-                  width: 16, height: 16,
-                  borderColor: c.thumbBorder,
-                  boxShadow: c.thumbGlow,
-                }}
-              />
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs font-mono py-0.5 px-1.5" style={{ color: c.text }}>
-              {value}
-            </TooltipContent>
-          </Tooltip>
-        </SliderPrimitive.Root>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs font-mono py-0.5 px-1.5" style={{ color: c.text }}>
+            {value}
+          </TooltipContent>
+        </Tooltip>
       </div>
   )
 })

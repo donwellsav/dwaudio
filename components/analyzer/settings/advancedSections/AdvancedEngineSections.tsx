@@ -2,17 +2,12 @@
 
 import { memo } from 'react'
 import { ConsoleSlider } from '@/components/ui/console-slider'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Section } from '@/components/analyzer/settings/SettingsShared'
 import { DEFAULT_DIAGNOSTICS } from '@/lib/settings/defaults'
 import { deriveDefaultDetectorSettings } from '@/lib/settings/defaultDetectorSettings'
 import { parseFftSize, type AdvancedSectionProps, type DiagnosticsProfile } from './shared'
+
+const expertSelectClass = 'h-7 w-full rounded border border-input bg-transparent px-2 text-dwa-sm font-mono tracking-wide outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50'
 
 export const AdvancedNoiseFloorSection = memo(function AdvancedNoiseFloorSection({
   settings,
@@ -87,19 +82,15 @@ export const AdvancedPeakDetectionSection = memo(function AdvancedPeakDetectionS
           showTooltip={settings.showTooltips}
           tooltip="Absolute: fixed dB threshold. Relative: above noise floor. Hybrid: uses both (recommended)."
         >
-          <Select
+          <select
+            className={expertSelectClass}
             value={settings.thresholdMode}
-            onValueChange={(value) => actions.updateDiagnosticField('thresholdMode', value as DiagnosticsProfile['thresholdMode'])}
+            onChange={(event) => actions.updateDiagnosticField('thresholdMode', event.currentTarget.value as DiagnosticsProfile['thresholdMode'])}
           >
-            <SelectTrigger size="sm" className="h-7 w-full px-2 text-dwa-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent size="compact">
-              <SelectItem value="absolute">Absolute - Fixed dB</SelectItem>
-              <SelectItem value="relative">Relative - Above Noise</SelectItem>
-              <SelectItem value="hybrid">Hybrid (Recommended)</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="absolute">Absolute - Fixed dB</option>
+            <option value="relative">Relative - Above Noise</option>
+            <option value="hybrid">Hybrid (Recommended)</option>
+          </select>
         </Section>
         <ConsoleSlider
           label="Prominence"
@@ -195,19 +186,15 @@ export const AdvancedDspSection = memo(function AdvancedDspSection({
           showTooltip={settings.showTooltips}
           tooltip="4096 fast, 8192 balanced, 16384 high-res low-end."
         >
-          <Select
+          <select
+            className={expertSelectClass}
             value={settings.fftSize.toString()}
-            onValueChange={(value) => actions.updateDiagnosticField('fftSizeOverride', parseFftSize(value))}
+            onChange={(event) => actions.updateDiagnosticField('fftSizeOverride', parseFftSize(event.currentTarget.value))}
           >
-            <SelectTrigger size="sm" className="h-7 w-full px-2 text-dwa-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent size="compact">
-              <SelectItem value="4096">4096 - Fast</SelectItem>
-              <SelectItem value="8192">8192 - Balanced</SelectItem>
-              <SelectItem value="16384">16384 - High Res</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="4096">4096 - Fast</option>
+            <option value="8192">8192 - Balanced</option>
+            <option value="16384">16384 - High Res</option>
+          </select>
         </Section>
         <ConsoleSlider
           label="Smoothing"

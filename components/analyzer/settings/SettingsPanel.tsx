@@ -1,14 +1,14 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { FlaskConical, RotateCcw, SlidersHorizontal, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ResetConfirmDialog } from '../ResetConfirmDialog'
 import { LiveTab } from './LiveTab'
 import { DisplayTab } from './DisplayTab'
 import { AdvancedTab } from './AdvancedTab'
-import { useSettingsPanelState } from '@/hooks/useSettingsPanelState'
+import { useSettings } from '@/contexts/SettingsContext'
+import { hasCustomGateOverrides } from '@/hooks/useAnalyzerLayoutState'
 import type { DetectorSettings } from '@/types/advisory'
 import type { SettingsTab } from './settingsPanelTypes'
 
@@ -33,17 +33,24 @@ export const SettingsPanel = memo(function SettingsPanel({
   tabIdPrefix = 'settings-tab',
   panelIdPrefix = 'settings-tabpanel',
 }: SettingsPanelProps) {
-  const {
-    activeTab,
-    setActiveTab,
-    hasCustomGates,
-    resetSettings,
-  } = useSettingsPanelState({
-    activeTab: controlledTab,
-    onTabChange,
-  })
+  const ctx = useSettings()
+  const [internalTab, setInternalTab] = useState<SettingsTab>('live')
+  const activeTab = controlledTab ?? internalTab
+  const setActiveTab = useCallback((tab: SettingsTab) => {
+    if (onTabChange) {
+      onTabChange(tab)
+      return
+    }
+    setInternalTab(tab)
+  }, [onTabChange])
+  const hasCustomGates = hasCustomGateOverrides(ctx.session)
   const activePanelId = `${panelIdPrefix}-${activeTab}`
   const activeTabId = `${tabIdPrefix}-${activeTab}`
+  const resetSettingsWithConfirm = () => {
+    if (window.confirm('Reset settings? This will restore all detection settings to their defaults and clear active issues.')) {
+      ctx.resetSettings()
+    }
+  }
 
   return (
     <TooltipProvider delayDuration={400}>
@@ -93,15 +100,15 @@ export const SettingsPanel = memo(function SettingsPanel({
         </div>
 
         <div className="panel-groove mt-1 pt-1">
-          <ResetConfirmDialog
-            onConfirm={resetSettings}
-            trigger={(
-              <Button variant="ghost" size="sm" className="h-6 w-full text-xs text-muted-foreground/50 hover:text-muted-foreground">
-                <RotateCcw className="h-3 w-3 mr-1.5" />
-                Reset Defaults
-              </Button>
-            )}
-          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-full text-xs text-muted-foreground/50 hover:text-muted-foreground"
+            onClick={resetSettingsWithConfirm}
+          >
+            <RotateCcw className="h-3 w-3 mr-1.5" />
+            Reset Defaults
+          </Button>
         </div>
       </div>
     </TooltipProvider>
