@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useState, type FocusEvent, type KeyboardEvent } from 'react'
+import { memo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Moon,
@@ -38,12 +38,17 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
 }: HeaderBarMobileMenuProps) {
   const isDarkTheme = isDarkResolvedTheme(resolvedTheme)
   const [isOpen, setIsOpen] = useState(false)
+  const isPointerDownInsideMenuRef = useRef(false)
   const runMenuAction = (action: () => void) => {
+    isPointerDownInsideMenuRef.current = false
     action()
     setIsOpen(false)
   }
   const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
     const nextFocus = event.relatedTarget
+    if (isPointerDownInsideMenuRef.current) {
+      return
+    }
     if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
       setIsOpen(false)
     }
@@ -82,6 +87,9 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
       {isOpen ? (
         <div
           role="menu"
+          onPointerDownCapture={() => {
+            isPointerDownInsideMenuRef.current = true
+          }}
           className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded border border-border/40 bg-popover p-1 text-popover-foreground shadow-md"
         >
           {isRunning ? (
