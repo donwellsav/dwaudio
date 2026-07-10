@@ -28,8 +28,12 @@ describe('HeaderBarDeviceControls', () => {
     expect((select as HTMLSelectElement).value).toBe('stage-left')
     expect(select.getAttribute('title')).toBe('Audio input: Stage Left Mic')
     expect(select.className).toContain('text-transparent')
+    expect(select.className).toContain('min-h-[44px]')
+    expect(select.className).toContain('min-w-[44px]')
     expect(select.className).toContain('tablet:text-foreground')
     expect(select.className).toContain('tablet:w-auto')
+    expect(select.parentElement?.className).toContain('min-h-[44px]')
+    expect(select.parentElement?.className).toContain('min-w-[44px]')
 
     fireEvent.change(select, { target: { value: 'stage-right' } })
     expect(handleDeviceChange).toHaveBeenCalledWith('stage-right')

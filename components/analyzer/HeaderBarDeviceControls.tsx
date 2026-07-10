@@ -59,13 +59,13 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="relative h-11 w-11 text-foreground/70 hover:text-foreground btn-glow tablet:w-auto tablet:max-w-56">
+          <div className="relative h-11 w-11 min-h-[44px] min-w-[44px] text-foreground/70 hover:text-foreground btn-glow tablet:w-auto tablet:max-w-56">
             <select
               aria-label="Select audio input"
               title={`Audio input: ${selectedDeviceLabel}`}
               value={selectedDeviceId}
               onChange={(event) => handleDeviceChange(event.currentTarget.value)}
-              className="h-11 w-11 cursor-pointer appearance-none rounded bg-transparent text-transparent outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary tablet:w-auto tablet:max-w-56 tablet:pl-9 tablet:pr-6 tablet:text-foreground tablet:text-dwa-sm tablet:font-mono"
+              className="h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer appearance-none rounded bg-transparent text-transparent outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary tablet:w-auto tablet:max-w-56 tablet:pl-9 tablet:pr-6 tablet:text-foreground tablet:text-dwa-sm tablet:font-mono"
             >
               <option value="" className="text-foreground">Default (System)</option>
               {devices.map((device) => (
