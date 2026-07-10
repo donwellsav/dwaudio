@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
 const CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
@@ -34,7 +33,7 @@ async function loadNextConfig(staticExport: boolean): Promise<NextConfigContract
   if (staticExport) process.env.DWA_STATIC_EXPORT = '1'
   else delete process.env.DWA_STATIC_EXPORT
 
-  const configUrl = pathToFileURL(new URL('../next.config.mjs', import.meta.url).pathname)
+  const configUrl = new URL('../next.config.mjs', import.meta.url)
   const importedConfig = await import(`${configUrl.href}?contract=${configImport++}`)
   return importedConfig.default as NextConfigContract
 }
@@ -59,7 +58,7 @@ describe('security header hosting contract', () => {
 
     expect(config.output).toBe('export')
     expect(config.headers).toBeUndefined()
-    expect(existsSync(headersUrl), 'public/_headers must be copied by static export').toBe(true)
+    expect(existsSync(headersUrl), 'public/_headers must exist').toBe(true)
     expect(readFileSync(headersUrl, 'utf8')).toBe(EXPECTED_STATIC_HEADERS)
   })
 

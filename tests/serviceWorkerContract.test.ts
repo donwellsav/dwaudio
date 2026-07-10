@@ -27,6 +27,11 @@ class WorkerRequest {
 function createServiceWorkerHarness() {
   const listeners = new Map<string, (event: unknown) => void>()
   const cachedResponse = { source: 'cache' }
+  const networkResponse = {
+    clone: vi.fn(() => ({ source: 'network clone' })),
+    ok: true,
+    source: 'network',
+  }
   const cache = {
     add: vi.fn(async (request: WorkerRequest) => void request),
     addAll: vi.fn(async (requests: WorkerRequest[]) => void requests),
@@ -35,9 +40,10 @@ function createServiceWorkerHarness() {
   const caches = {
     delete: vi.fn(async () => true),
     keys: vi.fn(async () => [] as string[]),
-    match: vi.fn(async () => cachedResponse),
+    match: vi.fn(async (): Promise<unknown> => cachedResponse),
     open: vi.fn(async () => cache),
   }
+  const fetch = vi.fn(async () => networkResponse)
   const self = {
     addEventListener: vi.fn((type: string, listener: (event: unknown) => void) => {
       listeners.set(type, listener)
@@ -51,7 +57,7 @@ function createServiceWorkerHarness() {
     readFileSync(new URL('../public/dwa-service-worker.js', import.meta.url), 'utf8'),
     {
       caches,
-      fetch: vi.fn(),
+      fetch,
       Request: WorkerRequest,
       Response,
       self,
@@ -90,7 +96,15 @@ function createServiceWorkerHarness() {
     return respondWith
   }
 
-  return { cache, cachedResponse, dispatchFetch, dispatchInstall }
+  return {
+    cache,
+    caches,
+    cachedResponse,
+    dispatchFetch,
+    dispatchInstall,
+    fetch,
+    networkResponse,
+  }
 }
 
 describe('offline service worker contract', () => {
@@ -105,6 +119,18 @@ describe('offline service worker contract', () => {
 
     expect(respondWith).toHaveBeenCalledOnce()
     await expect(respondWith.mock.calls[0][0]).resolves.toBe(harness.cachedResponse)
+  })
+
+  it('returns a successful worker response when the runtime cache write fails', async () => {
+    harness.caches.match.mockResolvedValueOnce(undefined)
+    harness.cache.put.mockRejectedValueOnce(new Error('quota exceeded'))
+
+    const respondWith = harness.dispatchFetch('worker')
+
+    expect(respondWith).toHaveBeenCalledOnce()
+    await expect(respondWith.mock.calls[0][0]).resolves.toBe(harness.networkResponse)
+    expect(harness.fetch).toHaveBeenCalledOnce()
+    expect(harness.cache.put).toHaveBeenCalledOnce()
   })
 
   it('adds every core asset atomically with reload requests', async () => {
