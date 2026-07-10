@@ -297,8 +297,8 @@ const DisplayFaderLinkSection = memo(function DisplayFaderLinkSection({
             color="green"
             value={`${settings.faderLinkCenterGainDb}dB`}
             tooltip={settings.showTooltips ? 'Home position for gain fader. Default 0dB (unity).' : undefined}
-            min={-20}
-            max={20}
+            min={-40}
+            max={40}
             step={1}
             sliderValue={settings.faderLinkCenterGainDb}
             onChange={(value) => actions.updateDisplayField('faderLinkCenterGainDb', value)}

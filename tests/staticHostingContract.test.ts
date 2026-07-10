@@ -1,13 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-const EXPECTED_SECURITY_HEADERS = [
+const BASE_SECURITY_HEADERS = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'microphone=(self), camera=(), geolocation=()' },
   { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+]
+const EXPECTED_SECURITY_HEADERS = [
+  ...BASE_SECURITY_HEADERS,
   { key: 'Content-Security-Policy', value: CONTENT_SECURITY_POLICY },
 ]
 const EXPECTED_STATIC_HEADERS = `/*
@@ -18,7 +21,6 @@ const EXPECTED_STATIC_HEADERS = `/*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Content-Security-Policy: ${CONTENT_SECURITY_POLICY}
 `
-const originalStaticExport = process.env.DWA_STATIC_EXPORT
 let configImport = 0
 
 interface NextConfigContract {
@@ -29,23 +31,33 @@ interface NextConfigContract {
   }>>
 }
 
-async function loadNextConfig(staticExport: boolean): Promise<NextConfigContract> {
-  if (staticExport) process.env.DWA_STATIC_EXPORT = '1'
-  else delete process.env.DWA_STATIC_EXPORT
+async function loadNextConfig(
+  staticExport: boolean,
+  nodeEnv: 'development' | 'production',
+): Promise<NextConfigContract> {
+  vi.stubEnv('DWA_STATIC_EXPORT', staticExport ? '1' : undefined)
+  vi.stubEnv('NODE_ENV', nodeEnv)
 
   const configUrl = new URL('../next.config.mjs', import.meta.url)
   const importedConfig = await import(`${configUrl.href}?contract=${configImport++}`)
   return importedConfig.default as NextConfigContract
 }
 
-afterAll(() => {
-  if (originalStaticExport === undefined) delete process.env.DWA_STATIC_EXPORT
-  else process.env.DWA_STATIC_EXPORT = originalStaticExport
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('security header hosting contract', () => {
-  it('serves the exact local-only policy from non-static Next builds', async () => {
-    const config = await loadNextConfig(false)
+  it('keeps the five base security headers without the strict CSP in development', async () => {
+    const config = await loadNextConfig(false, 'development')
+
+    await expect(config.headers?.()).resolves.toEqual([
+      { source: '/(.*)', headers: BASE_SECURITY_HEADERS },
+    ])
+  })
+
+  it('serves the exact local-only policy from production non-static Next builds', async () => {
+    const config = await loadNextConfig(false, 'production')
 
     await expect(config.headers?.()).resolves.toEqual([
       { source: '/(.*)', headers: EXPECTED_SECURITY_HEADERS },
@@ -53,7 +65,7 @@ describe('security header hosting contract', () => {
   })
 
   it('ships the exact literal local-only policy for static hosting', async () => {
-    const config = await loadNextConfig(true)
+    const config = await loadNextConfig(true, 'production')
     const headersUrl = new URL('../public/_headers', import.meta.url)
 
     expect(config.output).toBe('export')

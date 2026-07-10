@@ -56,8 +56,12 @@ async function networkFirstNavigation(request) {
   try {
     const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(RUNTIME_CACHE)
-      await cache.put(request, response.clone())
+      try {
+        const cache = await caches.open(RUNTIME_CACHE)
+        await cache.put(request, response.clone())
+      } catch {
+        // Runtime caching is optional; preserve the successful navigation.
+      }
     }
     return response
   } catch {

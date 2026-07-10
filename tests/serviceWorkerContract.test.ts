@@ -82,13 +82,13 @@ function createServiceWorkerHarness() {
     return installation!
   }
 
-  function dispatchFetch(destination: RequestDestination) {
+  function dispatchFetch(destination: RequestDestination, mode: RequestMode = 'cors') {
     const respondWith = vi.fn()
     listenerFor('fetch')({
       request: {
         destination,
         method: 'GET',
-        mode: 'cors',
+        mode,
         url: `${SELF_ORIGIN}/_next/static/chunks/dsp-worker.js`,
       },
       respondWith,
@@ -126,6 +126,18 @@ describe('offline service worker contract', () => {
     harness.cache.put.mockRejectedValueOnce(new Error('quota exceeded'))
 
     const respondWith = harness.dispatchFetch('worker')
+
+    expect(respondWith).toHaveBeenCalledOnce()
+    await expect(respondWith.mock.calls[0][0]).resolves.toBe(harness.networkResponse)
+    expect(harness.fetch).toHaveBeenCalledOnce()
+    expect(harness.cache.put).toHaveBeenCalledOnce()
+  })
+
+  it('returns a successful navigation response when the runtime cache write fails', async () => {
+    harness.caches.match.mockResolvedValue(undefined)
+    harness.cache.put.mockRejectedValueOnce(new Error('quota exceeded'))
+
+    const respondWith = harness.dispatchFetch('document', 'navigate')
 
     expect(respondWith).toHaveBeenCalledOnce()
     await expect(respondWith.mock.calls[0][0]).resolves.toBe(harness.networkResponse)

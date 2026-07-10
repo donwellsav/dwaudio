@@ -21,7 +21,9 @@ const securityHeaders = [
     key: 'Strict-Transport-Security',
     value: 'max-age=31536000; includeSubDomains',
   },
-  { key: 'Content-Security-Policy', value: contentSecurityPolicy },
+  ...(process.env.NODE_ENV === 'production'
+    ? [{ key: 'Content-Security-Policy', value: contentSecurityPolicy }]
+    : []),
 ]
 
 /** @type {import('next').NextConfig} */
