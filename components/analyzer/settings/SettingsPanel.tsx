@@ -4,6 +4,7 @@ import { memo, useCallback, useState } from 'react'
 import { FlaskConical, RotateCcw, SlidersHorizontal, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { PriorityAlertBanner } from '@/components/analyzer/PriorityAlertBanner'
 import { LiveTab } from './LiveTab'
 import { DisplayTab } from './DisplayTab'
 import { AdvancedTab } from './AdvancedTab'
@@ -18,6 +19,7 @@ export interface SettingsPanelProps {
   onTabChange?: (tab: SettingsTab) => void
   tabIdPrefix?: string
   panelIdPrefix?: string
+  onViewIssues?: () => void
 }
 
 export const SETTINGS_TABS: { id: SettingsTab; label: string; shortLabel?: string; Icon: typeof Zap }[] = [
@@ -32,6 +34,7 @@ export const SettingsPanel = memo(function SettingsPanel({
   onTabChange,
   tabIdPrefix = 'settings-tab',
   panelIdPrefix = 'settings-tabpanel',
+  onViewIssues,
 }: SettingsPanelProps) {
   const ctx = useSettings()
   const [internalTab, setInternalTab] = useState<SettingsTab>('live')
@@ -55,6 +58,8 @@ export const SettingsPanel = memo(function SettingsPanel({
   return (
     <TooltipProvider delayDuration={400}>
       <div className="@container space-y-1">
+        {onViewIssues ? <PriorityAlertBanner onViewIssues={onViewIssues} /> : null}
+
         {!controlledTab && (
           <div className="mb-1 flex gap-1" role="tablist" aria-label="Settings tabs">
             {SETTINGS_TABS.map(({ id, label, shortLabel, Icon }) => (

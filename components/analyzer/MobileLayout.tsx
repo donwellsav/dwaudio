@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { InputMeterSlider } from '@/components/analyzer/InputMeterSlider'
 import { haptic } from '@/components/analyzer/MobileLayoutCommon'
 import {
@@ -18,6 +18,7 @@ import { useMobileFaderState } from '@/hooks/useMobileFaderState'
 import { useMobileGraphState } from '@/hooks/useMobileGraphState'
 import { useMobileTabNavigation } from '@/hooks/useMobileTabNavigation'
 import { MOBILE_MAX_DISPLAYED_ISSUES } from '@/lib/dsp/constants'
+import { PriorityAlertBanner } from '@/components/analyzer/PriorityAlertBanner'
 
 export const MobileLayout = memo(function MobileLayout() {
   const {
@@ -64,6 +65,12 @@ export const MobileLayout = memo(function MobileLayout() {
   } = useUI()
 
   const [landscapePanel, setLandscapePanel] = useState<'issues' | 'settings'>('issues')
+
+  const showPriorityIssue = useCallback(() => {
+    if (isRtaFullscreen) toggleRtaFullscreen()
+    setMobileTab('issues')
+    setLandscapePanel('issues')
+  }, [isRtaFullscreen, setMobileTab, toggleRtaFullscreen])
 
   const {
     mobileFaderMode,
@@ -120,13 +127,21 @@ export const MobileLayout = memo(function MobileLayout() {
       range: spectrumRange,
       onFreqRangeChange: handleFreqRangeChange,
       onThresholdChange: handleThresholdChange,
+      overlay: isRtaFullscreen ? (
+        <PriorityAlertBanner
+          onViewIssues={showPriorityIssue}
+          className="absolute inset-x-2 top-2 z-30"
+        />
+      ) : null,
     }),
     [
       earlyWarning,
       handleFreqRangeChange,
       handleThresholdChange,
       isFrozen,
+      isRtaFullscreen,
       mobileAdvisories,
+      showPriorityIssue,
       spectrumDisplay,
       spectrumRange,
       spectrumRef,
@@ -201,6 +216,7 @@ export const MobileLayout = memo(function MobileLayout() {
         <div className="px-2">
           <SettingsPanel
             settings={settings}
+            onViewIssues={showPriorityIssue}
           />
         </div>
       </>
@@ -212,6 +228,7 @@ export const MobileLayout = memo(function MobileLayout() {
       isAutoGain,
       setAutoGain,
       setInputGain,
+      showPriorityIssue,
       settings,
     ],
   )
@@ -236,6 +253,7 @@ export const MobileLayout = memo(function MobileLayout() {
         <div className="px-1">
           <SettingsPanel
             settings={settings}
+            onViewIssues={showPriorityIssue}
           />
         </div>
       </div>
@@ -247,6 +265,7 @@ export const MobileLayout = memo(function MobileLayout() {
       isAutoGain,
       setAutoGain,
       setInputGain,
+      showPriorityIssue,
       settings,
     ],
   )
