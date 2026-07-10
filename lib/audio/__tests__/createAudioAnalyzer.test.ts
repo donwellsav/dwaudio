@@ -171,19 +171,21 @@ describe('createAudioAnalyzer', () => {
     expect(analyzer.getState().isRunning).toBe(true)
   })
 
-  it('stops the wrapper when the detector reports an automatic shutdown', async () => {
+  it('exposes a suspended-context shutdown through wrapper state and callbacks', async () => {
     const onError = vi.fn()
     const onStateChange = vi.fn()
     const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
+    const message = 'Audio context suspended — could not resume. Try restarting.'
 
     await analyzer.start()
-    mockDetectorCallbacks?.onStopped?.('Microphone disconnected')
+    mockDetectorCallbacks?.onStopped?.(message)
 
     expect(cancelAnimationFrameMock).toHaveBeenCalledWith(1)
     expect(analyzer.getState().isRunning).toBe(false)
+    expect(analyzer.getState().error).toBe(message)
     expect(onStateChange).toHaveBeenLastCalledWith(false)
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({
-      message: 'Microphone disconnected',
+      message,
     }))
 
     await analyzer.start()

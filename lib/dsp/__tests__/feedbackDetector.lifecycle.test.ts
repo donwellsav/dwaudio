@@ -163,6 +163,56 @@ describe('FeedbackDetector lifecycle', () => {
     expect(requestAnimationFrame).not.toHaveBeenCalled()
   })
 
+  it('releases an acquired microphone and source when AudioContext resume rejects', async () => {
+    const pendingResolves: Array<(stream: MediaStream) => void> = []
+    const acquiredStream = createMockStream()
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => {
+      pendingResolves.push(resolve)
+    }))
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector()
+    const startPromise = detector.start()
+    const context = createdContexts[0]
+    context.state = 'suspended'
+    context.resume.mockRejectedValueOnce(new Error('resume failed'))
+    for (const resolve of pendingResolves) {
+      resolve(acquiredStream.stream)
+    }
+
+    await expect(startPromise).rejects.toThrow('resume failed')
+
+    const source = context.createMediaStreamSource.mock.results[0]?.value as {
+      disconnect: ReturnType<typeof vi.fn>
+    }
+    expect(acquiredStream.track.stop).toHaveBeenCalledOnce()
+    expect(source.disconnect).toHaveBeenCalledOnce()
+    expect(detector.getState().isRunning).toBe(false)
+  })
+
+  it('stops and releases the microphone when a suspended context cannot resume', async () => {
+    const acquiredStream = createMockStream()
+    const getUserMedia = vi.fn().mockResolvedValue(acquiredStream.stream)
+    const onError = vi.fn()
+    const onStopped = vi.fn()
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector({}, { onError, onStopped })
+    await detector.start()
+
+    const context = createdContexts[0]
+    context.state = 'suspended'
+    context.resume.mockRejectedValueOnce(new Error('gesture required'))
+    context.dispatchStateChange()
+    await Promise.resolve()
+
+    const message = 'Audio context suspended — could not resume. Try restarting.'
+    expect(detector.getState().isRunning).toBe(false)
+    expect(acquiredStream.track.stop).toHaveBeenCalledOnce()
+    expect(onError).toHaveBeenCalledWith(message)
+    expect(onStopped).toHaveBeenCalledWith(message)
+  })
+
   it('reacquires the microphone after an active track ends', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()

@@ -409,6 +409,32 @@ describe('FeedbackDetector hot path — Part A: Method-level', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('FeedbackDetector hot path — Part B: analyze() harness', () => {
+  describe('auto-gain calibration lifecycle', () => {
+    it('keeps locked auto gain locked when enabled settings are reapplied', () => {
+      const detector = createReadyDetector((arr) => {
+        arr.fill(-80)
+        arr[500] = -25
+      })
+
+      detector.updateSettings({ autoGainEnabled: true })
+      for (let frame = 1; frame <= 31; frame++) {
+        ;(detector as any).analyze(frame * 100, 100)
+      }
+      expect(detector.getState().autoGainLocked).toBe(true)
+
+      detector.updateSettings({
+        feedbackThresholdDb: 30,
+        autoGainEnabled: true,
+      })
+
+      expect(detector.getState().autoGainLocked).toBe(true)
+
+      detector.updateSettings({ autoGainEnabled: false })
+      detector.updateSettings({ autoGainEnabled: true })
+      expect(detector.getState().autoGainLocked).toBe(false)
+    })
+  })
+
   // ── Silence gate ──────────────────────────────────────────────────
 
   describe('silence gate', () => {

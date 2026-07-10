@@ -209,11 +209,18 @@ export class FeedbackDetector {
     if (this.startPromise) return this.startPromise
 
     const generation = ++this.startGeneration
-    this.startPromise = this.startInternal(options, generation).finally(() => {
-      if (this.startGeneration === generation) {
-        this.startPromise = null
-      }
-    })
+    this.startPromise = this.startInternal(options, generation)
+      .catch((error) => {
+        if (this.isCurrentStart(generation)) {
+          this.stop({ releaseMic: true })
+        }
+        throw error
+      })
+      .finally(() => {
+        if (this.startGeneration === generation) {
+          this.startPromise = null
+        }
+      })
     return this.startPromise
   }
 
@@ -352,7 +359,11 @@ export class FeedbackDetector {
         if (!ctx || !this.isRunning) return
         if (ctx.state === 'suspended') {
           ctx.resume().catch(() => {
-            this.callbacks.onError?.('Audio context suspended — could not resume. Try restarting.')
+            if (!this.isRunning || this.audioContext !== ctx) return
+            const message = 'Audio context suspended — could not resume. Try restarting.'
+            this.callbacks.onError?.(message)
+            this.callbacks.onStopped?.(message)
+            this.stop({ releaseMic: true })
           })
         } else if (ctx.state === 'closed') {
           // AudioContext is permanently closed (cannot be resumed) — stop analysis
@@ -514,10 +525,11 @@ export class FeedbackDetector {
       }
     }
     if (settings.autoGainEnabled !== undefined) {
+      const wasAutoGainEnabled = this._autoGainEnabled
       this._autoGainEnabled = settings.autoGainEnabled
       mappedConfig.autoGainEnabled = settings.autoGainEnabled
       // When switching to auto, seed from current manual setting and restart calibration
-      if (settings.autoGainEnabled) {
+      if (settings.autoGainEnabled && !wasAutoGainEnabled) {
         this._autoGainDb = this.config.inputGainDb ?? 0
         this._autoGainLocked = false
         this._autoGainCalibrationStartMs = 0
