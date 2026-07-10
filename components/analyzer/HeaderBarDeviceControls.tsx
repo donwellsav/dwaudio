@@ -25,6 +25,10 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
   handleDeviceChange,
   onToggleAnalysis,
 }: HeaderBarDeviceControlsProps) {
+  const selectedDeviceLabel = selectedDeviceId
+    ? devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? 'Default (System)'
+    : 'Default (System)'
+
   return (
     <div className="flex items-center gap-2 sm:gap-2.5 flex-1 min-w-0">
       <div className="relative">
@@ -55,13 +59,13 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="relative h-11 w-11 text-foreground/70 hover:text-foreground btn-glow">
+          <div className="relative h-11 w-11 text-foreground/70 hover:text-foreground btn-glow tablet:w-auto tablet:max-w-56">
             <select
               aria-label="Select audio input"
-              title="Audio input"
+              title={`Audio input: ${selectedDeviceLabel}`}
               value={selectedDeviceId}
               onChange={(event) => handleDeviceChange(event.currentTarget.value)}
-              className="h-11 w-11 cursor-pointer appearance-none rounded bg-transparent text-transparent outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary"
+              className="h-11 w-11 cursor-pointer appearance-none rounded bg-transparent text-transparent outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-primary tablet:w-auto tablet:max-w-56 tablet:pl-9 tablet:pr-6 tablet:text-foreground tablet:text-dwa-sm tablet:font-mono"
             >
               <option value="" className="text-foreground">Default (System)</option>
               {devices.map((device) => (
@@ -70,12 +74,12 @@ export const HeaderBarDeviceControls = memo(function HeaderBarDeviceControls({
                 </option>
               ))}
             </select>
-            <Mic className="pointer-events-none absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 tablet:size-6" />
+            <Mic className="pointer-events-none absolute left-1/2 top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 tablet:left-3 tablet:size-4 tablet:translate-x-0" />
             <ChevronDown className="pointer-events-none absolute bottom-0.5 right-0.5 w-2.5 h-2.5 text-muted-foreground/50" />
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-sm">
-          Audio input
+          Audio input: {selectedDeviceLabel}
         </TooltipContent>
       </Tooltip>
     </div>
