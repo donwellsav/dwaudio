@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EarlyWarning } from '@/hooks/audioAnalyzerTypes'
 import type { Advisory } from '@/types/advisory'
@@ -113,16 +113,17 @@ describe('PriorityAlertBanner', () => {
   })
 
   it('shows persistent early warning only at five seconds or later', () => {
-    setAdvisoryData({
-      earlyWarning: makeEarlyWarning({ timestamp: Date.now() - 4000 }),
-    })
-    render(<PriorityAlertBanner onViewIssues={vi.fn()} />)
+    const timestamp = Date.now()
+    const earlyWarning = makeEarlyWarning({ timestamp })
+    setAdvisoryData({ earlyWarning })
+    vi.setSystemTime(timestamp + 4999)
+    const { unmount } = render(<PriorityAlertBanner onViewIssues={vi.fn()} />)
 
     expect(screen.queryByRole('status')).toBeNull()
 
-    act(() => {
-      vi.advanceTimersByTime(1000)
-    })
+    unmount()
+    vi.setSystemTime(timestamp + 5000)
+    render(<PriorityAlertBanner onViewIssues={vi.fn()} />)
 
     expect(screen.getByRole('status').textContent).toContain('Early Warning')
   })

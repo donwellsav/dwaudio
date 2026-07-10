@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EarlyWarning } from '@/hooks/audioAnalyzerTypes'
 import {
+  getEarlyWarningElapsedSeconds,
   getEarlyWarningProgressPercent,
   getEarlyWarningTone,
   hasEarlyWarningContent,
@@ -41,6 +42,9 @@ describe('useEarlyWarningPanelState', () => {
     expect(getEarlyWarningTone(0)).toBe('notice')
     expect(getEarlyWarningTone(5)).toBe('warning')
     expect(getEarlyWarningTone(10)).toBe('critical')
+
+    expect(getEarlyWarningElapsedSeconds(Date.now() - 4999)).toBe(4)
+    expect(getEarlyWarningElapsedSeconds(Date.now() - 5000)).toBe(5)
 
     expect(getEarlyWarningProgressPercent(3)).toBe(20)
     expect(getEarlyWarningProgressPercent(30)).toBe(100)
