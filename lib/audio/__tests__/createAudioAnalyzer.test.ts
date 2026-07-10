@@ -211,4 +211,31 @@ describe('createAudioAnalyzer', () => {
     expect(analyzer.getState().isRunning).toBe(false)
     expect(requestAnimationFrameMock).not.toHaveBeenCalled()
   })
+
+  it('ignores a stale start failure after a newer start is running', async () => {
+    let rejectStaleStart!: (error: Error) => void
+    startMock
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+        rejectStaleStart = reject
+      }))
+      .mockResolvedValueOnce(undefined)
+    const onError = vi.fn()
+    const onStateChange = vi.fn()
+    const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
+
+    const staleStart = analyzer.start({ deviceId: 'A' })
+    analyzer.stop({ releaseMic: true })
+    await analyzer.start({ deviceId: 'B' })
+    onError.mockClear()
+    onStateChange.mockClear()
+
+    rejectStaleStart(new Error('Device A permission failed late'))
+
+    await expect(staleStart).resolves.toBeUndefined()
+    expect(analyzer.getState().isRunning).toBe(true)
+    expect(analyzer.getState().hasPermission).toBe(true)
+    expect(analyzer.getState().error).toBeNull()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onStateChange).not.toHaveBeenCalled()
+  })
 })

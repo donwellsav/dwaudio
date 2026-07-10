@@ -125,6 +125,7 @@ export class AudioAnalyzer {
 
       this.callbacks.onStateChange?.(true)
     } catch (err) {
+      if (!this.isCurrentStart(generation)) return
       this._error = err instanceof Error ? err.message : 'Failed to start analyzer'
       this._hasPermission = false
       this.callbacks.onError?.(err instanceof Error ? err : new Error(this._error))
