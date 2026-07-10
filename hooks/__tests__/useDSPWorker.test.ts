@@ -244,6 +244,33 @@ describe('useDSPWorker', () => {
     })
 
     act(() => {
+      worker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array([9, 8, 7, 6]),
+        source: 'spectrumUpdate',
+      })
+    })
+
+    const messagesAfterSpectrumReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
+    )
+
+    expect(messagesAfterSpectrumReturn).toHaveLength(1)
+
+    act(() => {
+      worker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array([9, 8, 7, 6]),
+      })
+    })
+
+    const messagesAfterUntaggedReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
+    )
+
+    expect(messagesAfterUntaggedReturn).toHaveLength(1)
+
+    act(() => {
       worker.emitMessage({ type: 'tracksUpdate', tracks: [] })
     })
 
@@ -268,6 +295,67 @@ describe('useDSPWorker', () => {
 
     expect(flushedMessages).toHaveLength(2)
     expect(flushedMessages[1].peak.binIndex).toBe(2)
+  })
+
+  it('keeps post-reset peaks queued until the in-flight peak returns', () => {
+    const { result } = renderHook(() => useDSPWorker({}))
+    const worker = MockWorker.instances[0]
+    const spectrum = new Float32Array([1, 2, 3, 4])
+    const timeDomain = new Float32Array([0.1, 0.2, 0.3, 0.4])
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      worker.emitMessage({ type: 'ready' })
+      result.current.processPeak(makePeak({ binIndex: 1, timestamp: 100 }), spectrum, 48000, 8192, timeDomain)
+      result.current.reset()
+      result.current.processPeak(makePeak({ binIndex: 2, timestamp: 120 }), spectrum, 48000, 8192, timeDomain)
+      result.current.processPeak(makePeak({
+        binIndex: 3,
+        timestamp: 140,
+        prominenceDb: 7,
+        qEstimate: 6,
+        msdIsHowl: false,
+        msdFastConfirm: false,
+        isPersistent: false,
+        isHighlyPersistent: false,
+      }), spectrum, 48000, 8192, timeDomain)
+    })
+
+    const messagesBeforeFirstReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
+    )
+
+    expect.soft(messagesBeforeFirstReturn.map((message) => message.peak.binIndex)).toEqual([1])
+
+    act(() => {
+      worker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array([9, 8, 7, 6]),
+        timeDomain: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        source: 'peak',
+      })
+    })
+
+    const messagesAfterFirstReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
+    )
+
+    expect(messagesAfterFirstReturn.map((message) => message.peak.binIndex)).toEqual([1, 2])
+
+    act(() => {
+      worker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array([9, 8, 7, 6]),
+        timeDomain: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        source: 'peak',
+      })
+    })
+
+    const messagesAfterSecondReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
+    )
+
+    expect(messagesAfterSecondReturn.map((message) => message.peak.binIndex)).toEqual([1, 2, 3])
   })
 
   it('recycles returned peak spectrum buffers sized to the frequency-bin count', () => {

@@ -273,7 +273,6 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
   )
 
   const reset = useCallback(() => {
-    busyRef.current = false
     pendingPeakQueueRef.current = []
     pendingHistorySyncRef.current = null
     droppedFramesRef.current = 0
