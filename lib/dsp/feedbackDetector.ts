@@ -287,8 +287,6 @@ export class FeedbackDetector {
           audioTrack.onended = () => {
             if (this.isRunning) {
               const message = 'Microphone disconnected'
-              this.callbacks.onError?.(message)
-              this.callbacks.onStopped?.(message)
               try {
                 this.stop({ releaseMic: true })
               } catch {
@@ -297,6 +295,8 @@ export class FeedbackDetector {
                 this.isRunning = false
                 this.stream = null
               }
+              this.callbacks.onError?.(message)
+              this.callbacks.onStopped?.(message)
             }
           }
         }
@@ -344,9 +344,9 @@ export class FeedbackDetector {
         const track = this.stream?.getAudioTracks()[0]
         if (track && track.readyState === 'ended' && this.isRunning) {
           const message = 'Audio device changed — microphone disconnected'
+          this.stop({ releaseMic: true })
           this.callbacks.onError?.(message)
           this.callbacks.onStopped?.(message)
-          this.stop({ releaseMic: true })
         }
       }
       navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler)
@@ -358,22 +358,28 @@ export class FeedbackDetector {
         const ctx = this.audioContext
         if (!ctx || !this.isRunning) return
         if (ctx.state === 'suspended') {
+          const generation = this.startGeneration
           ctx.resume().catch(() => {
-            if (!this.isRunning || this.audioContext !== ctx) return
+            if (
+              !this.isCurrentStart(generation) ||
+              this.audioContext !== ctx ||
+              !this.isRunning ||
+              ctx.state !== 'suspended'
+            ) return
             const message = 'Audio context suspended — could not resume. Try restarting.'
+            this.stop({ releaseMic: true })
             this.callbacks.onError?.(message)
             this.callbacks.onStopped?.(message)
-            this.stop({ releaseMic: true })
           })
         } else if (ctx.state === 'closed') {
           // AudioContext is permanently closed (cannot be resumed) — stop analysis
           // and surface error so user can restart
           const message = 'Audio context closed unexpectedly — tap Restart to resume analysis.'
-          this.callbacks.onError?.(message)
-          this.callbacks.onStopped?.(message)
           this.stop({ releaseMic: true })
           this.audioContext = null
           this.analyser = null
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
         }
       }
       this.audioContext.addEventListener('statechange', this._stateChangeHandler)

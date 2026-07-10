@@ -190,9 +190,56 @@ describe('FeedbackDetector lifecycle', () => {
     expect(detector.getState().isRunning).toBe(false)
   })
 
-  it('stops and releases the microphone when a suspended context cannot resume', async () => {
-    const acquiredStream = createMockStream()
-    const getUserMedia = vi.fn().mockResolvedValue(acquiredStream.stream)
+  it('cleans up before a suspended-context callback synchronously restarts', async () => {
+    const firstStream = createMockStream()
+    const secondStream = createMockStream()
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(firstStream.stream)
+      .mockResolvedValueOnce(secondStream.stream)
+    const onError = vi.fn()
+    let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
+    let restartPromise: Promise<void> | null = null
+    let detector!: FeedbackDetector
+    const onStopped = vi.fn(() => {
+      stoppedState = {
+        isRunning: detector.getState().isRunning,
+        trackState: firstStream.track.readyState,
+      }
+      restartPromise = detector.start()
+    })
+    installBrowserMocks(getUserMedia)
+
+    detector = new FeedbackDetector({}, { onError, onStopped })
+    await detector.start()
+
+    const context = createdContexts[0]
+    context.state = 'suspended'
+    context.resume
+      .mockRejectedValueOnce(new Error('gesture required'))
+      .mockImplementationOnce(async () => {
+        context.state = 'running'
+      })
+    context.dispatchStateChange()
+    await Promise.resolve()
+    await restartPromise
+
+    const message = 'Audio context suspended — could not resume. Try restarting.'
+    expect(stoppedState).toEqual({ isRunning: false, trackState: 'ended' })
+    expect(detector.getState().isRunning).toBe(true)
+    expect(firstStream.track.stop).toHaveBeenCalledOnce()
+    expect(secondStream.track.stop).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(message)
+    expect(onStopped).toHaveBeenCalledWith(message)
+  })
+
+  it('ignores a stale resume rejection after a newer run starts on the same context', async () => {
+    const firstStream = createMockStream()
+    const secondStream = createMockStream()
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(firstStream.stream)
+      .mockResolvedValueOnce(secondStream.stream)
     const onError = vi.fn()
     const onStopped = vi.fn()
     installBrowserMocks(getUserMedia)
@@ -201,75 +248,143 @@ describe('FeedbackDetector lifecycle', () => {
     await detector.start()
 
     const context = createdContexts[0]
+    let rejectOldResume!: (error: Error) => void
+    context.resume.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectOldResume = reject
+    }))
     context.state = 'suspended'
-    context.resume.mockRejectedValueOnce(new Error('gesture required'))
     context.dispatchStateChange()
+
+    detector.stop({ releaseMic: true })
+    context.resume.mockImplementationOnce(async () => {
+      context.state = 'running'
+    })
+    await detector.start()
+    expect(createdContexts).toHaveLength(1)
+    expect(detector.getState().isRunning).toBe(true)
+
+    rejectOldResume(new Error('old resume failed'))
     await Promise.resolve()
 
-    const message = 'Audio context suspended — could not resume. Try restarting.'
-    expect(detector.getState().isRunning).toBe(false)
-    expect(acquiredStream.track.stop).toHaveBeenCalledOnce()
-    expect(onError).toHaveBeenCalledWith(message)
-    expect(onStopped).toHaveBeenCalledWith(message)
+    expect(detector.getState().isRunning).toBe(true)
+    expect(firstStream.track.stop).toHaveBeenCalledOnce()
+    expect(secondStream.track.stop).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onStopped).not.toHaveBeenCalled()
   })
 
-  it('reacquires the microphone after an active track ends', async () => {
+  it('cleans up before a track-ended callback synchronously restarts', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()
     const getUserMedia = vi
       .fn()
       .mockResolvedValueOnce(firstStream.stream)
       .mockResolvedValueOnce(secondStream.stream)
+    let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
+    let restartPromise: Promise<void> | null = null
+    let detector!: FeedbackDetector
+    const onStopped = vi.fn(() => {
+      stoppedState = {
+        isRunning: detector.getState().isRunning,
+        trackState: firstStream.track.readyState,
+      }
+      restartPromise = detector.start()
+    })
     installBrowserMocks(getUserMedia)
 
-    const detector = new FeedbackDetector()
+    detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     firstStream.track.readyState = 'ended'
     firstStream.track.onended?.()
-    await detector.start()
+    await restartPromise
 
+    expect(stoppedState).toEqual({ isRunning: false, trackState: 'ended' })
+    expect(detector.getState().isRunning).toBe(true)
     expect(getUserMedia).toHaveBeenCalledTimes(2)
     expect(createdContexts[0].createMediaStreamSource).toHaveBeenLastCalledWith(secondStream.stream)
   })
 
-  it('reacquires the microphone after devicechange reports an ended track', async () => {
+  it('cleans up an ended track before a shutdown callback throws', async () => {
+    const acquiredStream = createMockStream()
+    const getUserMedia = vi.fn().mockResolvedValue(acquiredStream.stream)
+    const onStopped = vi.fn(() => {
+      throw new Error('callback failed')
+    })
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector({}, { onStopped })
+    await detector.start()
+
+    acquiredStream.track.readyState = 'ended'
+    expect(() => acquiredStream.track.onended?.()).toThrow('callback failed')
+
+    expect(detector.getState().isRunning).toBe(false)
+    expect(acquiredStream.track.stop).toHaveBeenCalledOnce()
+  })
+
+  it('cleans up before a devicechange callback synchronously restarts', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()
     const getUserMedia = vi
       .fn()
       .mockResolvedValueOnce(firstStream.stream)
       .mockResolvedValueOnce(secondStream.stream)
+    let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
+    let restartPromise: Promise<void> | null = null
+    let detector!: FeedbackDetector
+    const onStopped = vi.fn(() => {
+      stoppedState = {
+        isRunning: detector.getState().isRunning,
+        trackState: firstStream.track.readyState,
+      }
+      restartPromise = detector.start()
+    })
     installBrowserMocks(getUserMedia)
 
-    const detector = new FeedbackDetector()
+    detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     firstStream.track.readyState = 'ended'
     deviceChangeListener?.()
-    await detector.start()
+    await restartPromise
 
+    expect(stoppedState).toEqual({ isRunning: false, trackState: 'ended' })
+    expect(detector.getState().isRunning).toBe(true)
     expect(getUserMedia).toHaveBeenCalledTimes(2)
     expect(createdContexts[0].createMediaStreamSource).toHaveBeenLastCalledWith(secondStream.stream)
   })
 
-  it('creates a fresh audio context after the current context closes', async () => {
+  it('cleans up before a closed-context callback synchronously restarts', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()
     const getUserMedia = vi
       .fn()
       .mockResolvedValueOnce(firstStream.stream)
       .mockResolvedValueOnce(secondStream.stream)
+    let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
+    let restartPromise: Promise<void> | null = null
+    let detector!: FeedbackDetector
+    const onStopped = vi.fn(() => {
+      stoppedState = {
+        isRunning: detector.getState().isRunning,
+        trackState: firstStream.track.readyState,
+      }
+      restartPromise = detector.start()
+    })
     installBrowserMocks(getUserMedia)
 
-    const detector = new FeedbackDetector()
+    detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     createdContexts[0].state = 'closed'
     createdContexts[0].dispatchStateChange()
-    await detector.start()
+    await restartPromise
 
+    expect(stoppedState).toEqual({ isRunning: false, trackState: 'ended' })
+    expect(detector.getState().isRunning).toBe(true)
     expect(createdContexts).toHaveLength(2)
     expect(getUserMedia).toHaveBeenCalledTimes(2)
+    expect(secondStream.track.stop).not.toHaveBeenCalled()
   })
 })
