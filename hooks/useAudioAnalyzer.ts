@@ -207,10 +207,12 @@ export function useAudioAnalyzer(
     if (!analyzerRef.current) return
 
     const deviceId = options.deviceId ?? deviceIdRef.current
+    const replacesActiveSwitch = switchDevicePromiseRef.current !== null
     deviceIdRef.current = deviceId
     pendingDeviceIdRef.current = null
     const startGeneration = ++operationGenerationRef.current
     activeStartGenerationRef.current = startGeneration
+    if (replacesActiveSwitch) analyzerRef.current.stop({ releaseMic: true })
     retireDeviceSwitch()
 
     try {

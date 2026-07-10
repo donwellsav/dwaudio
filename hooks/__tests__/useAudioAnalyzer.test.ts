@@ -109,6 +109,7 @@ vi.mock('@/hooks/useAnalyzerFrameState', () => ({
 describe('useAudioAnalyzer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.analyzer.stop.mockReset()
     mocks.layered.derivedSettings = {
       fftSize: 8192,
       maxDisplayedIssues: 8,
@@ -434,6 +435,56 @@ describe('useAudioAnalyzer', () => {
     expect(mocks.dspWorker.init).toHaveBeenCalledOnce()
     expect(result.current.isRunning).toBe(true)
     expect(result.current.error).toBeNull()
+  })
+
+  it('cancels an active switch before a direct start takes ownership', async () => {
+    let resolveA!: () => void
+    const pendingA = new Promise<void>((resolve) => {
+      resolveA = resolve
+    })
+    let adapterStart: Promise<void> | null = null
+    const acquiredDevices: string[] = []
+    mocks.analyzer.stop.mockImplementation(() => {
+      adapterStart = null
+    })
+    mocks.analyzer.start.mockImplementation((options = {}) => {
+      if (adapterStart) return adapterStart
+      const deviceId = options.deviceId ?? ''
+      acquiredDevices.push(deviceId)
+      if (deviceId === 'A') adapterStart = pendingA
+      return adapterStart ?? Promise.resolve()
+    })
+    const { result } = renderHook(() => useAudioAnalyzer())
+    let switchA!: Promise<void>
+    let startC!: Promise<void>
+
+    act(() => {
+      switchA = result.current.switchDevice('A')
+    })
+    const stopsBeforeRestart = mocks.analyzer.stop.mock.calls.length
+
+    act(() => {
+      startC = result.current.start({ deviceId: 'C' })
+    })
+
+    expect(mocks.analyzer.stop).toHaveBeenCalledTimes(stopsBeforeRestart + 1)
+    expect(acquiredDevices).toEqual(['A', 'C'])
+
+    await act(async () => {
+      await Promise.all([switchA, startC])
+    })
+
+    expect(mocks.dspWorker.init).toHaveBeenCalledOnce()
+    expect(result.current.isRunning).toBe(true)
+
+    await act(async () => {
+      resolveA()
+      await Promise.resolve()
+    })
+
+    expect(mocks.dspWorker.init).toHaveBeenCalledOnce()
+    expect(result.current.error).toBeNull()
+    expect(result.current.isRunning).toBe(true)
   })
 
   it('keeps device B running when stale initial A fails after B starts', async () => {
