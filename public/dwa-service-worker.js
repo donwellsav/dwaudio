@@ -14,20 +14,11 @@ const CORE_ASSETS = [
   '/apple-icon.png',
 ]
 
-const STATIC_DESTINATIONS = new Set(['script', 'style', 'font', 'image', 'manifest'])
+const STATIC_DESTINATIONS = new Set(['script', 'style', 'font', 'image', 'manifest', 'worker'])
 
 async function cacheCoreAssets() {
   const cache = await caches.open(CORE_CACHE)
-
-  await Promise.all(
-    CORE_ASSETS.map(async (asset) => {
-      try {
-        await cache.add(new Request(asset, { cache: 'reload' }))
-      } catch {
-        // Offline support is best-effort until the app has completed one load.
-      }
-    }),
-  )
+  await cache.addAll(CORE_ASSETS.map((asset) => new Request(asset, { cache: 'reload' })))
 }
 
 async function deleteOldCaches() {

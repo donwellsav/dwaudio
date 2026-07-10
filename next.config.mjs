@@ -7,6 +7,7 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf-8"));
 
 const isStaticExport = process.env.DWA_STATIC_EXPORT === "1";
 const isStandaloneBuild = process.env.DWA_STANDALONE === "1";
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -20,6 +21,7 @@ const securityHeaders = [
     key: 'Strict-Transport-Security',
     value: 'max-age=31536000; includeSubDomains',
   },
+  { key: 'Content-Security-Policy', value: contentSecurityPolicy },
 ]
 
 /** @type {import('next').NextConfig} */
