@@ -13,7 +13,7 @@ export const AnalyzerKeyboardShortcuts = memo(function AnalyzerKeyboardShortcuts
       if (
         event.target instanceof Element &&
         event.target.closest(
-          'a[href], button, input, select, textarea, [contenteditable], [role="button"], [role="slider"], [role="tab"]',
+          'a[href], button, summary, input, select, textarea, [contenteditable], [role="button"], [role="slider"], [role="tab"]',
         )
       ) return
 

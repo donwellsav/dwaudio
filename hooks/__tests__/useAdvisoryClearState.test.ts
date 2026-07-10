@@ -34,6 +34,33 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
 }
 
 describe('useAdvisoryClearState', () => {
+  it('tracks one individual dismissal target and clears it on restore or bulk clear', () => {
+    const advisories = [
+      makeAdvisory({ id: 'a1' }),
+      makeAdvisory({ id: 'a2', resolved: true }),
+    ]
+    const { result } = renderHook(() => useAdvisoryClearState(advisories))
+
+    expect(result.current.lastDismissedId).toBeNull()
+
+    act(() => result.current.onDismiss('a1'))
+    expect(result.current.lastDismissedId).toBe('a1')
+
+    act(() => result.current.onDismiss('a2'))
+    expect(result.current.lastDismissedId).toBe('a2')
+
+    act(() => result.current.restoreDismissed('a2'))
+    expect(result.current.lastDismissedId).toBeNull()
+
+    act(() => result.current.onDismiss('a1'))
+    act(() => result.current.onClearResolved())
+    expect(result.current.lastDismissedId).toBeNull()
+
+    act(() => result.current.onDismiss('a1'))
+    act(() => result.current.onClearAll())
+    expect(result.current.lastDismissedId).toBeNull()
+  })
+
   it('prunes cleared ids when advisories disappear', () => {
     const firstAdvisory = makeAdvisory({ id: 'a1' })
     const secondAdvisory = makeAdvisory({ id: 'a2' })
@@ -53,6 +80,7 @@ describe('useAdvisoryClearState', () => {
     rerender({ advisories: [secondAdvisory] })
 
     expect(result.current.clearState.dismissed.has('a1')).toBe(false)
+    expect(result.current.lastDismissedId).toBeNull()
     expect(result.current.clearState.geqCleared.has('a1')).toBe(false)
     expect(result.current.clearState.rtaCleared.has('a1')).toBe(false)
     expect(result.current.clearState.geqCleared.has('a2')).toBe(true)

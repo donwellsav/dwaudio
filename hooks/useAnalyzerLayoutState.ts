@@ -171,6 +171,7 @@ export function useAnalyzerLayoutState() {
   const issuesListBaseProps = useMemo(() => ({
     advisories: advisoriesState.advisories,
     dismissedIds: advisoriesState.dismissedIds,
+    lastDismissedId: advisoriesState.lastDismissedId,
     isRunning,
     onStart: start,
     isLowSignal,
@@ -183,6 +184,7 @@ export function useAnalyzerLayoutState() {
   }), [
     advisoriesState.advisories,
     advisoriesState.dismissedIds,
+    advisoriesState.lastDismissedId,
     advisoriesState.onDismiss,
     advisoriesState.restoreDismissedAdvisory,
     isLowSignal,

@@ -14,6 +14,7 @@ const clearStateMock = vi.hoisted(() => ({
     rtaCleared: new Set<string>(),
     geqCleared: new Set<string>(),
   },
+  lastDismissedId: 'dismissed',
   activeAdvisoryCount: 1,
   hasActiveGEQBars: true,
   hasActiveRTAMarkers: true,
@@ -58,6 +59,7 @@ describe('context hooks', () => {
     }), { wrapper })
 
     expect(result.current.all.activeAdvisoryCount).toBe(1)
+    expect(result.current.data.lastDismissedId).toBe('dismissed')
     expect(result.current.data.hasActiveGEQBars).toBe(true)
     result.current.actions.onClearAll()
     expect(clearStateMock.onClearAll).toHaveBeenCalled()

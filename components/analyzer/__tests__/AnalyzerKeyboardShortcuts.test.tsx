@@ -41,6 +41,9 @@ describe('AnalyzerKeyboardShortcuts', () => {
         <div role="button" aria-label="Start overlay" tabIndex={0} />
         <div role="slider" aria-label="Gain" aria-valuenow={0} tabIndex={0} />
         <div role="tab" aria-label="Settings" tabIndex={0} />
+        <details>
+          <summary><span data-testid="summary-child">Display options</span></summary>
+        </details>
         <div contentEditable suppressContentEditableWarning>
           <span data-testid="editable-child">Editable</span>
         </div>
@@ -54,6 +57,7 @@ describe('AnalyzerKeyboardShortcuts', () => {
       screen.getByRole('button', { name: 'Start overlay' }),
       screen.getByRole('slider', { name: 'Gain' }),
       screen.getByRole('tab', { name: 'Settings' }),
+      screen.getByTestId('summary-child'),
       screen.getByTestId('editable-child'),
     ]
 

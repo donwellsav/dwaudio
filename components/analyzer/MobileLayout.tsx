@@ -181,7 +181,7 @@ export const MobileLayout = memo(function MobileLayout() {
   const issuesContent = useMemo(
     () => (
       <MobileIssuesContent
-        mobileAdvisories={mobileAdvisories}
+        advisories={advisories}
         earlyWarning={earlyWarning}
         issuesListBaseProps={issuesListBaseProps}
         onClearAll={onClearAll}
@@ -191,7 +191,7 @@ export const MobileLayout = memo(function MobileLayout() {
     [
       earlyWarning,
       issuesListBaseProps,
-      mobileAdvisories,
+      advisories,
       onClearAll,
       onClearResolved,
     ],

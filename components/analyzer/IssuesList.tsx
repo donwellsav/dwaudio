@@ -20,6 +20,7 @@ interface IssuesListProps {
   advisories: Advisory[]
   maxIssues?: number
   dismissedIds?: Set<string>
+  lastDismissedId?: string | null
   onClearAll?: () => void
   onClearResolved?: () => void
   touchFriendly?: boolean
@@ -83,6 +84,7 @@ export const IssuesList = memo(function IssuesList({
   advisories,
   maxIssues = 10,
   dismissedIds,
+  lastDismissedId = null,
   onClearAll,
   onClearResolved,
   touchFriendly,
@@ -96,7 +98,6 @@ export const IssuesList = memo(function IssuesList({
   onDismiss,
   onRestoreDismissed,
 }: IssuesListProps) {
-  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null)
   const latestEntries = useIssuesListEntries(advisories, dismissedIds, maxIssues)
   const sortedEntries = useStableIssueEntries(latestEntries)
   const visibleEntries = useMemo(
@@ -105,20 +106,23 @@ export const IssuesList = memo(function IssuesList({
   )
   const liveAnnouncement = useIssueAnnouncement(sortedEntries)
 
-  const handleDismiss = useCallback((id: string) => {
-    onDismiss?.(id)
-    if (onRestoreDismissed) setLastDismissedId(id)
-  }, [onDismiss, onRestoreDismissed])
-
   const handleUndo = useCallback(() => {
     if (lastDismissedId === null || !onRestoreDismissed) return
     onRestoreDismissed(lastDismissedId)
-    setLastDismissedId(null)
   }, [lastDismissedId, onRestoreDismissed])
 
   const canUndoDismissal = lastDismissedId !== null &&
     dismissedIds?.has(lastDismissedId) === true &&
     advisories.some((advisory) => advisory.id === lastDismissedId)
+
+  const hiddenActiveIssueCount = useMemo(
+    () => advisories.filter((advisory) =>
+      !advisory.resolved &&
+      advisory.lifecycle !== 'provisional' &&
+      dismissedIds?.has(advisory.id),
+    ).length,
+    [advisories, dismissedIds],
+  )
 
   const hasResolved = useMemo(
     () => visibleEntries.some((entry) => entry.advisory.resolved),
@@ -152,13 +156,24 @@ export const IssuesList = memo(function IssuesList({
       ) : null}
 
       {visibleEntries.length === 0 ? (
-        <IssuesEmptyState
-          isRunning={isRunning}
-          isLowSignal={isLowSignal}
-          spectrumStatus={spectrumStatus}
-          noiseFloorDb={noiseFloorDb}
-          onStart={onStart}
-        />
+        isRunning && hiddenActiveIssueCount > 0 ? (
+          <div role="status" className="flex min-h-[80px] flex-col items-center justify-center gap-1 px-3 py-4 text-center font-mono">
+            <div className="text-dwa-sm font-bold uppercase tracking-[0.2em] text-muted-foreground">
+              Issues Hidden
+            </div>
+            <div className="text-dwa-xs text-muted-foreground/70">
+              {hiddenActiveIssueCount} active {hiddenActiveIssueCount === 1 ? 'issue' : 'issues'} hidden from this view.
+            </div>
+          </div>
+        ) : (
+          <IssuesEmptyState
+            isRunning={isRunning}
+            isLowSignal={isLowSignal}
+            spectrumStatus={spectrumStatus}
+            noiseFloorDb={noiseFloorDb}
+            onStart={onStart}
+          />
+        )
       ) : (
         <>
           {tonalIssueSummary ? (
@@ -195,7 +210,7 @@ export const IssuesList = memo(function IssuesList({
               touchFriendly={touchFriendly}
               showAlgorithmScores={showAlgorithmScores}
               showPeqDetails={showPeqDetails}
-              onDismiss={onDismiss ? handleDismiss : undefined}
+              onDismiss={onDismiss}
             />
           ))}
 

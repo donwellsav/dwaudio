@@ -7,7 +7,7 @@
  */
 
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { IssuesList } from '../IssuesList'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
@@ -74,11 +74,65 @@ function makeTonalAdvisory(id: string, summary: string): Advisory {
   })
 }
 
-function DismissUndoHarness({ withSecondIssue = false }: { withSecondIssue?: boolean }) {
+const healthySpectrumStatus = {
+  peak: -18,
+  effectiveThresholdDb: -45,
+  contentType: 'unknown',
+  isSignalPresent: true,
+  lastReportDecision: 'reported',
+  lastReportGate: 'reported',
+} as const
+
+function DismissUndoHarness({
+  withSecondIssue = false,
+  copies = 1,
+}: {
+  withSecondIssue?: boolean
+  copies?: number
+}) {
   const advisory = makeAdvisory('a1', 'GROWING')
   const advisories = withSecondIssue
     ? [advisory, makeAdvisory('a2', 'GROWING', { trueFrequencyHz: 2000 })]
     : [advisory]
+  const [dismissedIds, setDismissedIds] = useState(new Set<string>())
+  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null)
+
+  const dismiss = (id: string) => {
+    setDismissedIds((current) => new Set(current).add(id))
+    setLastDismissedId(id)
+  }
+  const restore = (id: string) => {
+    setDismissedIds((current) => {
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+    setLastDismissedId(null)
+  }
+
+  return (
+    <>
+      {Array.from({ length: copies }, (_, index) => (
+        <div key={index} data-testid={`issues-${index}`}>
+          <IssuesList
+            advisories={advisories}
+            dismissedIds={dismissedIds}
+            lastDismissedId={lastDismissedId}
+            isRunning
+            onDismiss={dismiss}
+            onRestoreDismissed={restore}
+          />
+        </div>
+      ))}
+    </>
+  )
+}
+
+function ClearAllHarness() {
+  const advisories = [
+    makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' }),
+    makeAdvisory('a2', 'GROWING', { lifecycle: 'confirmed', trueFrequencyHz: 2000 }),
+  ]
   const [dismissedIds, setDismissedIds] = useState(new Set<string>())
 
   return (
@@ -86,12 +140,9 @@ function DismissUndoHarness({ withSecondIssue = false }: { withSecondIssue?: boo
       advisories={advisories}
       dismissedIds={dismissedIds}
       isRunning
-      onDismiss={(id) => setDismissedIds((current) => new Set(current).add(id))}
-      onRestoreDismissed={(id) => setDismissedIds((current) => {
-        const next = new Set(current)
-        next.delete(id)
-        return next
-      })}
+      noiseFloorDb={-90}
+      spectrumStatus={healthySpectrumStatus}
+      onClearAll={() => setDismissedIds(new Set(advisories.map(({ id }) => id)))}
     />
   )
 }
@@ -127,6 +178,90 @@ describe('IssuesList', () => {
     expect(screen.getByRole('button', { name: 'Dismiss 2.00kHz' })).toBeDefined()
     expect(screen.queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
     expect(screen.queryByText('Issue dismissed.')).toBeNull()
+  })
+
+  it('keeps the shared Undo target visible across mounted responsive lists', () => {
+    render(<DismissUndoHarness copies={2} />)
+
+    const portrait = screen.getByTestId('issues-0')
+    const landscape = screen.getByTestId('issues-1')
+    fireEvent.click(within(portrait).getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    expect(within(portrait).queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(within(landscape).queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2)
+
+    fireEvent.click(within(landscape).getByRole('button', { name: 'Undo' }))
+
+    expect(within(portrait).getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(within(landscape).getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('does not claim no actionable feedback when active issues are hidden', () => {
+    render(
+      <IssuesList
+        advisories={[makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' })]}
+        dismissedIds={new Set(['a1'])}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={healthySpectrumStatus}
+      />,
+    )
+
+    expect(screen.getByText(/1 active issue hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+  })
+
+  it('keeps the stopped start action available when an old issue is hidden', () => {
+    render(
+      <IssuesList
+        advisories={[makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' })]}
+        dismissedIds={new Set(['a1'])}
+        isRunning={false}
+        onStart={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Start analysis' })).toBeDefined()
+    expect(screen.queryByText(/active issue hidden/i)).toBeNull()
+  })
+
+  it('keeps Clear All truthful without offering individual Undo', () => {
+    render(<ClearAllHarness />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear All' }))
+
+    expect(screen.getByText(/2 active issues hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('keeps a hidden confirmed item beyond the card cap truthful and undoable', () => {
+    const provisional = Array.from({ length: 5 }, (_, index) => (
+      makeAdvisory(`provisional-${index}`, 'POSSIBLE_RING', { lifecycle: 'provisional' })
+    ))
+    const confirmed = makeAdvisory('confirmed-6', 'GROWING', { lifecycle: 'confirmed' })
+    const advisories = [...provisional, confirmed]
+    const onRestoreDismissed = vi.fn()
+
+    render(
+      <IssuesList
+        advisories={advisories}
+        dismissedIds={new Set(advisories.map(({ id }) => id))}
+        lastDismissedId={confirmed.id}
+        maxIssues={5}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={healthySpectrumStatus}
+        onRestoreDismissed={onRestoreDismissed}
+      />,
+    )
+
+    expect(screen.getByText(/1 active issue hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(onRestoreDismissed).toHaveBeenCalledWith('confirmed-6')
   })
 
   it('renders standby state with start button when not running', () => {

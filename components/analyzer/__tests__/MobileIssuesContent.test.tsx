@@ -7,8 +7,8 @@ import { MobileIssuesContent } from '@/components/analyzer/MobileLayoutSections'
 import type { Advisory } from '@/types/advisory'
 
 vi.mock('@/components/analyzer/IssuesList', () => ({
-  IssuesList: ({ advisories }: { advisories: Advisory[] }) => (
-    <div data-testid="issues-list">{advisories.length}</div>
+  IssuesList: ({ advisories, maxIssues }: { advisories: Advisory[]; maxIssues: number }) => (
+    <div data-testid="issues-list">{advisories.length}:{maxIssues}</div>
   ),
 }))
 
@@ -61,7 +61,7 @@ describe('MobileIssuesContent', () => {
   it('shows the issues list and early warning panel', () => {
     render(
       <MobileIssuesContent
-        mobileAdvisories={[makeAdvisory('adv-1')]}
+        advisories={[makeAdvisory('adv-1')]}
         earlyWarning={null}
         issuesListBaseProps={baseIssuesListProps}
         onClearAll={vi.fn()}
@@ -69,7 +69,21 @@ describe('MobileIssuesContent', () => {
       />,
     )
 
-    expect(screen.getByTestId('issues-list').textContent).toBe('1')
+    expect(screen.getByTestId('issues-list').textContent).toBe('1:5')
     expect(screen.queryByTestId('early-warning-panel')).not.toBeNull()
+  })
+
+  it('passes the full source list while capping rendered cards after filtering', () => {
+    render(
+      <MobileIssuesContent
+        advisories={Array.from({ length: 6 }, (_, index) => makeAdvisory(`adv-${index}`))}
+        earlyWarning={null}
+        issuesListBaseProps={baseIssuesListProps}
+        onClearAll={vi.fn()}
+        onClearResolved={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('issues-list').textContent).toBe('6:5')
   })
 })
