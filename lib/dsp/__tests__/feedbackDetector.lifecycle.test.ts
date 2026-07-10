@@ -272,6 +272,48 @@ describe('FeedbackDetector lifecycle', () => {
     expect(onStopped).not.toHaveBeenCalled()
   })
 
+  it('ignores a delayed track-ended callback after a newer run starts', async () => {
+    const firstStream = createMockStream()
+    const secondStream = createMockStream()
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(firstStream.stream)
+      .mockResolvedValueOnce(secondStream.stream)
+    const onError = vi.fn()
+    const onStopped = vi.fn()
+    installBrowserMocks(getUserMedia)
+
+    const detector = new FeedbackDetector({}, { onError, onStopped })
+    await detector.start()
+    const delayedOnEnded = firstStream.track.onended
+
+    detector.stop({ releaseMic: true })
+    await detector.start()
+    delayedOnEnded?.()
+
+    expect(secondStream.track.readyState).toBe('live')
+    expect(secondStream.track.stop).not.toHaveBeenCalled()
+    expect(detector.getState().isRunning).toBe(true)
+    expect(onError).not.toHaveBeenCalled()
+    expect(onStopped).not.toHaveBeenCalled()
+    expect(firstStream.track.onended).toBeNull()
+    expect(firstStream.track.stop).toHaveBeenCalledOnce()
+  })
+
+  it('preserves a caller-owned track-ended handler on a provided stream', async () => {
+    const providedStream = createMockStream()
+    const callerOnEnded = vi.fn()
+    providedStream.track.onended = callerOnEnded
+    installBrowserMocks(vi.fn())
+
+    const detector = new FeedbackDetector()
+    await detector.start({ stream: providedStream.stream })
+    detector.stop({ releaseMic: true })
+
+    expect(providedStream.track.onended).toBe(callerOnEnded)
+    expect(providedStream.track.stop).toHaveBeenCalledOnce()
+  })
+
   it('cleans up before a track-ended callback synchronously restarts', async () => {
     const firstStream = createMockStream()
     const secondStream = createMockStream()

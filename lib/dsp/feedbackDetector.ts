@@ -77,6 +77,7 @@ export class FeedbackDetector {
   private audioContext: AudioContext | null = null
   private stream: MediaStream | null = null
   private source: MediaStreamAudioSourceNode | null = null
+  private _trackEndedHandler: { track: MediaStreamTrack; callback: () => void } | null = null
   private _deviceChangeHandler: (() => void) | null = null
   private _stateChangeHandler: (() => void) | null = null
   private analyser: AnalyserNode | null = null
@@ -282,23 +283,31 @@ export class FeedbackDetector {
           throw e
         }
         // Monitor mic disconnection — track end signals device removal
-        const audioTrack = this.stream.getAudioTracks()[0]
+        const stream = this.stream
+        const audioTrack = stream.getAudioTracks()[0]
         if (audioTrack) {
-          audioTrack.onended = () => {
-            if (this.isRunning) {
-              const message = 'Microphone disconnected'
-              try {
-                this.stop({ releaseMic: true })
-              } catch {
-                // stop() cleanup is best-effort — prevent cascade failure
-                // from leaving dangling listeners or buffers
-                this.isRunning = false
-                this.stream = null
-              }
-              this.callbacks.onError?.(message)
-              this.callbacks.onStopped?.(message)
+          const callback = () => {
+            if (
+              !this.isCurrentStart(generation) ||
+              this.stream !== stream ||
+              this.stream?.getAudioTracks()[0] !== audioTrack ||
+              !this.isRunning
+            ) return
+
+            const message = 'Microphone disconnected'
+            try {
+              this.stop({ releaseMic: true })
+            } catch {
+              // stop() cleanup is best-effort — prevent cascade failure
+              // from leaving dangling listeners or buffers
+              this.isRunning = false
+              this.stream = null
             }
+            this.callbacks.onError?.(message)
+            this.callbacks.onStopped?.(message)
           }
+          this._trackEndedHandler = { track: audioTrack, callback }
+          audioTrack.onended = callback
         }
       }
     }
@@ -439,7 +448,14 @@ export class FeedbackDetector {
   }
 
   private releaseStream(stream: MediaStream): void {
+    const trackEndedHandler = this._trackEndedHandler
     for (const track of stream.getTracks()) {
+      if (trackEndedHandler?.track === track) {
+        if (track.onended === trackEndedHandler.callback) {
+          track.onended = null
+        }
+        this._trackEndedHandler = null
+      }
       track.stop()
     }
   }
