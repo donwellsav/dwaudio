@@ -200,7 +200,6 @@ describe('FeedbackDetector lifecycle', () => {
     const onError = vi.fn()
     let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
     let restartPromise: Promise<void> | null = null
-    let detector!: FeedbackDetector
     const onStopped = vi.fn(() => {
       stoppedState = {
         isRunning: detector.getState().isRunning,
@@ -210,7 +209,7 @@ describe('FeedbackDetector lifecycle', () => {
     })
     installBrowserMocks(getUserMedia)
 
-    detector = new FeedbackDetector({}, { onError, onStopped })
+    const detector = new FeedbackDetector({}, { onError, onStopped })
     await detector.start()
 
     const context = createdContexts[0]
@@ -282,7 +281,6 @@ describe('FeedbackDetector lifecycle', () => {
       .mockResolvedValueOnce(secondStream.stream)
     let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
     let restartPromise: Promise<void> | null = null
-    let detector!: FeedbackDetector
     const onStopped = vi.fn(() => {
       stoppedState = {
         isRunning: detector.getState().isRunning,
@@ -292,7 +290,7 @@ describe('FeedbackDetector lifecycle', () => {
     })
     installBrowserMocks(getUserMedia)
 
-    detector = new FeedbackDetector({}, { onStopped })
+    const detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     firstStream.track.readyState = 'ended'
@@ -332,7 +330,6 @@ describe('FeedbackDetector lifecycle', () => {
       .mockResolvedValueOnce(secondStream.stream)
     let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
     let restartPromise: Promise<void> | null = null
-    let detector!: FeedbackDetector
     const onStopped = vi.fn(() => {
       stoppedState = {
         isRunning: detector.getState().isRunning,
@@ -342,7 +339,7 @@ describe('FeedbackDetector lifecycle', () => {
     })
     installBrowserMocks(getUserMedia)
 
-    detector = new FeedbackDetector({}, { onStopped })
+    const detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     firstStream.track.readyState = 'ended'
@@ -364,7 +361,6 @@ describe('FeedbackDetector lifecycle', () => {
       .mockResolvedValueOnce(secondStream.stream)
     let stoppedState: { isRunning: boolean; trackState: MediaStreamTrackState } | null = null
     let restartPromise: Promise<void> | null = null
-    let detector!: FeedbackDetector
     const onStopped = vi.fn(() => {
       stoppedState = {
         isRunning: detector.getState().isRunning,
@@ -374,7 +370,7 @@ describe('FeedbackDetector lifecycle', () => {
     })
     installBrowserMocks(getUserMedia)
 
-    detector = new FeedbackDetector({}, { onStopped })
+    const detector = new FeedbackDetector({}, { onStopped })
     await detector.start()
 
     createdContexts[0].state = 'closed'
