@@ -80,6 +80,18 @@ function getAnalyzerStatusLabel(
   return 'Listening'
 }
 
+type AnalyzerHeadline = 'Listening' | 'Detection Limited' | 'No Actionable Feedback'
+
+export function getAnalyzerHeadline(
+  spectrumStatus: SpectrumStatus | null | undefined,
+  noiseFloorDb: number | null | undefined,
+): AnalyzerHeadline {
+  if (!spectrumStatus || noiseFloorDb == null) return 'Listening'
+  return getAnalyzerStatusLabel(spectrumStatus, noiseFloorDb) === 'Listening'
+    ? 'No Actionable Feedback'
+    : 'Detection Limited'
+}
+
 function buildAnalyzerStatusMetrics(spectrumStatus: SpectrumStatus | null | undefined): string[] {
   if (!spectrumStatus) return []
 
@@ -115,6 +127,12 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
 }: IssuesEmptyStateProps) {
   const { settings } = useSettings()
   const analyzerStatusLabel = getAnalyzerStatusLabel(spectrumStatus, noiseFloorDb)
+  const analyzerHeadline = getAnalyzerHeadline(spectrumStatus, noiseFloorDb)
+  const headlineClassName = analyzerHeadline === 'Detection Limited'
+    ? 'text-amber-400/80'
+    : analyzerHeadline === 'Listening'
+      ? 'text-[var(--console-blue)]/75'
+      : 'text-emerald-500/80'
   const analyzerStatusMetrics = buildAnalyzerStatusMetrics(spectrumStatus)
 
   if (!isRunning && onStart) {
@@ -192,12 +210,12 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-[var(--console-blue)]/50" />
         </div>
         <div className="font-mono text-dwa-sm font-bold tracking-[0.25em] uppercase text-[var(--console-blue)]/70">
-          Low Signal
+          {isLowSignal ? 'Detection Limited' : null}
         </div>
         <div className="flex items-center gap-1.5 motion-safe:animate-pulse">
           <span className="text-[var(--console-blue)]/60 text-xs leading-none">▲</span>
           <span className="font-mono text-dwa-xs text-[var(--console-blue)]/50 tracking-wider uppercase">
-            Increase gain
+            Low Signal · Increase gain
           </span>
         </div>
       </div>
@@ -218,8 +236,8 @@ export const IssuesEmptyState = memo(function IssuesEmptyState({
             style={{ boxShadow: '0 0 10px var(--console-green-glow)' }}
           />
         </div>
-        <div className="font-mono text-dwa-sm font-bold tracking-[0.2em] uppercase text-emerald-500/80">
-          All Clear
+        <div className={`font-mono text-dwa-sm font-bold tracking-[0.2em] uppercase ${headlineClassName}`}>
+          {analyzerHeadline}
         </div>
         {analyzerStatusLabel ? (
           <div className="flex max-w-[260px] flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-dwa-xs uppercase tracking-[0.12em] text-muted-foreground/55">

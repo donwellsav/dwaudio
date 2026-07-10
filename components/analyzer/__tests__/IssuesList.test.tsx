@@ -2,7 +2,7 @@
 /**
  * Smoke tests for IssuesList — advisory list rendering, empty states, sorting.
  *
- * Validates standby state, all-clear green state, low-signal warning,
+ * Validates standby state, truthful detector state, low-signal guidance,
  * card rendering, and clear-all button.
  */
 
@@ -82,9 +82,49 @@ describe('IssuesList', () => {
     expect(screen.getByText(/start analysis/i)).toBeDefined()
   })
 
-  it('renders green all-clear state when running with no advisories', () => {
-    render(<IssuesList advisories={[]} isRunning={true} />)
-    expect(screen.getByText(/all clear/i)).toBeDefined()
+  it('shows Listening before detector status and floor are ready', () => {
+    render(<IssuesList advisories={[]} isRunning />)
+    expect(screen.getByText(/^listening$/i)).toBeDefined()
+    expect(screen.queryByText(/all clear/i)).toBeNull()
+  })
+
+  it('shows No Actionable Feedback for a usable analyzed signal', () => {
+    render(
+      <IssuesList
+        advisories={[]}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={{
+          peak: -18,
+          effectiveThresholdDb: -45,
+          contentType: 'unknown',
+          isSignalPresent: true,
+          lastReportDecision: 'reported',
+          lastReportGate: 'reported',
+        }}
+      />,
+    )
+    expect(screen.getByText(/no actionable feedback/i)).toBeDefined()
+  })
+
+  it('shows Detection Limited while a detector gate blocks reporting', () => {
+    render(
+      <IssuesList
+        advisories={[]}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={{
+          peak: -18,
+          effectiveThresholdDb: -45,
+          contentType: 'music',
+          isSignalPresent: true,
+          lastReportDecision: 'blocked',
+          lastReportGate: 'music-material',
+        }}
+      />,
+    )
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
+    expect(screen.getByText(/music material/i)).toBeDefined()
   })
 
   it('renders compact analyzer status when running with no advisories', () => {
@@ -108,7 +148,7 @@ describe('IssuesList', () => {
       />,
     )
 
-    expect(screen.getByText(/all clear/i)).toBeDefined()
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
     expect(screen.getByText(/fusion wait/i)).toBeDefined()
     expect(screen.getByText(/pk -18db/i)).toBeDefined()
     expect(screen.getByText(/thr -45db/i)).toBeDefined()
@@ -117,8 +157,9 @@ describe('IssuesList', () => {
     expect(screen.getByText(/conf 28%/i)).toBeDefined()
   })
 
-  it('renders low-signal warning when isLowSignal', () => {
-    render(<IssuesList advisories={[]} isRunning={true} isLowSignal />)
+  it('shows Detection Limited and gain guidance for low signal', () => {
+    render(<IssuesList advisories={[]} isRunning isLowSignal />)
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
     expect(screen.getByText(/low signal/i)).toBeDefined()
     expect(screen.getByText(/increase gain/i)).toBeDefined()
   })
