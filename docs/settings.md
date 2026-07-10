@@ -96,7 +96,7 @@ All inputs are validated/clamped on write (and again on load). Selected ranges:
 | Field | Range |
 | --- | --- |
 | `sensitivityOffsetDb` | −30 … 30 |
-| `inputGainDb` | −24 … 24 |
+| `inputGainDb` | −40 … 40 |
 | `autoGainTargetDb` | −48 … −3 |
 | `maxTracks` | 8 … 128 |
 | `trackTimeoutMs` | 200 … 5000 (or `mode-default`) |
