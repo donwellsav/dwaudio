@@ -3,14 +3,19 @@
  * Smoke tests for IssueCard - advisory card rendering, severity states, badges.
  */
 
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { IssueCard, formatIssueAge } from '@/components/analyzer/IssueCard'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
 
 vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'dark' }),
 }))
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  Reflect.deleteProperty(navigator, 'clipboard')
+})
 
 function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   return {
@@ -130,6 +135,37 @@ describe('IssueCard', () => {
       expect(button.className).not.toContain('[44px]')
       expect(button.className).not.toMatch(/\bh-8\b|\bw-8\b/)
     }
+  })
+
+  it('labels and announces a successful issue-guidance copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const advisory = makeAdvisory()
+
+    render(
+      <IssueCard
+        advisory={{
+          ...advisory,
+          advisory: {
+            ...advisory.advisory,
+            geq: { bandHz: 1000, bandIndex: 12, suggestedDb: -3 },
+          },
+        }}
+        occurrenceCount={1}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy issue guidance for 1.00kHz' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toBe('Issue guidance copied')
+    })
+    expect(writeText).toHaveBeenCalledWith(
+      'GEQ: Pull 1000Hz fader to -3dB | PEQ: Notch at 1000.0Hz, Q=4.0, -6dB | Pitch: B5 +3c',
+    )
   })
 
   it('renders repeat offender badge and guidance when occurrenceCount >= 3', () => {

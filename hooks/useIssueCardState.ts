@@ -2,6 +2,7 @@
 
 import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { formatEQRecommendation } from '@/lib/dsp/eqAdvisor'
 import { getSeverityColor } from '@/lib/utils/advisoryDisplay'
 import {
   formatFrequency,
@@ -33,6 +34,23 @@ export function resolveIssueCardActionsLayout(
   if (!touchFriendly) return 'desktop'
   if (touchFriendly) return 'mobile'
   return null
+}
+
+export function formatIssueCardCopyText(advisory: Advisory): string {
+  const frequency = formatFrequency(advisory.trueFrequencyHz)
+  const pitch = advisory.advisory?.pitch
+    ? ` (${formatPitch(advisory.advisory.pitch)})`
+    : ''
+
+  if (advisory.lifecycle === 'provisional') {
+    return `${frequency}${pitch} | Possible feedback - watching only; no EQ cut until confirmed.`
+  }
+
+  if (advisory.label === 'WHISTLE' && advisory.severity === 'WHISTLE') {
+    return `${frequency}${pitch} | Whistle alert only - verify mic and speaker placement first. No EQ cut recommended.`
+  }
+
+  return formatEQRecommendation(advisory.advisory)
 }
 
 export function buildIssueCardDerivedState(advisory: Advisory): IssueCardDerivedState {
@@ -161,10 +179,7 @@ export function useIssueCardState({
   }, [])
 
   const handleCopy = useCallback(() => {
-    const parts = [derivedState.exactFreqStr]
-    if (derivedState.pitchStr) parts.push(`(${derivedState.pitchStr})`)
-
-    copyTextToClipboard(parts.join(' ')).then((didCopy) => {
+    copyTextToClipboard(formatIssueCardCopyText(advisory)).then((didCopy) => {
       if (!didCopy || !mountedRef.current) return
       setCopied(true)
       if (copiedResetTimerRef.current) {
@@ -175,7 +190,7 @@ export function useIssueCardState({
         copiedResetTimerRef.current = null
       }, 1500)
     })
-  }, [derivedState.exactFreqStr, derivedState.pitchStr])
+  }, [advisory])
 
   return {
     ...derivedState,

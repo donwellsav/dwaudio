@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildIssueCardDerivedState,
   copyTextToClipboard,
+  formatIssueCardCopyText,
   resolveIssueCardActionsLayout,
 } from '@/hooks/useIssueCardState'
 import type { Advisory } from '@/types/advisory'
@@ -64,6 +65,44 @@ describe('useIssueCardState helpers', () => {
   it('resolves action layout from touch settings', () => {
     expect(resolveIssueCardActionsLayout(false)).toBe('desktop')
     expect(resolveIssueCardActionsLayout(true)).toBe('mobile')
+  })
+
+  it('formats complete confirmed issue guidance', () => {
+    expect(formatIssueCardCopyText(makeAdvisory())).toBe(
+      'GEQ: Pull 1000Hz fader to -3dB | PEQ: Notch at 1000.0Hz, Q=4.0, -6dB | Pitch: B5 +3c',
+    )
+  })
+
+  it('keeps provisional copy free of unconfirmed EQ cuts', () => {
+    expect(formatIssueCardCopyText(makeAdvisory({ lifecycle: 'provisional' }))).toBe(
+      '1.00kHz (B5 +3c) | Possible feedback - watching only; no EQ cut until confirmed.',
+    )
+  })
+
+  it('keeps warning-only whistle copy free of hidden EQ cuts', () => {
+    expect(formatIssueCardCopyText(makeAdvisory({
+      label: 'WHISTLE',
+      severity: 'WHISTLE',
+    }))).toBe(
+      '1.00kHz (B5 +3c) | Whistle alert only - verify mic and speaker placement first. No EQ cut recommended.',
+    )
+  })
+
+  it('includes strategy and broad tonal guidance in confirmed copy', () => {
+    const baseAdvisory = makeAdvisory()
+    const copyText = formatIssueCardCopyText(makeAdvisory({
+      advisory: {
+        ...baseAdvisory.advisory,
+        peq: {
+          ...baseAdvisory.advisory.peq,
+          reason: 'Q widened to cover a broader unstable region.',
+        },
+        tonalIssueSummary: 'Low shelf -3dB @ 300Hz',
+      },
+    }))
+
+    expect(copyText).toContain('Strategy: Q widened to cover a broader unstable region.')
+    expect(copyText).toContain('Broad tonal note: Low shelf -3dB @ 300Hz')
   })
 
   it('copies issue text through navigator.clipboard when available', async () => {

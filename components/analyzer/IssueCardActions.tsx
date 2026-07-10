@@ -24,17 +24,20 @@ export const IssueCardActions = memo(function IssueCardActions({
 }: IssueCardActionsProps) {
   if (layout === 'copy-only') {
     return (
-      <button type="button"
-        onClick={onCopy}
-        aria-label={`Copy ${exactFreqStr} frequency info`}
-        className={`${COPY_BTN} size-11 flex-shrink-0 self-center ${
-          copied
-            ? 'text-[var(--console-amber)]'
-            : 'text-muted-foreground/70 hover:text-muted-foreground hover:bg-muted/60'
-        }`}
-      >
-        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      </button>
+      <>
+        <button type="button"
+          onClick={onCopy}
+          aria-label={`Copy issue guidance for ${exactFreqStr}`}
+          className={`${COPY_BTN} size-11 flex-shrink-0 self-center ${
+            copied
+              ? 'text-[var(--console-amber)]'
+              : 'text-muted-foreground/70 hover:text-muted-foreground hover:bg-muted/60'
+          }`}
+        >
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+        {copied ? <span className="sr-only" role="status">Issue guidance copied</span> : null}
+      </>
     )
   }
 
@@ -52,7 +55,7 @@ export const IssueCardActions = memo(function IssueCardActions({
         ) : null}
         <button type="button"
           onClick={onCopy}
-          aria-label={`Copy ${exactFreqStr} frequency info`}
+          aria-label={`Copy issue guidance for ${exactFreqStr}`}
           className={`${COPY_BTN} h-6 w-6 ${
             copied
               ? 'text-[var(--console-amber)]'
@@ -61,7 +64,7 @@ export const IssueCardActions = memo(function IssueCardActions({
         >
           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
         </button>
-        {copied ? <span className="sr-only" role="status">Frequency info copied</span> : null}
+        {copied ? <span className="sr-only" role="status">Issue guidance copied</span> : null}
       </div>
     )
   }
@@ -79,7 +82,7 @@ export const IssueCardActions = memo(function IssueCardActions({
       ) : null}
       <button type="button"
         onClick={onCopy}
-        aria-label={`Copy ${exactFreqStr}`}
+        aria-label={`Copy issue guidance for ${exactFreqStr}`}
         className={`${COPY_BTN} p-0 ${
           copied
             ? 'text-[var(--console-amber)]'
@@ -88,7 +91,7 @@ export const IssueCardActions = memo(function IssueCardActions({
       >
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       </button>
-      {copied ? <span className="sr-only" role="status">Frequency info copied</span> : null}
+      {copied ? <span className="sr-only" role="status">Issue guidance copied</span> : null}
     </div>
   )
 })
