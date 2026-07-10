@@ -261,7 +261,7 @@ describe('useDSPWorker', () => {
       worker.emitMessage({
         type: 'returnBuffers',
         spectrum: new Float32Array([9, 8, 7, 6]),
-      })
+      } as unknown as WorkerOutboundMessage)
     })
 
     const messagesAfterUntaggedReturn = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>

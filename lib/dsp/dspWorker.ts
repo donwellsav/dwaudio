@@ -101,7 +101,7 @@ export type WorkerOutboundMessage =
   | { type: 'advisoryCleared'; advisoryId: string }
   | ({ type: 'tracksUpdate'; tracks: TrackSummary[]; contentType?: ContentType; algorithmMode?: AlgorithmMode; isCompressed?: boolean; compressionRatio?: number } & WorkerReportGateStatus)
   | { type: 'combPatternUpdate'; pattern: CombPatternResult | null }
-  | { type: 'returnBuffers'; spectrum: Float32Array; timeDomain?: Float32Array; source?: 'peak' | 'spectrumUpdate' }
+  | { type: 'returnBuffers'; spectrum: Float32Array; timeDomain?: Float32Array; source: 'peak' | 'spectrumUpdate' }
   | { type: 'contentTypeUpdate'; contentType: ContentType; isCompressed: boolean; compressionRatio: number }
   | { type: 'ready' }
   | { type: 'error'; message: string }

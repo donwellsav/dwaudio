@@ -122,15 +122,17 @@ describe('WorkerOutboundMessage types', () => {
     expect(msg.type).toBe('ready')
   })
 
-  it('returnBuffers message has spectrum array', () => {
+  it('returnBuffers message identifies the buffer source', () => {
     const spectrum = new Float32Array(4096)
     const msg: WorkerOutboundMessage = {
       type: 'returnBuffers',
       spectrum,
+      source: 'peak',
     }
     expect(msg.type).toBe('returnBuffers')
     expect(msg.spectrum).toBe(spectrum)
     expect(msg.spectrum.length).toBe(4096)
+    expect(msg.source).toBe('peak')
   })
 
   it('advisoryCleared message has advisory ID', () => {
