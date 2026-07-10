@@ -32,6 +32,7 @@ function notifyQuotaExceeded(key: string): void {
 // ── Generic factory ──────────────────────────────────────────────────────────
 
 export interface TypedStorage<T> {
+  exists(): boolean
   load(): T
   save(value: T): void
   clear(): void
@@ -45,6 +46,15 @@ export interface TypedStorage<T> {
  */
 export function typedStorage<T>(key: string, fallback: T): TypedStorage<T> {
   return {
+    exists(): boolean {
+      if (typeof window === 'undefined') return false
+      try {
+        return localStorage.getItem(key) !== null
+      } catch {
+        return false
+      }
+    },
+
     load(): T {
       if (typeof window === 'undefined') return fallback
       try {

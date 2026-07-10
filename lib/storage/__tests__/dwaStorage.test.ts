@@ -22,6 +22,18 @@ beforeEach(() => {
 // ── typedStorage ──────────────────────────────────────────────────────────────
 
 describe('typedStorage', () => {
+  it('reports storage presence without throwing when access is denied', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied')
+    })
+
+    try {
+      expect(typedStorage('test-denied', {} as object).exists()).toBe(false)
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+
   it('returns fallback when key does not exist', () => {
     const store = typedStorage<number[]>('test-typed', [1, 2, 3])
     expect(store.load()).toEqual([1, 2, 3])

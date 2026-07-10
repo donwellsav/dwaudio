@@ -117,7 +117,7 @@ function sanitizeLiveOverrides(liveOverrides: DwaSessionState['liveOverrides']):
       -30,
       30,
     ),
-    inputGainDb: clampNumber(liveOverrides.inputGainDb, DEFAULT_SESSION_STATE.liveOverrides.inputGainDb, -24, 24),
+    inputGainDb: clampNumber(liveOverrides.inputGainDb, DEFAULT_SESSION_STATE.liveOverrides.inputGainDb, -40, 40),
     autoGainEnabled: typeof liveOverrides.autoGainEnabled === 'boolean'
       ? liveOverrides.autoGainEnabled
       : DEFAULT_SESSION_STATE.liveOverrides.autoGainEnabled,
@@ -232,7 +232,7 @@ function sanitizeDisplayPrefs(display: DisplayPrefs): DisplayPrefs {
       ? display.faderLinkMode
       : DEFAULT_DISPLAY_PREFS.faderLinkMode,
     faderLinkRatio: clampNumber(display.faderLinkRatio, DEFAULT_DISPLAY_PREFS.faderLinkRatio, 0.5, 2),
-    faderLinkCenterGainDb: clampNumber(display.faderLinkCenterGainDb, DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb, -24, 24),
+    faderLinkCenterGainDb: clampNumber(display.faderLinkCenterGainDb, DEFAULT_DISPLAY_PREFS.faderLinkCenterGainDb, -40, 40),
     faderLinkCenterSensDb: clampNumber(display.faderLinkCenterSensDb, DEFAULT_DISPLAY_PREFS.faderLinkCenterSensDb, 2, 50),
     signalTintEnabled: typeof display.signalTintEnabled === 'boolean'
       ? display.signalTintEnabled
@@ -273,8 +273,8 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
     shouldPersistSessionOnMount: boolean
     shouldPersistDisplayOnMount: boolean
   }>(() => {
-    const hasStoredSession = typeof window !== 'undefined' && localStorage.getItem('dwa-v2-session') !== null
-    const hasStoredDisplay = typeof window !== 'undefined' && localStorage.getItem('dwa-v2-display') !== null
+    const hasStoredSession = sessionStorageV2.exists()
+    const hasStoredDisplay = displayStorageV2.exists()
     const hasInitialSettings = Object.keys(initialSettings).length > 0
     const rawSession = hasStoredSession ? sessionStorageV2.load() : undefined
     const storedDisplay = displayStorageV2.load()
@@ -398,7 +398,7 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
       ...prev,
       liveOverrides: {
         ...prev.liveOverrides,
-        inputGainDb: clampNumber(db, prev.liveOverrides.inputGainDb, -24, 24),
+        inputGainDb: clampNumber(db, prev.liveOverrides.inputGainDb, -40, 40),
       },
     }))
   }, [updateSession])
@@ -436,7 +436,7 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   }, [updateSession])
 
   const updateDisplay = useCallback((partial: Partial<DisplayPrefs>) => {
-    updateDisplayState(prev => ({ ...prev, ...partial }))
+    updateDisplayState(prev => sanitizeDisplayPrefs({ ...prev, ...partial }))
   }, [updateDisplayState])
 
   const updateDiagnostics = useCallback((partial: Partial<DiagnosticsProfile>) => {
@@ -449,7 +449,7 @@ export function useLayeredSettings(initialSettings: Partial<DetectorSettings> = 
   const updateLiveOverrides = useCallback((partial: Partial<LiveOverrides>) => {
     updateSession(prev => ({
       ...prev,
-      liveOverrides: { ...prev.liveOverrides, ...partial },
+      liveOverrides: sanitizeLiveOverrides({ ...prev.liveOverrides, ...partial }),
     }))
   }, [updateSession])
 

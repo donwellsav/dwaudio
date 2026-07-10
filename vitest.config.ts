@@ -27,8 +27,10 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: [
+        'lib/audio/**/*.ts',
         'lib/dsp/**/*.ts',
         'lib/canvas/**/*.ts',
+        'lib/settings/**/*.ts',
         'lib/storage/**/*.ts',
         'hooks/**/*.ts',
         'contexts/**/*.ts',

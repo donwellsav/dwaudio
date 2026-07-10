@@ -28,6 +28,18 @@ afterEach(() => {
 // ─── Mount / default state ───────────────────────────────────────────────────
 
 describe('useLayeredSettings — default state', () => {
+  it('mounts when localStorage access throws', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied')
+    })
+
+    try {
+      expect(() => renderHook(() => useLayeredSettings())).not.toThrow()
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+
   it('produces the fresh-start Speech snapshot on first mount', () => {
     const { result } = renderHook(() => useLayeredSettings())
     const ds = result.current.derivedSettings
@@ -94,6 +106,46 @@ describe('useLayeredSettings — default state', () => {
 // ─── Semantic actions ────────────────────────────────────────────────────────
 
 describe('useLayeredSettings — semantic actions', () => {
+  const gainContractCases = [
+    { requested: -41, expected: -40 },
+    { requested: -40, expected: -40 },
+    { requested: 40, expected: 40 },
+    { requested: 41, expected: 40 },
+  ] as const
+
+  it.each(gainContractCases)(
+    'setInputGain clamps $requested to the declared $expected dB contract',
+    ({ requested, expected }) => {
+      const { result } = renderHook(() => useLayeredSettings())
+
+      act(() => result.current.setInputGain(requested))
+
+      expect(result.current.derivedSettings.inputGainDb).toBe(expected)
+    },
+  )
+
+  it.each(gainContractCases)(
+    'bulk live overrides clamp gain $requested to $expected dB',
+    ({ requested, expected }) => {
+      const { result } = renderHook(() => useLayeredSettings())
+
+      act(() => result.current.updateLiveOverrides({ inputGainDb: requested }))
+
+      expect(result.current.derivedSettings.inputGainDb).toBe(expected)
+    },
+  )
+
+  it.each(gainContractCases)(
+    'bulk display updates clamp linked-center gain $requested to $expected dB',
+    ({ requested, expected }) => {
+      const { result } = renderHook(() => useLayeredSettings())
+
+      act(() => result.current.updateDisplay({ faderLinkCenterGainDb: requested }))
+
+      expect(result.current.display.faderLinkCenterGainDb).toBe(expected)
+    },
+  )
+
   it('setMode changes derived mode and thresholds', () => {
     const { result } = renderHook(() => useLayeredSettings())
 
