@@ -345,7 +345,7 @@ function recycleReturnedBuffers(
   refs: DSPWorkerHandlerRefs,
   message: Extract<WorkerOutboundMessage, { type: 'returnBuffers' }>,
 ) {
-  const isPeakReturn = message.source !== 'spectrumUpdate'
+  const isPeakReturn = message.source === 'peak'
   if (isPeakReturn) {
     refs.busyRef.current = false
   }
@@ -402,7 +402,6 @@ export function createDSPWorkerMessageHandler(
         refs.callbacksRef.current.onAdvisoryCleared?.(message.advisoryId)
         break
       case 'tracksUpdate':
-        refs.busyRef.current = false
         refs.tracksUpdatesRef.current++
         if (TRACK_PAYLOAD_ENCODER) {
           const payloadBytes = TRACK_PAYLOAD_ENCODER.encode(JSON.stringify(message.tracks)).length
@@ -425,7 +424,6 @@ export function createDSPWorkerMessageHandler(
           lastReportFrequencyHz: message.lastReportFrequencyHz,
           lastReportTimestamp: message.lastReportTimestamp,
         })
-        flushBufferedPeak(refs)
         break
       case 'contentTypeUpdate':
         refs.callbacksRef.current.onContentTypeUpdate?.(

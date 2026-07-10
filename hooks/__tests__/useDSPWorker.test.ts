@@ -143,6 +143,28 @@ describe('useDSPWorker', () => {
     })
   })
 
+  it('does not replay queued feedback history after reset', () => {
+    const { result } = renderHook(() => useDSPWorker({}))
+    const worker = MockWorker.instances[0]
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      result.current.syncFeedbackHistory([
+        {
+          centerFrequencyHz: 1000,
+          occurrences: 3,
+          lastSeen: 123,
+        },
+      ])
+      result.current.reset()
+      worker.emitMessage({ type: 'ready' })
+    })
+
+    expect(worker.messages).not.toContainEqual(
+      expect.objectContaining({ type: 'syncFeedbackHistory' }),
+    )
+  })
+
   it('queues startup peaks and flushes them in order once the worker is ready', () => {
     const { result } = renderHook(() => useDSPWorker({}))
     const worker = MockWorker.instances[0]
@@ -193,7 +215,7 @@ describe('useDSPWorker', () => {
     expect(flushedMessages[1].peak.binIndex).toBe(2)
   })
 
-  it('queues backpressured peaks and flushes the strongest feedback-like candidate first', () => {
+  it('keeps one peak outstanding until its buffers return', () => {
     const { result } = renderHook(() => useDSPWorker({}))
     const worker = MockWorker.instances[0]
 
@@ -207,26 +229,7 @@ describe('useDSPWorker', () => {
 
     act(() => {
       result.current.processPeak(makePeak({ binIndex: 1 }), spectrum, 48000, 8192, timeDomain)
-      result.current.processPeak(makePeak({
-        binIndex: 2,
-        prominenceDb: 7,
-        qEstimate: 6,
-        phpr: 2,
-        msdIsHowl: false,
-        msdFastConfirm: false,
-        isPersistent: false,
-        isHighlyPersistent: false,
-      }), spectrum, 48000, 8192, timeDomain)
-      result.current.processPeak(makePeak({
-        binIndex: 3,
-        prominenceDb: 19,
-        qEstimate: 80,
-        phpr: 24,
-        msdIsHowl: true,
-        msdFastConfirm: true,
-        isPersistent: true,
-        isHighlyPersistent: true,
-      }), spectrum, 48000, 8192, timeDomain)
+      result.current.processPeak(makePeak({ binIndex: 2 }), spectrum, 48000, 8192, timeDomain)
     })
 
     const processPeakMessages = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
@@ -237,19 +240,18 @@ describe('useDSPWorker', () => {
     expect(processPeakMessages[0].peak.binIndex).toBe(1)
     expect(result.current.getBackpressureStats()).toMatchObject({
       dropped: 0,
-      total: 3,
+      total: 2,
     })
 
     act(() => {
       worker.emitMessage({ type: 'tracksUpdate', tracks: [] })
     })
 
-    const flushedMessages = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+    const messagesAfterTracksUpdate = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
       typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
     )
 
-    expect(flushedMessages).toHaveLength(2)
-    expect(flushedMessages[1].peak.binIndex).toBe(3)
+    expect(messagesAfterTracksUpdate).toHaveLength(1)
 
     act(() => {
       worker.emitMessage({
@@ -260,12 +262,12 @@ describe('useDSPWorker', () => {
       })
     })
 
-    const fullyFlushedMessages = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
+    const flushedMessages = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
       typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
     )
 
-    expect(fullyFlushedMessages).toHaveLength(3)
-    expect(fullyFlushedMessages[2].peak.binIndex).toBe(2)
+    expect(flushedMessages).toHaveLength(2)
+    expect(flushedMessages[1].peak.binIndex).toBe(2)
   })
 
   it('recycles returned peak spectrum buffers sized to the frequency-bin count', () => {
@@ -435,40 +437,6 @@ describe('useDSPWorker', () => {
       dropped: 1,
       total: 2,
     })
-  })
-
-  it('flushes a buffered peak when peak buffers return without a tracksUpdate', () => {
-    const { result } = renderHook(() => useDSPWorker({}))
-    const worker = MockWorker.instances[0]
-
-    act(() => {
-      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
-      worker.emitMessage({ type: 'ready' })
-    })
-
-    const spectrum = new Float32Array([1, 2, 3, 4])
-    const timeDomain = new Float32Array([0.1, 0.2, 0.3, 0.4])
-
-    act(() => {
-      result.current.processPeak(makePeak({ binIndex: 10 }), spectrum, 48000, 8192, timeDomain)
-      result.current.processPeak(makePeak({ binIndex: 11 }), spectrum, 48000, 8192, timeDomain)
-    })
-
-    act(() => {
-      worker.emitMessage({
-        type: 'returnBuffers',
-        spectrum: new Float32Array([9, 8, 7, 6]),
-        timeDomain: new Float32Array([0.4, 0.3, 0.2, 0.1]),
-        source: 'peak',
-      })
-    })
-
-    const flushedMessages = worker.messages.filter((message): message is { type: 'processPeak'; peak: DetectedPeak } =>
-      typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak'
-    )
-
-    expect(flushedMessages).toHaveLength(2)
-    expect(flushedMessages[1].peak.binIndex).toBe(11)
   })
 
   it('drops the weakest queued peaks when backpressure exceeds the queue limit', () => {

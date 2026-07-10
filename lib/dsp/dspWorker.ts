@@ -417,6 +417,10 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       settings = { ...DEFAULT_SETTINGS, ...msg.settings }
       sampleRate = msg.sampleRate
       fftSize = msg.fftSize
+      trackManager.updateOptions({
+        maxTracks: settings.maxTracks,
+        trackTimeoutMs: settings.trackTimeoutMs,
+      })
 
       algorithmEngine.init(fftSize)
       trackManager.clear()
@@ -453,6 +457,7 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
     }
 
     case 'reset': {
+      feedbackHotspotSummaries = []
       trackManager.clear()
       algorithmEngine.reset()
       advisoryManager.reset()

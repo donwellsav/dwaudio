@@ -14,7 +14,7 @@
  * was previously untested end-to-end.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FeedbackDetector } from '@/lib/dsp/feedbackDetector'
 import { AlgorithmEngine } from '@/lib/dsp/workerFft'
 import {
@@ -31,6 +31,7 @@ import { DEFAULT_SETTINGS } from '@/lib/dsp/constants'
 import { DEFAULT_CONFIG } from '@/types/advisory'
 import type { DetectedPeak, Track } from '@/types/advisory'
 import type { AlgorithmScores } from '@/lib/dsp/advancedDetection'
+import type { WorkerInboundMessage, WorkerOutboundMessage } from '@/lib/dsp/dspWorker'
 import {
   buildScores,
 } from '@/tests/helpers/mockAlgorithmScores'
@@ -236,6 +237,36 @@ function makePeak(overrides: Partial<DetectedPeak> = {}): DetectedPeak {
   }
 }
 
+async function createWorkerHarness(): Promise<{
+  messages: WorkerOutboundMessage[]
+  dispatch: (message: WorkerInboundMessage) => void
+}> {
+  const messages: WorkerOutboundMessage[] = []
+  const workerScope: {
+    onmessage: ((event: MessageEvent<WorkerInboundMessage>) => void) | null
+    postMessage: (message: WorkerOutboundMessage) => void
+  } = {
+    onmessage: null,
+    postMessage(message) {
+      messages.push(message)
+    },
+  }
+
+  vi.stubGlobal('self', workerScope)
+  await import('@/lib/dsp/dspWorker')
+
+  if (!workerScope.onmessage) {
+    throw new Error('DSP worker did not install its message handler')
+  }
+
+  return {
+    messages,
+    dispatch(message) {
+      workerScope.onmessage?.({ data: message } as MessageEvent<WorkerInboundMessage>)
+    },
+  }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe('Worker Pipeline Integration', () => {
@@ -244,6 +275,77 @@ describe('Worker Pipeline Integration', () => {
   beforeEach(() => {
     engine = new AlgorithmEngine()
     engine.init(FFT_SIZE)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('clears current-run recurrence on reset and applies initial track options', async () => {
+    const updateOptions = vi.spyOn(TrackManager.prototype, 'updateOptions')
+    const { dispatch, messages } = await createWorkerHarness()
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      maxTracks: 9,
+      trackTimeoutMs: 275,
+    }
+
+    dispatch({
+      type: 'init',
+      settings,
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+    })
+
+    expect.soft(updateOptions).toHaveBeenCalledWith({
+      maxTracks: 9,
+      trackTimeoutMs: 275,
+    })
+
+    dispatch({
+      type: 'syncFeedbackHistory',
+      hotspots: [
+        {
+          centerFrequencyHz: 1000,
+          occurrences: 3,
+          lastSeen: 900,
+        },
+      ],
+    })
+    dispatch({ type: 'reset' })
+    dispatch({
+      type: 'processPeak',
+      peak: makePeak({
+        binIndex: 170,
+        trueFrequencyHz: 1000,
+        trueAmplitudeDb: -24,
+        prominenceDb: 36,
+        sustainedMs: 240,
+        timestamp: 1000,
+        qEstimate: 40,
+        bandwidthHz: 25,
+        msd: 0.02,
+        msdGrowthRate: 1.4,
+        msdIsHowl: true,
+        msdFastConfirm: true,
+        persistenceFrames: 12,
+        isPersistent: true,
+      }),
+      spectrum: makePeakSpectrum(170, -24),
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+    })
+
+    const recommendation = messages.findLast(
+      (message): message is Extract<WorkerOutboundMessage, { type: 'advisory' }> =>
+        message.type === 'advisory',
+    )
+
+    expect(recommendation).toBeDefined()
+    expect(recommendation?.advisory.advisory?.recommendationContext).toMatchObject({
+      recurrenceCount: 0,
+    })
   })
 
   describe('AlgorithmEngine → computeScores', () => {
