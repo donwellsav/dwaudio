@@ -63,6 +63,9 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastInitRef = useRef<WorkerInitSnapshot | null>(null)
   const pendingHistorySyncRef = useRef<PendingHistorySyncRequest | null>(null)
+  const resetGenerationRef = useRef(0)
+  const pendingResetGenerationRef = useRef<number | null>(null)
+  const clearPendingResetOnReadyRef = useRef(false)
   const specPoolRef = useRef<Float32Array[]>([])
   const tdPoolRef = useRef<Float32Array[]>([])
   const poolFftSizeRef = useRef(0)
@@ -92,6 +95,8 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
         restartTimerRef,
         lastInitRef,
         pendingHistorySyncRef,
+        pendingResetGenerationRef,
+        clearPendingResetOnReadyRef,
         specPoolRef,
         tdPoolRef,
         specUpdatePoolRef,
@@ -273,6 +278,8 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
   )
 
   const reset = useCallback(() => {
+    const generation = ++resetGenerationRef.current
+    pendingResetGenerationRef.current = generation
     pendingPeakQueueRef.current = []
     pendingHistorySyncRef.current = null
     droppedFramesRef.current = 0
@@ -282,7 +289,7 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
     tracksUpdatesRef.current = 0
     lastTracksPayloadBytesRef.current = 0
     maxTracksPayloadBytesRef.current = 0
-    postMessage({ type: 'reset' })
+    postMessage({ type: 'reset', generation })
   }, [postMessage])
 
   const syncFeedbackHistory = useCallback<DSPWorkerHandle['syncFeedbackHistory']>(
@@ -307,6 +314,8 @@ export function useDSPWorker(callbacks: DSPWorkerCallbacks): DSPWorkerHandle {
     isReadyRef.current = false
     busyRef.current = false
     pendingPeakQueueRef.current = []
+    pendingResetGenerationRef.current = null
+    clearPendingResetOnReadyRef.current = false
   }, [])
 
   return useMemo(

@@ -313,7 +313,11 @@ describe('Worker Pipeline Integration', () => {
         },
       ],
     })
-    dispatch({ type: 'reset' })
+    dispatch({ type: 'reset', generation: 17 })
+    expect.soft(messages.at(-1)).toEqual({
+      type: 'resetComplete',
+      generation: 17,
+    })
     dispatch({
       type: 'processPeak',
       peak: makePeak({

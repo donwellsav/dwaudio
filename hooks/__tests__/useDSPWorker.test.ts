@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDSPWorker } from '../useDSPWorker'
 import { DEFAULT_SETTINGS } from '@/lib/dsp/constants'
-import type { DetectedPeak } from '@/types/advisory'
+import type { Advisory, DetectedPeak } from '@/types/advisory'
 import type { WorkerOutboundMessage } from '@/lib/dsp/dspWorker'
 
 class MockWorker {
@@ -163,6 +163,146 @@ describe('useDSPWorker', () => {
     expect(worker.messages).not.toContainEqual(
       expect.objectContaining({ type: 'syncFeedbackHistory' }),
     )
+  })
+
+  it('suppresses stale run state until the matching reset ACK while recycling returned buffers', () => {
+    const onAdvisory = vi.fn()
+    const onAdvisoryCleared = vi.fn()
+    const onTracksUpdate = vi.fn()
+    const onContentTypeUpdate = vi.fn()
+    const onEarlyWarningUpdate = vi.fn()
+    const { result } = renderHook(() => useDSPWorker({
+      onAdvisory,
+      onAdvisoryCleared,
+      onTracksUpdate,
+      onContentTypeUpdate,
+      onEarlyWarningUpdate,
+    }))
+    const worker = MockWorker.instances[0]
+    const advisory = { id: 'reset-boundary' } as Advisory
+    const stateMessages: WorkerOutboundMessage[] = [
+      { type: 'advisory', advisory },
+      { type: 'advisoryCleared', advisoryId: advisory.id },
+      { type: 'tracksUpdate', tracks: [] },
+      {
+        type: 'contentTypeUpdate',
+        contentType: 'speech',
+        isCompressed: false,
+        compressionRatio: 1,
+      },
+      { type: 'combPatternUpdate', pattern: null },
+    ]
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      worker.emitMessage({ type: 'ready' })
+      stateMessages.forEach((message) => worker.emitMessage(message))
+      result.current.processPeak(
+        makePeak({ binIndex: 1 }),
+        new Float32Array(4096),
+        48000,
+        8192,
+        new Float32Array(8192),
+      )
+      result.current.reset()
+    })
+
+    const resetMessage = worker.messages.findLast(
+      (message): message is { type: 'reset'; generation?: number } =>
+        typeof message === 'object' && message !== null && 'type' in message && message.type === 'reset',
+    )
+    const firstPeakMessage = worker.messages.find(
+      (message): message is { type: 'processPeak'; spectrum: Float32Array; timeDomain: Float32Array } =>
+        typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak',
+    )
+
+    expect(resetMessage?.generation).toEqual(expect.any(Number))
+    expect(firstPeakMessage).toBeDefined()
+
+    act(() => {
+      stateMessages.forEach((message) => worker.emitMessage(message))
+      worker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: firstPeakMessage!.spectrum,
+        timeDomain: firstPeakMessage!.timeDomain,
+        source: 'peak',
+      })
+      result.current.processPeak(
+        makePeak({ binIndex: 2 }),
+        new Float32Array(4096),
+        48000,
+        8192,
+        new Float32Array(8192),
+      )
+    })
+
+    const peakMessages = worker.messages.filter(
+      (message): message is { type: 'processPeak'; spectrum: Float32Array; timeDomain: Float32Array } =>
+        typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak',
+    )
+
+    expect(onAdvisory).toHaveBeenCalledTimes(1)
+    expect(onAdvisoryCleared).toHaveBeenCalledTimes(1)
+    expect(onTracksUpdate).toHaveBeenCalledTimes(1)
+    expect(onContentTypeUpdate).toHaveBeenCalledTimes(1)
+    expect(onEarlyWarningUpdate).toHaveBeenCalledTimes(1)
+    expect(peakMessages).toHaveLength(2)
+    expect(peakMessages[1].spectrum).toBe(firstPeakMessage!.spectrum)
+    expect(peakMessages[1].timeDomain).toBe(firstPeakMessage!.timeDomain)
+
+    act(() => {
+      worker.emitMessage({
+        type: 'resetComplete',
+        generation: resetMessage!.generation!,
+      } as unknown as WorkerOutboundMessage)
+      stateMessages.forEach((message) => worker.emitMessage(message))
+    })
+
+    expect(onAdvisory).toHaveBeenCalledTimes(2)
+    expect(onAdvisoryCleared).toHaveBeenCalledTimes(2)
+    expect(onTracksUpdate).toHaveBeenCalledTimes(2)
+    expect(onContentTypeUpdate).toHaveBeenCalledTimes(2)
+    expect(onEarlyWarningUpdate).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an older reset ACK unblock a newer reset', () => {
+    const onTracksUpdate = vi.fn()
+    const { result } = renderHook(() => useDSPWorker({ onTracksUpdate }))
+    const worker = MockWorker.instances[0]
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      worker.emitMessage({ type: 'ready' })
+      result.current.reset()
+      result.current.reset()
+    })
+
+    const resetMessages = worker.messages.filter(
+      (message): message is { type: 'reset'; generation?: number } =>
+        typeof message === 'object' && message !== null && 'type' in message && message.type === 'reset',
+    )
+    const [olderReset, newerReset] = resetMessages
+
+    expect(olderReset.generation).toEqual(expect.any(Number))
+    expect(newerReset.generation).toBeGreaterThan(olderReset.generation!)
+
+    act(() => {
+      worker.emitMessage({
+        type: 'resetComplete',
+        generation: olderReset.generation!,
+      } as unknown as WorkerOutboundMessage)
+      worker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+    })
+    expect(onTracksUpdate).not.toHaveBeenCalled()
+
+    act(() => {
+      worker.emitMessage({
+        type: 'resetComplete',
+        generation: newerReset.generation!,
+      } as unknown as WorkerOutboundMessage)
+      worker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+    })
+    expect(onTracksUpdate).toHaveBeenCalledTimes(1)
   })
 
   it('queues startup peaks and flushes them in order once the worker is ready', () => {
@@ -620,6 +760,118 @@ describe('useDSPWorker', () => {
     // only assert the non-negative invariant.
     expect(stats.lastTracksPayloadBytes).toBeGreaterThanOrEqual(0)
     expect(stats.maxTracksPayloadBytes).toBeGreaterThanOrEqual(stats.lastTracksPayloadBytes)
+  })
+
+  it('keeps a crashed worker reset-gated until its replacement is ready', () => {
+    vi.useFakeTimers()
+
+    const onTracksUpdate = vi.fn()
+    const { result } = renderHook(() => useDSPWorker({ onTracksUpdate }))
+    const firstWorker = MockWorker.instances[0]
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      firstWorker.emitMessage({ type: 'ready' })
+      result.current.reset()
+      firstWorker.emitError('worker exploded during reset')
+      firstWorker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+    })
+    expect(onTracksUpdate).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    const restartedWorker = MockWorker.instances[1]
+
+    act(() => {
+      restartedWorker.emitMessage({ type: 'ready' })
+      restartedWorker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+    })
+    expect(onTracksUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores queued messages from a replaced worker', () => {
+    vi.useFakeTimers()
+
+    const onReady = vi.fn()
+    const onTracksUpdate = vi.fn()
+    const { result } = renderHook(() => useDSPWorker({ onReady, onTracksUpdate }))
+    const firstWorker = MockWorker.instances[0]
+
+    act(() => {
+      result.current.init(DEFAULT_SETTINGS, 48000, 8192)
+      firstWorker.emitMessage({ type: 'ready' })
+      firstWorker.emitError('worker exploded')
+      vi.advanceTimersByTime(500)
+    })
+    const restartedWorker = MockWorker.instances[1]
+
+    act(() => {
+      restartedWorker.emitMessage({ type: 'ready' })
+      result.current.reset()
+      result.current.processPeak(
+        makePeak({ binIndex: 1 }),
+        new Float32Array(4096),
+        48000,
+        8192,
+        new Float32Array(8192),
+      )
+      result.current.processPeak(
+        makePeak({ binIndex: 2 }),
+        new Float32Array(4096),
+        48000,
+        8192,
+        new Float32Array(8192),
+      )
+    })
+
+    const resetMessage = restartedWorker.messages.findLast(
+      (message): message is { type: 'reset'; generation: number } =>
+        typeof message === 'object' && message !== null && 'type' in message && message.type === 'reset',
+    )
+    expect(resetMessage).toBeDefined()
+
+    act(() => {
+      firstWorker.emitMessage({
+        type: 'resetComplete',
+        generation: resetMessage!.generation,
+      })
+      firstWorker.emitMessage({ type: 'ready' })
+      firstWorker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array(4096),
+        timeDomain: new Float32Array(8192),
+        source: 'peak',
+      })
+      restartedWorker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+    })
+
+    const peakMessagesBeforeAck = restartedWorker.messages.filter(
+      (message) => typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak',
+    )
+    expect(onReady).toHaveBeenCalledTimes(2)
+    expect(onTracksUpdate).not.toHaveBeenCalled()
+    expect(peakMessagesBeforeAck).toHaveLength(1)
+
+    act(() => {
+      restartedWorker.emitMessage({
+        type: 'resetComplete',
+        generation: resetMessage!.generation,
+      })
+      restartedWorker.emitMessage({ type: 'tracksUpdate', tracks: [] })
+      restartedWorker.emitMessage({
+        type: 'returnBuffers',
+        spectrum: new Float32Array(4096),
+        timeDomain: new Float32Array(8192),
+        source: 'peak',
+      })
+    })
+
+    const peakMessagesAfterAck = restartedWorker.messages.filter(
+      (message) => typeof message === 'object' && message !== null && 'type' in message && message.type === 'processPeak',
+    )
+    expect(onTracksUpdate).toHaveBeenCalledTimes(1)
+    expect(peakMessagesAfterAck).toHaveLength(2)
   })
 
   it('restarts with the latest settings after a worker crash and cleans up the replacement worker', () => {
