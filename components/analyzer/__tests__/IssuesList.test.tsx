@@ -8,6 +8,7 @@
 
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { IssuesList } from '../IssuesList'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
 
@@ -73,9 +74,61 @@ function makeTonalAdvisory(id: string, summary: string): Advisory {
   })
 }
 
+function DismissUndoHarness({ withSecondIssue = false }: { withSecondIssue?: boolean }) {
+  const advisory = makeAdvisory('a1', 'GROWING')
+  const advisories = withSecondIssue
+    ? [advisory, makeAdvisory('a2', 'GROWING', { trueFrequencyHz: 2000 })]
+    : [advisory]
+  const [dismissedIds, setDismissedIds] = useState(new Set<string>())
+
+  return (
+    <IssuesList
+      advisories={advisories}
+      dismissedIds={dismissedIds}
+      isRunning
+      onDismiss={(id) => setDismissedIds((current) => new Set(current).add(id))}
+      onRestoreDismissed={(id) => setDismissedIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })}
+    />
+  )
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('IssuesList', () => {
+  it('keeps Undo available after dismissing and restores the final issue', () => {
+    render(<DismissUndoHarness />)
+
+    expect(screen.getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    expect(screen.queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.getByText('Issue dismissed.')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(screen.queryByText('Issue dismissed.')).toBeNull()
+  })
+
+  it('replaces the previous Undo target with the latest individual dismissal', () => {
+    render(<DismissUndoHarness withSecondIssue />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 2.00kHz' }))
+
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.getByRole('button', { name: 'Dismiss 2.00kHz' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.queryByText('Issue dismissed.')).toBeNull()
+  })
+
   it('renders standby state with start button when not running', () => {
     const onStart = vi.fn()
     render(<IssuesList advisories={[]} isRunning={false} onStart={onStart} />)

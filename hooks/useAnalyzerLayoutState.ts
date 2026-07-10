@@ -179,10 +179,12 @@ export function useAnalyzerLayoutState() {
     showAlgorithmScores: settings.showAlgorithmScores,
     showPeqDetails: settings.showPeqDetails,
     onDismiss: advisoriesState.onDismiss,
+    onRestoreDismissed: advisoriesState.restoreDismissedAdvisory,
   }), [
     advisoriesState.advisories,
     advisoriesState.dismissedIds,
     advisoriesState.onDismiss,
+    advisoriesState.restoreDismissedAdvisory,
     isLowSignal,
     isRunning,
     noiseFloorDb,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, memo } from 'react'
+import { useCallback, useEffect, useMemo, useState, memo } from 'react'
 import { useTheme } from 'next-themes'
 import { X } from 'lucide-react'
 import { getSeverityText, getSeverityColor } from '@/lib/utils/advisoryDisplay'
@@ -31,6 +31,7 @@ interface IssuesListProps {
   showAlgorithmScores?: boolean
   showPeqDetails?: boolean
   onDismiss?: (id: string) => void
+  onRestoreDismissed?: (id: string) => void
 }
 
 interface TonalIssueSummaryProps {
@@ -93,17 +94,38 @@ export const IssuesList = memo(function IssuesList({
   showAlgorithmScores,
   showPeqDetails,
   onDismiss,
+  onRestoreDismissed,
 }: IssuesListProps) {
+  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null)
   const latestEntries = useIssuesListEntries(advisories, dismissedIds, maxIssues)
   const sortedEntries = useStableIssueEntries(latestEntries)
+  const visibleEntries = useMemo(
+    () => sortedEntries.filter((entry) => !dismissedIds?.has(entry.advisory.id)),
+    [dismissedIds, sortedEntries],
+  )
   const liveAnnouncement = useIssueAnnouncement(sortedEntries)
 
+  const handleDismiss = useCallback((id: string) => {
+    onDismiss?.(id)
+    if (onRestoreDismissed) setLastDismissedId(id)
+  }, [onDismiss, onRestoreDismissed])
+
+  const handleUndo = useCallback(() => {
+    if (lastDismissedId === null || !onRestoreDismissed) return
+    onRestoreDismissed(lastDismissedId)
+    setLastDismissedId(null)
+  }, [lastDismissedId, onRestoreDismissed])
+
+  const canUndoDismissal = lastDismissedId !== null &&
+    dismissedIds?.has(lastDismissedId) === true &&
+    advisories.some((advisory) => advisory.id === lastDismissedId)
+
   const hasResolved = useMemo(
-    () => sortedEntries.some((entry) => entry.advisory.resolved),
-    [sortedEntries],
+    () => visibleEntries.some((entry) => entry.advisory.resolved),
+    [visibleEntries],
   )
   const tonalIssueSummary = useMemo(() => {
-    for (const entry of sortedEntries) {
+    for (const entry of visibleEntries) {
       const advisorySummary = entry.advisory.advisory?.tonalIssueSummary
       if (advisorySummary) return advisorySummary
 
@@ -113,14 +135,23 @@ export const IssuesList = memo(function IssuesList({
       if (derivedSummary) return derivedSummary
     }
     return null
-  }, [sortedEntries])
+  }, [visibleEntries])
   return (
     <div className="flex flex-col gap-1.5">
       <div className="sr-only" aria-live="polite" aria-atomic="true" role="status">
         {liveAnnouncement}
       </div>
 
-      {sortedEntries.length === 0 ? (
+      {canUndoDismissal ? (
+        <div role="status" className="flex min-h-11 items-center gap-2 rounded border border-border/50 bg-card/60 px-3 text-dwa-sm font-mono text-muted-foreground">
+          <span>Issue dismissed.</span>
+          <button type="button" className="ml-auto min-h-11 px-3 text-foreground underline underline-offset-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" onClick={handleUndo}>
+            Undo
+          </button>
+        </div>
+      ) : null}
+
+      {visibleEntries.length === 0 ? (
         <IssuesEmptyState
           isRunning={isRunning}
           isLowSignal={isLowSignal}
@@ -134,7 +165,7 @@ export const IssuesList = memo(function IssuesList({
             <TonalIssueSummary key={tonalIssueSummary} summary={tonalIssueSummary} />
           ) : null}
 
-          {sortedEntries.length > 1 ? (
+          {visibleEntries.length > 1 ? (
             <div className="flex items-center justify-end gap-2">
               {onClearResolved && hasResolved ? (
                 <button type="button"
@@ -155,7 +186,7 @@ export const IssuesList = memo(function IssuesList({
             </div>
           ) : null}
 
-          {sortedEntries.map(({ advisory, occurrenceCount, isHeld }) => (
+          {visibleEntries.map(({ advisory, occurrenceCount, isHeld }) => (
             <IssueCard
               key={advisory.id}
               advisory={advisory}
@@ -164,7 +195,7 @@ export const IssuesList = memo(function IssuesList({
               touchFriendly={touchFriendly}
               showAlgorithmScores={showAlgorithmScores}
               showPeqDetails={showPeqDetails}
-              onDismiss={onDismiss}
+              onDismiss={onDismiss ? handleDismiss : undefined}
             />
           ))}
 

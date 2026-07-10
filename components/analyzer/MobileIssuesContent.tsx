@@ -15,6 +15,7 @@ type IssuesListBaseProps = Pick<
   | 'showAlgorithmScores'
   | 'showPeqDetails'
   | 'onDismiss'
+  | 'onRestoreDismissed'
 >
 
 interface MobileIssuesContentProps {
