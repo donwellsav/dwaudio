@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import { AlertTriangle, Columns2, PanelLeftClose } from 'lucide-react'
 import { DesktopGraphPanels } from './DesktopGraphPanels'
 import { DesktopIssuesContent } from './DesktopIssuesContent'
@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAnalyzerLayoutState } from '@/hooks/useAnalyzerLayoutState'
 import { useDesktopLayoutState } from '@/hooks/useDesktopLayoutState'
 import { useTabKeyboardNav } from '@/hooks/useTabKeyboardNav'
+import { PriorityAlertBanner } from './PriorityAlertBanner'
 
 interface DesktopLayoutProps {
   issuesPanelOpen: boolean
@@ -91,6 +92,11 @@ export const DesktopLayout = memo(function DesktopLayout({
     isRtaFullscreen,
     toggleRtaFullscreen,
   } = useUI()
+
+  const showPriorityIssue = useCallback(() => {
+    if (isRtaFullscreen) toggleRtaFullscreen()
+    if (!issuesPanelOpen) setActiveSidebarTab('issues')
+  }, [isRtaFullscreen, issuesPanelOpen, setActiveSidebarTab, toggleRtaFullscreen])
 
   const handleTabKeyDown = useTabKeyboardNav()
 
@@ -242,6 +248,7 @@ export const DesktopLayout = memo(function DesktopLayout({
                       onTabChange={setControlsTab}
                       tabIdPrefix="sidebar-settings-tab"
                       panelIdPrefix="sidebar-settings-panel"
+                      onViewIssues={!issuesPanelOpen ? showPriorityIssue : undefined}
                     />
                   </div>
                 ) : null}
@@ -329,6 +336,12 @@ export const DesktopLayout = memo(function DesktopLayout({
             range: spectrumRange,
             onFreqRangeChange: handleFreqRangeChange,
             onThresholdChange: handleThresholdChange,
+            overlay: isRtaFullscreen ? (
+              <PriorityAlertBanner
+                onViewIssues={showPriorityIssue}
+                className="absolute inset-x-2 top-2 z-30"
+              />
+            ) : null,
           }}
           geqBarViewProps={{
             advisories,

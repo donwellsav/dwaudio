@@ -17,6 +17,7 @@ export interface AdvisoryDataContextValue {
   activeAdvisoryCount: number
   earlyWarning: EarlyWarning | null
   dismissedIds: Set<string>
+  lastDismissedId: string | null
   rtaClearedIds: Set<string>
   geqClearedIds: Set<string>
   hasActiveRTAMarkers: boolean
@@ -49,6 +50,7 @@ export function AdvisoryProvider({
   const { advisories, earlyWarning } = useDetection()
   const {
     clearState,
+    lastDismissedId,
     activeAdvisoryCount,
     hasActiveGEQBars,
     hasActiveRTAMarkers,
@@ -66,6 +68,7 @@ export function AdvisoryProvider({
       activeAdvisoryCount,
       earlyWarning,
       dismissedIds: clearState.dismissed,
+      lastDismissedId,
       rtaClearedIds: clearState.rtaCleared,
       geqClearedIds: clearState.geqCleared,
       hasActiveRTAMarkers,
@@ -76,6 +79,7 @@ export function AdvisoryProvider({
       activeAdvisoryCount,
       earlyWarning,
       clearState.dismissed,
+      lastDismissedId,
       clearState.rtaCleared,
       clearState.geqCleared,
       hasActiveRTAMarkers,

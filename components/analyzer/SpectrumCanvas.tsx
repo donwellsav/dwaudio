@@ -68,9 +68,10 @@ interface SpectrumCanvasProps {
   range?: SpectrumRangeConfig
   onFreqRangeChange?: (min: number, max: number) => void
   onThresholdChange?: (db: number) => void
+  overlay?: React.ReactNode
 }
 
-export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, advisories, lifecycle, earlyWarning, clearedIds, isFrozen = false, display = {}, range = {}, onFreqRangeChange, onThresholdChange }: SpectrumCanvasProps) {
+export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, advisories, lifecycle, earlyWarning, clearedIds, isFrozen = false, display = {}, range = {}, onFreqRangeChange, onThresholdChange, overlay }: SpectrumCanvasProps) {
   const { isRunning, isStarting = false, error, onStart } = lifecycle
   const { graphFontSize = 11, rtaDbMin: rtaDbMinProp, rtaDbMax: rtaDbMaxProp, spectrumLineWidth: spectrumLineWidthProp, canvasTargetFps, showFreqZones = false, showThresholdLine = false, spectrumWarmMode = false, spectrumSmoothingMode = 'raw' } = display
   const { minFrequency = 20, maxFrequency = 20000, feedbackThresholdDb } = range
@@ -517,6 +518,7 @@ export const SpectrumCanvas = memo(function SpectrumCanvas({ spectrumRef, adviso
         isRunning={isRunning}
         onStart={onStart}
       />
+      {overlay}
     </div>
   )
 })

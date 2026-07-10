@@ -43,5 +43,8 @@ docs/generate-*-docx.js
 # Claude agent worktrees
 .claude/worktrees/
 
+# Codex agent worktrees
+.worktrees/
+
 # Repomix exports
 repomix-output*.xml

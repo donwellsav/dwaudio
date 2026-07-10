@@ -10,7 +10,12 @@ export const AnalyzerKeyboardShortcuts = memo(function AnalyzerKeyboardShortcuts
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'a[href], button, summary, input, select, textarea, [contenteditable], [role="button"], [role="slider"], [role="tab"]',
+        )
+      ) return
 
       switch (event.key) {
         case ' ':

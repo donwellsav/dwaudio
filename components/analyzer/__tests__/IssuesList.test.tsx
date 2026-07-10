@@ -2,12 +2,13 @@
 /**
  * Smoke tests for IssuesList — advisory list rendering, empty states, sorting.
  *
- * Validates standby state, all-clear green state, low-signal warning,
+ * Validates standby state, truthful detector state, low-signal guidance,
  * card rendering, and clear-all button.
  */
 
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
 import { IssuesList } from '../IssuesList'
 import type { Advisory, SeverityLevel } from '@/types/advisory'
 
@@ -73,18 +74,245 @@ function makeTonalAdvisory(id: string, summary: string): Advisory {
   })
 }
 
+const healthySpectrumStatus = {
+  peak: -18,
+  effectiveThresholdDb: -45,
+  contentType: 'unknown',
+  isSignalPresent: true,
+  lastReportDecision: 'reported',
+  lastReportGate: 'reported',
+} as const
+
+function DismissUndoHarness({
+  withSecondIssue = false,
+  copies = 1,
+}: {
+  withSecondIssue?: boolean
+  copies?: number
+}) {
+  const advisory = makeAdvisory('a1', 'GROWING')
+  const advisories = withSecondIssue
+    ? [advisory, makeAdvisory('a2', 'GROWING', { trueFrequencyHz: 2000 })]
+    : [advisory]
+  const [dismissedIds, setDismissedIds] = useState(new Set<string>())
+  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null)
+
+  const dismiss = (id: string) => {
+    setDismissedIds((current) => new Set(current).add(id))
+    setLastDismissedId(id)
+  }
+  const restore = (id: string) => {
+    setDismissedIds((current) => {
+      const next = new Set(current)
+      next.delete(id)
+      return next
+    })
+    setLastDismissedId(null)
+  }
+
+  return (
+    <>
+      {Array.from({ length: copies }, (_, index) => (
+        <div key={index} data-testid={`issues-${index}`}>
+          <IssuesList
+            advisories={advisories}
+            dismissedIds={dismissedIds}
+            lastDismissedId={lastDismissedId}
+            isRunning
+            onDismiss={dismiss}
+            onRestoreDismissed={restore}
+          />
+        </div>
+      ))}
+    </>
+  )
+}
+
+function ClearAllHarness() {
+  const advisories = [
+    makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' }),
+    makeAdvisory('a2', 'GROWING', { lifecycle: 'confirmed', trueFrequencyHz: 2000 }),
+  ]
+  const [dismissedIds, setDismissedIds] = useState(new Set<string>())
+
+  return (
+    <IssuesList
+      advisories={advisories}
+      dismissedIds={dismissedIds}
+      isRunning
+      noiseFloorDb={-90}
+      spectrumStatus={healthySpectrumStatus}
+      onClearAll={() => setDismissedIds(new Set(advisories.map(({ id }) => id)))}
+    />
+  )
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('IssuesList', () => {
+  it('keeps Undo available after dismissing and restores the final issue', () => {
+    render(<DismissUndoHarness />)
+
+    expect(screen.getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    expect(screen.queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.getByText('Issue dismissed.')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(screen.queryByText('Issue dismissed.')).toBeNull()
+  })
+
+  it('replaces the previous Undo target with the latest individual dismissal', () => {
+    render(<DismissUndoHarness withSecondIssue />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss 2.00kHz' }))
+
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    expect(screen.getByRole('button', { name: 'Dismiss 2.00kHz' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.queryByText('Issue dismissed.')).toBeNull()
+  })
+
+  it('keeps the shared Undo target visible across mounted responsive lists', () => {
+    render(<DismissUndoHarness copies={2} />)
+
+    const portrait = screen.getByTestId('issues-0')
+    const landscape = screen.getByTestId('issues-1')
+    fireEvent.click(within(portrait).getByRole('button', { name: 'Dismiss 1.00kHz' }))
+
+    expect(within(portrait).queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(within(landscape).queryByRole('button', { name: 'Dismiss 1.00kHz' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(2)
+
+    fireEvent.click(within(landscape).getByRole('button', { name: 'Undo' }))
+
+    expect(within(portrait).getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(within(landscape).getByRole('button', { name: 'Dismiss 1.00kHz' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('does not claim no actionable feedback when active issues are hidden', () => {
+    render(
+      <IssuesList
+        advisories={[makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' })]}
+        dismissedIds={new Set(['a1'])}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={healthySpectrumStatus}
+      />,
+    )
+
+    expect(screen.getByText(/1 active issue hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+  })
+
+  it('keeps the stopped start action available when an old issue is hidden', () => {
+    render(
+      <IssuesList
+        advisories={[makeAdvisory('a1', 'GROWING', { lifecycle: 'confirmed' })]}
+        dismissedIds={new Set(['a1'])}
+        isRunning={false}
+        onStart={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Start analysis' })).toBeDefined()
+    expect(screen.queryByText(/active issue hidden/i)).toBeNull()
+  })
+
+  it('keeps Clear All truthful without offering individual Undo', () => {
+    render(<ClearAllHarness />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear All' }))
+
+    expect(screen.getByText(/2 active issues hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('keeps a hidden confirmed item beyond the card cap truthful and undoable', () => {
+    const provisional = Array.from({ length: 5 }, (_, index) => (
+      makeAdvisory(`provisional-${index}`, 'POSSIBLE_RING', { lifecycle: 'provisional' })
+    ))
+    const confirmed = makeAdvisory('confirmed-6', 'GROWING', { lifecycle: 'confirmed' })
+    const advisories = [...provisional, confirmed]
+    const onRestoreDismissed = vi.fn()
+
+    render(
+      <IssuesList
+        advisories={advisories}
+        dismissedIds={new Set(advisories.map(({ id }) => id))}
+        lastDismissedId={confirmed.id}
+        maxIssues={5}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={healthySpectrumStatus}
+        onRestoreDismissed={onRestoreDismissed}
+      />,
+    )
+
+    expect(screen.getByText(/1 active issue hidden/i)).toBeDefined()
+    expect(screen.queryByText(/no actionable feedback/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(onRestoreDismissed).toHaveBeenCalledWith('confirmed-6')
+  })
+
   it('renders standby state with start button when not running', () => {
     const onStart = vi.fn()
     render(<IssuesList advisories={[]} isRunning={false} onStart={onStart} />)
     expect(screen.getByText(/start analysis/i)).toBeDefined()
   })
 
-  it('renders green all-clear state when running with no advisories', () => {
-    render(<IssuesList advisories={[]} isRunning={true} />)
-    expect(screen.getByText(/all clear/i)).toBeDefined()
+  it('shows Listening before detector status and floor are ready', () => {
+    render(<IssuesList advisories={[]} isRunning />)
+    expect(screen.getByText(/^listening$/i)).toBeDefined()
+    expect(screen.queryByText(/all clear/i)).toBeNull()
+  })
+
+  it('shows No Actionable Feedback for a usable analyzed signal', () => {
+    render(
+      <IssuesList
+        advisories={[]}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={{
+          peak: -18,
+          effectiveThresholdDb: -45,
+          contentType: 'unknown',
+          isSignalPresent: true,
+          lastReportDecision: 'reported',
+          lastReportGate: 'reported',
+        }}
+      />,
+    )
+    expect(screen.getByText(/no actionable feedback/i)).toBeDefined()
+  })
+
+  it('shows Detection Limited while a detector gate blocks reporting', () => {
+    render(
+      <IssuesList
+        advisories={[]}
+        isRunning
+        noiseFloorDb={-90}
+        spectrumStatus={{
+          peak: -18,
+          effectiveThresholdDb: -45,
+          contentType: 'music',
+          isSignalPresent: true,
+          lastReportDecision: 'blocked',
+          lastReportGate: 'music-material',
+        }}
+      />,
+    )
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
+    expect(screen.getByText(/music material/i)).toBeDefined()
   })
 
   it('renders compact analyzer status when running with no advisories', () => {
@@ -108,7 +336,7 @@ describe('IssuesList', () => {
       />,
     )
 
-    expect(screen.getByText(/all clear/i)).toBeDefined()
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
     expect(screen.getByText(/fusion wait/i)).toBeDefined()
     expect(screen.getByText(/pk -18db/i)).toBeDefined()
     expect(screen.getByText(/thr -45db/i)).toBeDefined()
@@ -117,8 +345,9 @@ describe('IssuesList', () => {
     expect(screen.getByText(/conf 28%/i)).toBeDefined()
   })
 
-  it('renders low-signal warning when isLowSignal', () => {
-    render(<IssuesList advisories={[]} isRunning={true} isLowSignal />)
+  it('shows Detection Limited and gain guidance for low signal', () => {
+    render(<IssuesList advisories={[]} isRunning isLowSignal />)
+    expect(screen.getByText(/detection limited/i)).toBeDefined()
     expect(screen.getByText(/low signal/i)).toBeDefined()
     expect(screen.getByText(/increase gain/i)).toBeDefined()
   })

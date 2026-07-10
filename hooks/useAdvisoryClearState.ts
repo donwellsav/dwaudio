@@ -11,6 +11,7 @@ export interface AdvisoryClearState {
 
 export interface AdvisoryClearStateHandle {
   clearState: AdvisoryClearState
+  lastDismissedId: string | null
   activeAdvisoryCount: number
   hasActiveGEQBars: boolean
   hasActiveRTAMarkers: boolean
@@ -68,6 +69,7 @@ export function useAdvisoryClearState(
   advisories: readonly Advisory[],
 ): AdvisoryClearStateHandle {
   const [clearState, setClearState] = useState<AdvisoryClearState>(createEmptyClearState)
+  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null)
 
   // Derive pruned clear state via useMemo instead of useEffect+setState.
   // This eliminates a render→effect→setState→re-render cycle: the pruned
@@ -80,6 +82,10 @@ export function useAdvisoryClearState(
     geqCleared: pruneIds(clearState.geqCleared, liveIds),
     rtaCleared: pruneIds(clearState.rtaCleared, liveIds),
   }), [clearState.dismissed, clearState.geqCleared, clearState.rtaCleared, liveIds])
+  const effectiveLastDismissedId =
+    lastDismissedId && effectiveClearState.dismissed.has(lastDismissedId)
+      ? lastDismissedId
+      : null
 
   // Periodically flush dead IDs from the backing state so they don't
   // accumulate in long-running sessions. Runs in useEffect (commit phase)
@@ -138,6 +144,7 @@ export function useAdvisoryClearState(
   )
 
   const onDismiss = useCallback((id: string) => {
+    setLastDismissedId(id)
     setClearState((prev) => ({
       ...prev,
       dismissed: copyWithAddedId(prev.dismissed, id),
@@ -145,6 +152,7 @@ export function useAdvisoryClearState(
   }, [])
 
   const restoreDismissed = useCallback((id: string) => {
+    setLastDismissedId((current) => current === id ? null : current)
     setClearState((prev) => {
       const dismissed = copyWithRemovedId(prev.dismissed, id)
       return dismissed === prev.dismissed ? prev : { ...prev, dismissed }
@@ -152,6 +160,7 @@ export function useAdvisoryClearState(
   }, [])
 
   const onClearAll = useCallback(() => {
+    setLastDismissedId(null)
     setClearState((prev) => ({
       ...prev,
       dismissed: makeAdvisoryIdSet(advisories),
@@ -159,6 +168,7 @@ export function useAdvisoryClearState(
   }, [advisories])
 
   const onClearResolved = useCallback(() => {
+    setLastDismissedId(null)
     setClearState((prev) => {
       const dismissed = new Set(prev.dismissed)
       advisories.forEach((advisory) => {
@@ -186,6 +196,7 @@ export function useAdvisoryClearState(
 
   return {
     clearState: effectiveClearState,
+    lastDismissedId: effectiveLastDismissedId,
     activeAdvisoryCount,
     hasActiveGEQBars,
     hasActiveRTAMarkers,

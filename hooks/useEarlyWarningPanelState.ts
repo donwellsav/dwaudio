@@ -24,8 +24,11 @@ export function hasEarlyWarningContent(
   )
 }
 
-export function getEarlyWarningElapsedSeconds(timestamp: number): number {
-  return Math.max(0, Math.round((Date.now() - timestamp) / 1000))
+export function getEarlyWarningElapsedSeconds(
+  timestamp: number,
+  nowMs: number = Date.now(),
+): number {
+  return Math.max(0, Math.floor((nowMs - timestamp) / 1000))
 }
 
 export function getEarlyWarningTone(elapsedSec: number): EarlyWarningTone {
@@ -48,7 +51,7 @@ export function useEarlyWarningPanelState(
 
   const elapsedSec = timestamp === null
     ? 0
-    : Math.max(0, Math.round((nowMs - timestamp) / 1000))
+    : getEarlyWarningElapsedSeconds(timestamp, nowMs)
 
   const toggleExpanded = useCallback(() => {
     setIsExpanded((current) => !current)
