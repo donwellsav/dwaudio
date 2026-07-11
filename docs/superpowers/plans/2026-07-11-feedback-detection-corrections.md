@@ -4,7 +4,7 @@
 
 **Goal:** Correct the proven timing and scoring defects in the existing feedback detector so provisional alerts arrive faster and confirmed alerts use internally consistent evidence.
 
-**Architecture:** Keep the current main-detector-to-worker pipeline. The main detector owns acquisition, elapsed-time persistence, peak confirmation, and the single normalized-MSD history; the worker owns tracking, reliable spectral fusion, classification, and the existing provisional/confirmed advisory lifecycle. Unreliable phase and compression evidence remains diagnostic but does not vote in automatic fusion.
+**Architecture:** Keep the current main-detector-to-worker pipeline. The main detector owns acquisition, elapsed-time persistence, peak confirmation, and the single normalized-MSD history; the worker owns tracking, fusion, classification, and the existing provisional/confirmed advisory lifecycle. Spectral-crest compression evidence remains diagnostic-only. Phase remains active until a sample-clocked replacement can be calibrated safely.
 
 **Tech Stack:** TypeScript, Web Audio API, Web Workers, Vitest, pnpm, Next.js 16.
 
@@ -384,6 +384,8 @@ git commit -m "fix: use one feedback MSD history"
 ---
 
 ### Task 6: Quarantine unreliable phase and compression votes
+
+> **Execution correction:** Removing phase from automatic fusion failed 14 existing accuracy regressions, including tonal-source suppression. Retain phase for this release and quarantine only compression voting; replace phase only with sample-clocked input plus recorded calibration.
 
 **Files:**
 - Modify: `lib/dsp/fusionEngine.ts`

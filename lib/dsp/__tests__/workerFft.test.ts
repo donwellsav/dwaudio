@@ -96,10 +96,11 @@ describe('AlgorithmEngine compression caching', () => {
     const secondSpectrum = makeSpectrum(64, 12, -18)
 
     engine.feedFrame(1000, firstSpectrum, undefined, 150, 10000, 48000, 128)
-    engine.computeScores(makePeak(10, 1000), makeTrack(10), firstSpectrum, 48000, 128, [])
+    const firstResult = engine.computeScores(makePeak(10, 1000), makeTrack(10), firstSpectrum, 48000, 128, [])
     engine.computeScores(makePeak(12, 1000), makeTrack(12), secondSpectrum, 48000, 128, [])
 
     expect(detectCompressionSpy).toHaveBeenCalledTimes(1)
+    expect(firstResult.algorithmScores.compression).toBeNull()
 
     engine.feedFrame(1020, firstSpectrum, undefined, 150, 10000, 48000, 128)
     engine.computeScores(makePeak(10, 1020), makeTrack(10), firstSpectrum, 48000, 128, [])

@@ -11,7 +11,7 @@ Improve real detection speed and accuracy without adding UI, controls, dependenc
 3. Count modal and cumulative-growth evidence once. Calculate confidence from the final normalized class scores rather than an intermediate state.
 4. Make detector scheduling independent of display refresh and base persistence decisions on measured elapsed time.
 5. Use the detector's MSD result as the single authoritative MSD source. Remove the worker's differently clocked duplicate history. Keep the existing normalized-MSD formula and document that it is a deliberate variant of the cited summing method until recorded calibration data justifies changing its threshold.
-6. Exclude phase coherence from automatic fusion while its snapshots are not sample-clocked. Keep the implementation available for diagnostics and future fixed-hop input.
+6. Keep phase coherence in automatic fusion until a sample-clocked replacement can be calibrated. Removing it without retuning also removes established tonal-source suppression and raises false-positive paths.
 7. Exclude the current spectral-crest heuristic from compression-specific fusion weights and gates. It may remain diagnostic data, but it must not claim to measure dynamic compression.
 8. Stop presenting heuristic fusion output as a calibrated probability internally. Preserve the existing advisory confidence display contract, but derive it consistently from final scores. Empirical probability calibration waits for recorded test material.
 

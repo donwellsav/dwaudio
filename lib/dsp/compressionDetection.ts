@@ -1,7 +1,7 @@
 /**
  * Compression Detection & Spectral Flatness
  *
- * AmplitudeHistoryBuffer tracks peak/RMS history for crest factor analysis.
+ * AmplitudeHistoryBuffer tracks spectral peak/mean history for crest analysis.
  * calculateSpectralFlatness measures how "tonal" a spectral peak is.
  */
 
@@ -182,13 +182,9 @@ export class AmplitudeHistoryBuffer {
   }
 
   /**
-   * Detect compression via crest factor and dynamic range analysis.
-   *
-   * F8 fix: Dynamic range is now computed from same-frame peak-minus-RMS
-   * statistics (p90 - p10 of per-frame crest values) instead of mixing
-   * maxPeak from one frame with minRms from a different frame. The old
-   * approach overstated dynamic range when one transient frame had a high
-   * peak and a separate quiet frame had low RMS.
+   * Describe spectral crest. This is diagnostic evidence, not a measurement of
+   * waveform crest factor or dynamic compression. The legacy `dynamicRange`
+   * field contains median per-frame spectral crest for compatibility.
    */
   detectCompression(): CompressionResult {
     if (this.count < 10) {

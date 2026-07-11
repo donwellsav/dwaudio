@@ -532,14 +532,6 @@ export class AlgorithmEngine {
     // at the slower peak-refresh cadence and produced incompatible frame units.
     const msdResult = detectorMsdFallback(peak, spectrum, binIndex)
 
-    // Compression detection
-    let compressionResult = this._compressionCacheResult
-    if (this._compressionCacheFrameTimestamp !== this.lastFrameTimestamp) {
-      compressionResult = this.ampBuffer.detectCompression()
-      this._compressionCacheFrameTimestamp = this.lastFrameTimestamp
-      this._compressionCacheResult = compressionResult
-    }
-
     // Comb filter pattern from active track frequencies
     let combResult: AlgorithmScores['comb'] = null
     if (activePeakFrequencies.length >= 3) {
@@ -577,7 +569,8 @@ export class AlgorithmEngine {
       phase: phaseResult,
       spectral: spectralResult,
       comb: combResult,
-      compression: compressionResult,
+      // Spectral crest remains diagnostic-only; it is not dynamic compression.
+      compression: null,
       ihr: ihrResult,
       ptmr: ptmrResult,
     }
