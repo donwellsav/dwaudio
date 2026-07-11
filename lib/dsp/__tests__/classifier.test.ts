@@ -19,6 +19,7 @@ import {
 } from '../classifier'
 import { getSeverityUrgency } from '../severityUtils'
 import { calculateCalibratedConfidence } from '../acoustic/confidenceCalibration'
+import { TrackManager } from '../trackManager'
 import { DEFAULT_SETTINGS } from '../constants'
 import type { ClassificationResult, SeverityLevel, Track, DetectorSettings, FusedDetectionResult } from '@/types/advisory'
 import { buildScores } from '@/tests/helpers/mockAlgorithmScores'
@@ -411,6 +412,33 @@ describe('shouldReportIssue', () => {
 // ── classifyTrack ───────────────────────────────────────────────────────────
 
 describe('classifyTrack', () => {
+  it('does not classify a rapidly decaying track as growth', () => {
+    const manager = new TrackManager()
+    const peak = {
+      binIndex: 170,
+      trueFrequencyHz: 1000,
+      trueAmplitudeDb: -20,
+      prominenceDb: 15,
+      sustainedMs: 200,
+      harmonicOfHz: null,
+      noiseFloorDb: -80,
+      effectiveThresholdDb: -40,
+      qEstimate: 30,
+      bandwidthHz: 33,
+      timestamp: 1000,
+    }
+
+    manager.processPeak(peak)
+    manager.processPeak({ ...peak, trueAmplitudeDb: -23, timestamp: 1100 })
+    manager.processPeak({ ...peak, trueAmplitudeDb: -26, timestamp: 1200 })
+    const track = manager.processPeak({ ...peak, trueAmplitudeDb: -29, timestamp: 1300 })
+    const result = classifyTrack(track)
+
+    expect(result.severity).not.toBe('GROWING')
+    expect(result.severity).not.toBe('RUNAWAY')
+    expect(result.reasons.some((reason) => reason.startsWith('Rapid growth:'))).toBe(false)
+  })
+
   it('classifies a stable, non-harmonic, non-modulated track as feedback', () => {
     const track = makeTrack({
       features: {
