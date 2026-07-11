@@ -140,8 +140,7 @@ export class FeedbackDetector {
 
   // Timing
   private isRunning: boolean = false
-  private rafId: number = 0
-  private lastRafTs: number = 0
+  private analysisTimerId: ReturnType<typeof setInterval> | null = null
   private lastAnalysisTs: number = 0
   private maxAnalysisGapMs: number = 120
 
@@ -200,7 +199,7 @@ export class FeedbackDetector {
     this.maxAnalysisGapMs = Math.max(2 * this.config.analysisIntervalMs, 120)
     this.updateMsdMinFrames()
     this._recomputePersistenceFrames(this.config.analysisIntervalMs)
-    this.rafLoop = this.rafLoop.bind(this)
+    this.analysisLoop = this.analysisLoop.bind(this)
   }
 
   // ==================== Public API ====================
@@ -397,9 +396,7 @@ export class FeedbackDetector {
     // Start analysis loop
     if (!this.isCurrentStart(generation)) return
     this.isRunning = true
-    this.lastRafTs = 0
-    this.lastAnalysisTs = 0
-    this.rafId = requestAnimationFrame(this.rafLoop)
+    this.restartAnalysisTimer()
   }
 
   stop(options: { releaseMic?: boolean } = {}): void {
@@ -407,12 +404,11 @@ export class FeedbackDetector {
     this.startPromise = null
     this.isRunning = false
 
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId)
-      this.rafId = 0
+    if (this.analysisTimerId !== null) {
+      clearInterval(this.analysisTimerId)
+      this.analysisTimerId = null
     }
 
-    this.lastRafTs = 0
     this.lastAnalysisTs = 0
     this.resetHistory()
 
@@ -492,6 +488,7 @@ export class FeedbackDetector {
       this.maxAnalysisGapMs = Math.max(2 * this.config.analysisIntervalMs, 120)
       this._recomputePersistenceFrames(this.config.analysisIntervalMs)
       this._recomputeEmaCoefficients(this.config.analysisIntervalMs)
+      if (this.isRunning) this.restartAnalysisTimer()
     }
 
     if (needsReset) {
@@ -854,34 +851,36 @@ export class FeedbackDetector {
     }
   }
 
-  private rafLoop(timestamp: number): void {
+  private restartAnalysisTimer(): void {
+    if (this.analysisTimerId !== null) clearInterval(this.analysisTimerId)
+    this.lastAnalysisTs = performance.now()
+    this.analysisTimerId = setInterval(
+      this.analysisLoop,
+      Math.max(1, this.config.analysisIntervalMs),
+    )
+  }
+
+  private analysisLoop(): void {
     if (!this.isRunning) return
 
-    const rafDt = this.lastRafTs === 0 ? 0 : timestamp - this.lastRafTs
-    this.lastRafTs = timestamp
+    const timestamp = performance.now()
+    let dt = this.lastAnalysisTs === 0
+      ? this.config.analysisIntervalMs
+      : timestamp - this.lastAnalysisTs
 
     // Guard against throttling (background tab)
-    if (rafDt > this.maxAnalysisGapMs) {
+    if (dt > this.maxAnalysisGapMs) {
       this.resetHistory()
-      this.lastAnalysisTs = timestamp
+      dt = this.config.analysisIntervalMs
     }
 
-    if (this.lastAnalysisTs === 0) {
-      this.lastAnalysisTs = timestamp
+    try {
+      this.analyze(timestamp, dt)
+    } catch (err) {
+      // Don't let a single bad frame kill the timer loop — log and continue
+      this.callbacks.onError?.(`Analysis error: ${err instanceof Error ? err.message : String(err)}`)
     }
-
-    const since = timestamp - this.lastAnalysisTs
-    if (since >= this.config.analysisIntervalMs) {
-      try {
-        this.analyze(timestamp, since)
-      } catch (err) {
-        // Don't let a single bad frame kill the RAF loop — log and continue
-        this.callbacks.onError?.(`Analysis error: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      this.lastAnalysisTs = timestamp
-    }
-
-    this.rafId = requestAnimationFrame(this.rafLoop)
+    this.lastAnalysisTs = timestamp
   }
 
   private analyze(now: number, dt: number): void {
@@ -1121,7 +1120,7 @@ export class FeedbackDetector {
       // This enables early detection of growing feedback
       if (peakDb >= msdWriteThreshold) { // Track peaks within 6dB of threshold
         this._msdPool!.write(i, peakDb)
-        this.updatePersistence(i, peakDb) // Phase 2: Also track persistence
+        this.updatePersistence(i, peakDb, dt) // Phase 2: Also track persistence
       }
 
       // Local max check
@@ -1613,8 +1612,8 @@ export class FeedbackDetector {
    * Tracks consecutive frames where a peak persists at similar amplitude
    */
   /** Delegate to PersistenceTracker */
-  private updatePersistence(binIndex: number, amplitudeDb: number): void {
-    this._persistenceTracker?.update(binIndex, amplitudeDb)
+  private updatePersistence(binIndex: number, amplitudeDb: number, elapsedMs: number = this.config.analysisIntervalMs): void {
+    this._persistenceTracker?.update(binIndex, amplitudeDb, elapsedMs)
   }
 
   /** Delegate to PersistenceTracker */

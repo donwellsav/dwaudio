@@ -105,6 +105,8 @@ function installBrowserMocks(getUserMedia: ReturnType<typeof vi.fn>) {
       }),
     },
   })
+  vi.stubGlobal('setInterval', vi.fn(() => 1))
+  vi.stubGlobal('clearInterval', vi.fn())
   vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
   vi.stubGlobal('cancelAnimationFrame', vi.fn())
 }
@@ -138,7 +140,7 @@ describe('FeedbackDetector lifecycle', () => {
     await Promise.allSettled([firstStart, secondStart])
 
     expect(getUserMediaCalls).toBe(1)
-    expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
+    expect(setInterval).toHaveBeenCalledTimes(1)
   })
 
   it('does not start after stop cancels a pending microphone acquisition', async () => {
@@ -160,7 +162,18 @@ describe('FeedbackDetector lifecycle', () => {
 
     expect(acquiredStream.track.stop).toHaveBeenCalled()
     expect(detector.getState().isRunning).toBe(false)
-    expect(requestAnimationFrame).not.toHaveBeenCalled()
+    expect(setInterval).not.toHaveBeenCalled()
+  })
+
+  it('clears the analysis timer when stopped', async () => {
+    const acquiredStream = createMockStream()
+    installBrowserMocks(vi.fn().mockResolvedValue(acquiredStream.stream))
+    const detector = new FeedbackDetector()
+
+    await detector.start()
+    detector.stop({ releaseMic: true })
+
+    expect(clearInterval).toHaveBeenCalledWith(1)
   })
 
   it('releases an acquired microphone and source when AudioContext resume rejects', async () => {

@@ -346,6 +346,17 @@ describe('FeedbackDetector hot path — Part A: Method-level', () => {
   // ── updatePersistence ──────────────────────────────────────────────
 
   describe('updatePersistence', () => {
+    it('uses elapsed milliseconds instead of configured frame count', () => {
+      const detector = createReadyDetector(() => {})
+      const bin = 100
+
+      ;(detector as any).updatePersistence(bin, -20, 33)
+      ;(detector as any).updatePersistence(bin, -20, 34)
+      ;(detector as any).updatePersistence(bin, -20, 33)
+
+      expect((detector as any).getPersistenceScore(bin).isPersistent).toBe(true)
+    })
+
     it('increments persistence when amplitude is within tolerance', () => {
       const detector = createReadyDetector((arr) => arr.fill(-80))
       const bin = 300
