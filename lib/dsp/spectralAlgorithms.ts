@@ -21,8 +21,8 @@ export type { ContentType } from '@/types/advisory'
 // ── Pre-allocated Scratch Buffers ───────────────────────────────────────────
 // PTMR: halfWidth=20, excluding ±2 bins around peak → max ~37 values. 64 for safety.
 const _ptmrScratch = new Float32Array(64)
-// Content type detection: power cache for merged spectrum passes (8192 FFT / 2 + 1)
-const _powerCache = new Float64Array(4097)
+// Content type detection: power cache for the largest supported spectrum (16384 FFT / 2)
+const _powerCache = new Float64Array(8192)
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

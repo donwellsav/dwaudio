@@ -158,6 +158,15 @@ export function useAnalyzerFrameState() {
     applyPattern(pattern)
   }, [applyPattern])
 
+  const resetFrameState = useCallback(() => {
+    spectrumRef.current = null
+    tracksRef.current = []
+    workerStatusRef.current = {}
+    lastStatusUpdateRef.current = 0
+    setFrameState({ noiseFloorDb: null, spectrumStatus: null })
+    clearEarlyWarning()
+  }, [clearEarlyWarning])
+
   return {
     noiseFloorDb: frameState.noiseFloorDb,
     spectrumStatus: frameState.spectrumStatus,
@@ -168,6 +177,6 @@ export function useAnalyzerFrameState() {
     handleTracksUpdate,
     handleContentTypeUpdate,
     handleCombPatternDetected,
-    clearEarlyWarning,
+    resetFrameState,
   }
 }

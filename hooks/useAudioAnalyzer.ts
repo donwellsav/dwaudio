@@ -86,6 +86,21 @@ export function useAudioAnalyzer(
   })
 
   const analyzerRef = useRef<AudioAnalyzer | null>(null)
+  const deviceIdRef = useRef<string>('')
+  const pendingDeviceIdRef = useRef<string | null>(null)
+  const switchDevicePromiseRef = useRef<Promise<void> | null>(null)
+  const switchResolveRef = useRef<(() => void) | null>(null)
+  const isSwitchingDeviceRef = useRef(false)
+  const operationGenerationRef = useRef(0)
+  const activeStartGenerationRef = useRef<number | null>(null)
+  const appliedFftSizeRef = useRef(settings.fftSize)
+  const retireDeviceSwitch = useCallback(() => {
+    const resolve = switchResolveRef.current
+    switchResolveRef.current = null
+    switchDevicePromiseRef.current = null
+    isSwitchingDeviceRef.current = false
+    resolve?.()
+  }, [])
   const {
     noiseFloorDb,
     spectrumStatus,
@@ -96,7 +111,7 @@ export function useAudioAnalyzer(
     handleTracksUpdate,
     handleContentTypeUpdate,
     handleCombPatternDetected,
-    clearEarlyWarning,
+    resetFrameState,
   } = useAnalyzerFrameState()
   const stableCallbacks = useRef<DSPWorkerCallbacks>({
     onAdvisory,
@@ -116,6 +131,13 @@ export function useAudioAnalyzer(
   const dspWorkerRef = useRef(dspWorker)
   dspWorkerRef.current = dspWorker
 
+  const resetRunState = useCallback(() => {
+    resetFeedbackHistoryForCurrentRun()
+    clearMap()
+    resetFrameState()
+    dspWorkerRef.current.reset()
+  }, [clearMap, resetFrameState])
+
   useEffect(() => {
     const analyzer = createAudioAnalyzer(pickAudioRuntimeSettings(settingsRef.current), {
       onSpectrum: handleSpectrum,
@@ -130,6 +152,7 @@ export function useAudioAnalyzer(
       },
       onCombPatternDetected: handleCombPatternDetected,
       onError: (error) => {
+        if (isSwitchingDeviceRef.current) return
         setState((previous) => ({
           ...previous,
           error: error.message,
@@ -137,6 +160,7 @@ export function useAudioAnalyzer(
         }))
       },
       onStateChange: (isRunning) => {
+        if (isSwitchingDeviceRef.current) return
         setState((previous) => ({ ...previous, isRunning }))
       },
     })
@@ -144,34 +168,59 @@ export function useAudioAnalyzer(
     analyzerRef.current = analyzer
 
     return () => {
+      operationGenerationRef.current += 1
+      activeStartGenerationRef.current = null
+      pendingDeviceIdRef.current = null
+      retireDeviceSwitch()
       analyzer.stop({ releaseMic: true })
     }
-  }, [handleCombPatternDetected, handleSpectrum])
+  }, [handleCombPatternDetected, handleSpectrum, retireDeviceSwitch])
 
   useEffect(() => {
-    if (analyzerRef.current) {
-      analyzerRef.current.updateSettings(pickAudioRuntimeSettings(settings))
-      setState((previous) => ({ ...previous, fftSize: settings.fftSize }))
-    }
-    dspWorkerRef.current.updateSettings(pickWorkerRuntimeSettings(settings))
-  }, [settings])
+    const analyzer = analyzerRef.current
+    const fftSizeChanged = appliedFftSizeRef.current !== settings.fftSize
+    appliedFftSizeRef.current = settings.fftSize
+    const workerSettings = pickWorkerRuntimeSettings(settings)
+    let workerInitialized = false
 
-  const deviceIdRef = useRef<string>('')
+    if (analyzer) {
+      analyzer.updateSettings(pickAudioRuntimeSettings(settings))
+      setState((previous) => ({ ...previous, fftSize: settings.fftSize }))
+
+      if (fftSizeChanged) {
+        const analyzerState = analyzer.getState()
+        if (analyzerState.isRunning) {
+          resetRunState()
+          dspWorkerRef.current.init(
+            workerSettings,
+            analyzerState.sampleRate,
+            analyzerState.fftSize,
+          )
+          workerInitialized = true
+        }
+      }
+    }
+    if (!workerInitialized) dspWorkerRef.current.updateSettings(workerSettings)
+  }, [resetRunState, settings])
 
   const start = useCallback(async (options: { deviceId?: string } = {}) => {
     if (!analyzerRef.current) return
 
     const deviceId = options.deviceId ?? deviceIdRef.current
+    const replacesActiveSwitch = switchDevicePromiseRef.current !== null
+    deviceIdRef.current = deviceId
+    pendingDeviceIdRef.current = null
+    const startGeneration = ++operationGenerationRef.current
+    activeStartGenerationRef.current = startGeneration
+    if (replacesActiveSwitch) analyzerRef.current.stop({ releaseMic: true })
+    retireDeviceSwitch()
 
     try {
-      resetFeedbackHistoryForCurrentRun()
-      tracksRef.current = []
-      clearMap()
-      clearEarlyWarning()
+      resetRunState()
       setState((previous) => ({ ...previous, isStarting: true }))
-      dspWorkerRef.current.reset()
 
       await analyzerRef.current.start({ deviceId: deviceId || undefined })
+      if (operationGenerationRef.current !== startGeneration) return
       const analyzerState = analyzerRef.current.getState()
 
       if (!analyzerState.isRunning) {
@@ -203,6 +252,7 @@ export function useAudioAnalyzer(
         fftSize: analyzerState.fftSize,
       }))
     } catch (error) {
+      if (operationGenerationRef.current !== startGeneration) return
       setState((previous) => ({
         ...previous,
         isStarting: false,
@@ -210,73 +260,148 @@ export function useAudioAnalyzer(
         isRunning: false,
         hasPermission: false,
       }))
+    } finally {
+      if (activeStartGenerationRef.current === startGeneration) {
+        activeStartGenerationRef.current = null
+      }
     }
-  }, [clearEarlyWarning, clearMap, tracksRef])
+  }, [resetRunState, retireDeviceSwitch])
 
   const stop = useCallback(() => {
     if (!analyzerRef.current) return
 
+    operationGenerationRef.current += 1
+    activeStartGenerationRef.current = null
+    pendingDeviceIdRef.current = null
+    retireDeviceSwitch()
     analyzerRef.current.stop({ releaseMic: true })
     tracksRef.current = []
     setState((previous) => ({
       ...previous,
+      isStarting: false,
       isRunning: false,
     }))
-  }, [tracksRef])
+  }, [retireDeviceSwitch, tracksRef])
 
-  const switchDevice = useCallback(async (deviceId: string) => {
+  const switchDevice = useCallback((deviceId: string): Promise<void> => {
     deviceIdRef.current = deviceId
-    if (!analyzerRef.current) return
+    pendingDeviceIdRef.current = deviceId
 
-    const wasRunning = analyzerRef.current.getState().isRunning
-    if (!wasRunning) return
+    if (switchDevicePromiseRef.current) return switchDevicePromiseRef.current
 
-    try {
-      setState((previous) => ({
-        ...previous,
-        isStarting: true,
-        isRunning: false,
-      }))
-      analyzerRef.current.stop({ releaseMic: true })
-      await analyzerRef.current.start({ deviceId: deviceId || undefined })
-      const analyzerState = analyzerRef.current.getState()
-      if (!analyzerState.isRunning) {
-        setState((previous) => ({
-          ...previous,
-          isStarting: false,
-          error: analyzerState.error,
-          isRunning: false,
-          hasPermission: analyzerState.hasPermission,
-          sampleRate: analyzerState.sampleRate,
-          fftSize: analyzerState.fftSize,
-        }))
-        return
-      }
-
-      dspWorkerRef.current.init(
-        pickWorkerRuntimeSettings(settingsRef.current),
-        analyzerState.sampleRate,
-        analyzerState.fftSize,
-      )
-      setState((previous) => ({
-        ...previous,
-        isStarting: false,
-        error: null,
-        isRunning: true,
-        hasPermission: analyzerState.hasPermission,
-        sampleRate: analyzerState.sampleRate,
-        fftSize: analyzerState.fftSize,
-      }))
-    } catch (error) {
-      setState((previous) => ({
-        ...previous,
-        isStarting: false,
-        error: error instanceof Error ? error.message : 'Failed to switch input device',
-        isRunning: false,
-        hasPermission: false,
-      }))
+    const analyzer = analyzerRef.current
+    const hasPendingStart = activeStartGenerationRef.current !== null
+    if (!analyzer || (!analyzer.getState().isRunning && !hasPendingStart)) {
+      pendingDeviceIdRef.current = null
+      return Promise.resolve()
     }
-  }, [])
+    const switchGeneration = ++operationGenerationRef.current
+    activeStartGenerationRef.current = null
+
+    let resolveSwitch!: () => void
+    let rejectSwitch!: (error: unknown) => void
+    const switchPromise = new Promise<void>((resolve, reject) => {
+      resolveSwitch = resolve
+      rejectSwitch = reject
+    })
+
+    const runSwitches = async () => {
+      try {
+        while (true) {
+          while (pendingDeviceIdRef.current !== null) {
+            if (operationGenerationRef.current !== switchGeneration) return
+            const nextDeviceId = pendingDeviceIdRef.current
+            pendingDeviceIdRef.current = null
+
+            resetRunState()
+            setState((previous) => ({
+              ...previous,
+              isStarting: true,
+              isRunning: false,
+            }))
+            analyzer.stop({ releaseMic: true })
+
+            try {
+              await analyzer.start({ deviceId: nextDeviceId || undefined })
+              if (operationGenerationRef.current !== switchGeneration) return
+
+              if (deviceIdRef.current !== nextDeviceId) {
+                analyzer.stop({ releaseMic: true })
+                continue
+              }
+              if (pendingDeviceIdRef.current === nextDeviceId) {
+                pendingDeviceIdRef.current = null
+              }
+
+              const analyzerState = analyzer.getState()
+              if (!analyzerState.isRunning) {
+                setState((previous) => ({
+                  ...previous,
+                  isStarting: false,
+                  error: analyzerState.error,
+                  isRunning: false,
+                  hasPermission: analyzerState.hasPermission,
+                  sampleRate: analyzerState.sampleRate,
+                  fftSize: analyzerState.fftSize,
+                }))
+                return
+              }
+
+              dspWorkerRef.current.init(
+                pickWorkerRuntimeSettings(settingsRef.current),
+                analyzerState.sampleRate,
+                analyzerState.fftSize,
+              )
+              setState((previous) => ({
+                ...previous,
+                isStarting: false,
+                error: null,
+                isRunning: true,
+                hasPermission: analyzerState.hasPermission,
+                sampleRate: analyzerState.sampleRate,
+                fftSize: analyzerState.fftSize,
+              }))
+            } catch (error) {
+              if (operationGenerationRef.current !== switchGeneration) return
+              if (deviceIdRef.current !== nextDeviceId) {
+                analyzer.stop({ releaseMic: true })
+                continue
+              }
+              if (pendingDeviceIdRef.current === nextDeviceId) {
+                pendingDeviceIdRef.current = null
+              }
+
+              setState((previous) => ({
+                ...previous,
+                isStarting: false,
+                error: error instanceof Error ? error.message : 'Failed to switch input device',
+                isRunning: false,
+                hasPermission: false,
+              }))
+              return
+            }
+          }
+
+          // Let requests queued by final publication join before closing this shared switch.
+          await Promise.resolve()
+          if (operationGenerationRef.current !== switchGeneration) return
+          if (pendingDeviceIdRef.current === null) return
+        }
+      } finally {
+        if (switchDevicePromiseRef.current === switchPromise) {
+          switchDevicePromiseRef.current = null
+          switchResolveRef.current = null
+          isSwitchingDeviceRef.current = false
+        }
+      }
+    }
+
+    switchDevicePromiseRef.current = switchPromise
+    switchResolveRef.current = resolveSwitch
+    isSwitchingDeviceRef.current = true
+    void runSwitches().then(resolveSwitch, rejectSwitch)
+    return switchPromise
+  }, [resetRunState])
 
   const resetSettings = useCallback(() => {
     layered.resetAll()

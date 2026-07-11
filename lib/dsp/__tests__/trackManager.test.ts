@@ -568,6 +568,17 @@ describe('TrackManager', () => {
       expect(track.velocityDbPerSec).toBeCloseTo(25, 0)
     })
 
+    it('keeps rapid decay out of the positive growth maximum', () => {
+      tm.processPeak(makePeak({ binIndex: 50, trueAmplitudeDb: -20, timestamp: 1000 }))
+      tm.processPeak(makePeak({ binIndex: 50, trueAmplitudeDb: -23, timestamp: 1100 }))
+      tm.processPeak(makePeak({ binIndex: 50, trueAmplitudeDb: -26, timestamp: 1200 }))
+      const track = tm.processPeak(makePeak({ binIndex: 50, trueAmplitudeDb: -29, timestamp: 1300 }))
+
+      expect(track.velocityDbPerSec).toBeLessThan(0)
+      expect(track.features.meanVelocityDbPerSec).toBeLessThan(0)
+      expect(track.features.maxVelocityDbPerSec).toBe(0)
+    })
+
     it('computes stabilityCentsStd from frequency variation', () => {
       // Feed the same bin with slightly varying frequencies
       tm.processPeak(makePeak({ binIndex: 50, trueFrequencyHz: 1000, timestamp: 1000 }))

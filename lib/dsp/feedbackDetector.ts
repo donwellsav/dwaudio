@@ -77,6 +77,7 @@ export class FeedbackDetector {
   private audioContext: AudioContext | null = null
   private stream: MediaStream | null = null
   private source: MediaStreamAudioSourceNode | null = null
+  private _trackEndedHandler: { track: MediaStreamTrack; callback: () => void } | null = null
   private _deviceChangeHandler: (() => void) | null = null
   private _stateChangeHandler: (() => void) | null = null
   private analyser: AnalyserNode | null = null
@@ -139,8 +140,7 @@ export class FeedbackDetector {
 
   // Timing
   private isRunning: boolean = false
-  private rafId: number = 0
-  private lastRafTs: number = 0
+  private analysisTimerId: ReturnType<typeof setInterval> | null = null
   private lastAnalysisTs: number = 0
   private maxAnalysisGapMs: number = 120
 
@@ -199,7 +199,7 @@ export class FeedbackDetector {
     this.maxAnalysisGapMs = Math.max(2 * this.config.analysisIntervalMs, 120)
     this.updateMsdMinFrames()
     this._recomputePersistenceFrames(this.config.analysisIntervalMs)
-    this.rafLoop = this.rafLoop.bind(this)
+    this.analysisLoop = this.analysisLoop.bind(this)
   }
 
   // ==================== Public API ====================
@@ -209,11 +209,18 @@ export class FeedbackDetector {
     if (this.startPromise) return this.startPromise
 
     const generation = ++this.startGeneration
-    this.startPromise = this.startInternal(options, generation).finally(() => {
-      if (this.startGeneration === generation) {
-        this.startPromise = null
-      }
-    })
+    this.startPromise = this.startInternal(options, generation)
+      .catch((error) => {
+        if (this.isCurrentStart(generation)) {
+          this.stop({ releaseMic: true })
+        }
+        throw error
+      })
+      .finally(() => {
+        if (this.startGeneration === generation) {
+          this.startPromise = null
+        }
+      })
     return this.startPromise
   }
 
@@ -275,23 +282,31 @@ export class FeedbackDetector {
           throw e
         }
         // Monitor mic disconnection — track end signals device removal
-        const audioTrack = this.stream.getAudioTracks()[0]
+        const stream = this.stream
+        const audioTrack = stream.getAudioTracks()[0]
         if (audioTrack) {
-          audioTrack.onended = () => {
-            if (this.isRunning) {
-              const message = 'Microphone disconnected'
-              this.callbacks.onError?.(message)
-              this.callbacks.onStopped?.(message)
-              try {
-                this.stop({ releaseMic: true })
-              } catch {
-                // stop() cleanup is best-effort — prevent cascade failure
-                // from leaving dangling listeners or buffers
-                this.isRunning = false
-                this.stream = null
-              }
+          const callback = () => {
+            if (
+              !this.isCurrentStart(generation) ||
+              this.stream !== stream ||
+              this.stream?.getAudioTracks()[0] !== audioTrack ||
+              !this.isRunning
+            ) return
+
+            const message = 'Microphone disconnected'
+            try {
+              this.stop({ releaseMic: true })
+            } catch {
+              // stop() cleanup is best-effort — prevent cascade failure
+              // from leaving dangling listeners or buffers
+              this.isRunning = false
+              this.stream = null
             }
+            this.callbacks.onError?.(message)
+            this.callbacks.onStopped?.(message)
           }
+          this._trackEndedHandler = { track: audioTrack, callback }
+          audioTrack.onended = callback
         }
       }
     }
@@ -337,9 +352,9 @@ export class FeedbackDetector {
         const track = this.stream?.getAudioTracks()[0]
         if (track && track.readyState === 'ended' && this.isRunning) {
           const message = 'Audio device changed — microphone disconnected'
+          this.stop({ releaseMic: true })
           this.callbacks.onError?.(message)
           this.callbacks.onStopped?.(message)
-          this.stop({ releaseMic: true })
         }
       }
       navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler)
@@ -351,18 +366,28 @@ export class FeedbackDetector {
         const ctx = this.audioContext
         if (!ctx || !this.isRunning) return
         if (ctx.state === 'suspended') {
+          const generation = this.startGeneration
           ctx.resume().catch(() => {
-            this.callbacks.onError?.('Audio context suspended — could not resume. Try restarting.')
+            if (
+              !this.isCurrentStart(generation) ||
+              this.audioContext !== ctx ||
+              !this.isRunning ||
+              ctx.state !== 'suspended'
+            ) return
+            const message = 'Audio context suspended — could not resume. Try restarting.'
+            this.stop({ releaseMic: true })
+            this.callbacks.onError?.(message)
+            this.callbacks.onStopped?.(message)
           })
         } else if (ctx.state === 'closed') {
           // AudioContext is permanently closed (cannot be resumed) — stop analysis
           // and surface error so user can restart
           const message = 'Audio context closed unexpectedly — tap Restart to resume analysis.'
-          this.callbacks.onError?.(message)
-          this.callbacks.onStopped?.(message)
           this.stop({ releaseMic: true })
           this.audioContext = null
           this.analyser = null
+          this.callbacks.onError?.(message)
+          this.callbacks.onStopped?.(message)
         }
       }
       this.audioContext.addEventListener('statechange', this._stateChangeHandler)
@@ -371,9 +396,7 @@ export class FeedbackDetector {
     // Start analysis loop
     if (!this.isCurrentStart(generation)) return
     this.isRunning = true
-    this.lastRafTs = 0
-    this.lastAnalysisTs = 0
-    this.rafId = requestAnimationFrame(this.rafLoop)
+    this.restartAnalysisTimer()
   }
 
   stop(options: { releaseMic?: boolean } = {}): void {
@@ -381,12 +404,11 @@ export class FeedbackDetector {
     this.startPromise = null
     this.isRunning = false
 
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId)
-      this.rafId = 0
+    if (this.analysisTimerId !== null) {
+      clearInterval(this.analysisTimerId)
+      this.analysisTimerId = null
     }
 
-    this.lastRafTs = 0
     this.lastAnalysisTs = 0
     this.resetHistory()
 
@@ -422,7 +444,14 @@ export class FeedbackDetector {
   }
 
   private releaseStream(stream: MediaStream): void {
+    const trackEndedHandler = this._trackEndedHandler
     for (const track of stream.getTracks()) {
+      if (trackEndedHandler?.track === track) {
+        if (track.onended === trackEndedHandler.callback) {
+          track.onended = null
+        }
+        this._trackEndedHandler = null
+      }
       track.stop()
     }
   }
@@ -459,6 +488,7 @@ export class FeedbackDetector {
       this.maxAnalysisGapMs = Math.max(2 * this.config.analysisIntervalMs, 120)
       this._recomputePersistenceFrames(this.config.analysisIntervalMs)
       this._recomputeEmaCoefficients(this.config.analysisIntervalMs)
+      if (this.isRunning) this.restartAnalysisTimer()
     }
 
     if (needsReset) {
@@ -514,10 +544,11 @@ export class FeedbackDetector {
       }
     }
     if (settings.autoGainEnabled !== undefined) {
+      const wasAutoGainEnabled = this._autoGainEnabled
       this._autoGainEnabled = settings.autoGainEnabled
       mappedConfig.autoGainEnabled = settings.autoGainEnabled
       // When switching to auto, seed from current manual setting and restart calibration
-      if (settings.autoGainEnabled) {
+      if (settings.autoGainEnabled && !wasAutoGainEnabled) {
         this._autoGainDb = this.config.inputGainDb ?? 0
         this._autoGainLocked = false
         this._autoGainCalibrationStartMs = 0
@@ -820,34 +851,36 @@ export class FeedbackDetector {
     }
   }
 
-  private rafLoop(timestamp: number): void {
+  private restartAnalysisTimer(): void {
+    if (this.analysisTimerId !== null) clearInterval(this.analysisTimerId)
+    this.lastAnalysisTs = performance.now()
+    this.analysisTimerId = setInterval(
+      this.analysisLoop,
+      Math.max(1, this.config.analysisIntervalMs),
+    )
+  }
+
+  private analysisLoop(): void {
     if (!this.isRunning) return
 
-    const rafDt = this.lastRafTs === 0 ? 0 : timestamp - this.lastRafTs
-    this.lastRafTs = timestamp
+    const timestamp = performance.now()
+    let dt = this.lastAnalysisTs === 0
+      ? this.config.analysisIntervalMs
+      : timestamp - this.lastAnalysisTs
 
     // Guard against throttling (background tab)
-    if (rafDt > this.maxAnalysisGapMs) {
+    if (dt > this.maxAnalysisGapMs) {
       this.resetHistory()
-      this.lastAnalysisTs = timestamp
+      dt = this.config.analysisIntervalMs
     }
 
-    if (this.lastAnalysisTs === 0) {
-      this.lastAnalysisTs = timestamp
+    try {
+      this.analyze(timestamp, dt)
+    } catch (err) {
+      // Don't let a single bad frame kill the timer loop — log and continue
+      this.callbacks.onError?.(`Analysis error: ${err instanceof Error ? err.message : String(err)}`)
     }
-
-    const since = timestamp - this.lastAnalysisTs
-    if (since >= this.config.analysisIntervalMs) {
-      try {
-        this.analyze(timestamp, since)
-      } catch (err) {
-        // Don't let a single bad frame kill the RAF loop — log and continue
-        this.callbacks.onError?.(`Analysis error: ${err instanceof Error ? err.message : String(err)}`)
-      }
-      this.lastAnalysisTs = timestamp
-    }
-
-    this.rafId = requestAnimationFrame(this.rafLoop)
+    this.lastAnalysisTs = timestamp
   }
 
   private analyze(now: number, dt: number): void {
@@ -1087,7 +1120,7 @@ export class FeedbackDetector {
       // This enables early detection of growing feedback
       if (peakDb >= msdWriteThreshold) { // Track peaks within 6dB of threshold
         this._msdPool!.write(i, peakDb)
-        this.updatePersistence(i, peakDb) // Phase 2: Also track persistence
+        this.updatePersistence(i, peakDb, dt) // Phase 2: Also track persistence
       }
 
       // Local max check
@@ -1579,8 +1612,8 @@ export class FeedbackDetector {
    * Tracks consecutive frames where a peak persists at similar amplitude
    */
   /** Delegate to PersistenceTracker */
-  private updatePersistence(binIndex: number, amplitudeDb: number): void {
-    this._persistenceTracker?.update(binIndex, amplitudeDb)
+  private updatePersistence(binIndex: number, amplitudeDb: number, elapsedMs: number = this.config.analysisIntervalMs): void {
+    this._persistenceTracker?.update(binIndex, amplitudeDb, elapsedMs)
   }
 
   /** Delegate to PersistenceTracker */

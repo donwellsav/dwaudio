@@ -36,6 +36,7 @@ export interface AlgorithmScores {
 }
 
 export interface FusedDetectionResult {
+  /** Heuristic feedback score. Not an empirically calibrated probability. */
   feedbackProbability: number
   confidence: number
   contributingAlgorithms: string[]

@@ -22,6 +22,39 @@ beforeEach(() => {
 // ── typedStorage ──────────────────────────────────────────────────────────────
 
 describe('typedStorage', () => {
+  it('tracks presence across save and clear', () => {
+    const store = typedStorage('test-exists', { enabled: false })
+
+    expect(store.exists()).toBe(false)
+    store.save({ enabled: true })
+    expect(store.exists()).toBe(true)
+    store.clear()
+    expect(store.exists()).toBe(false)
+  })
+
+  it('reports no storage presence without window', () => {
+    const store = typedStorage('test-no-window', {})
+    vi.stubGlobal('window', undefined)
+
+    try {
+      expect(store.exists()).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('reports storage presence without throwing when access is denied', () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied')
+    })
+
+    try {
+      expect(typedStorage('test-denied', {} as object).exists()).toBe(false)
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+
   it('returns fallback when key does not exist', () => {
     const store = typedStorage<number[]>('test-typed', [1, 2, 3])
     expect(store.load()).toEqual([1, 2, 3])

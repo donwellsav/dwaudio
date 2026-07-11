@@ -44,6 +44,8 @@ export interface DSPWorkerHandlerRefs extends PeakPoolRefs {
   restartTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>
   lastInitRef: MutableRefObject<WorkerInitSnapshot | null>
   pendingHistorySyncRef: MutableRefObject<PendingHistorySyncRequest | null>
+  pendingResetGenerationRef: MutableRefObject<number | null>
+  clearPendingResetOnReadyRef: MutableRefObject<boolean>
   specUpdatePoolRef: MutableRefObject<Float32Array[]>
   outboundMessagesRef: MutableRefObject<number>
   inboundMessagesRef: MutableRefObject<number>
@@ -345,7 +347,7 @@ function recycleReturnedBuffers(
   refs: DSPWorkerHandlerRefs,
   message: Extract<WorkerOutboundMessage, { type: 'returnBuffers' }>,
 ) {
-  const isPeakReturn = message.source !== 'spectrumUpdate'
+  const isPeakReturn = message.source === 'peak'
   if (isPeakReturn) {
     refs.busyRef.current = false
   }
@@ -382,11 +384,33 @@ export function createDSPWorkerMessageHandler(
   refs: DSPWorkerHandlerRefs,
 ): (event: MessageEvent<WorkerOutboundMessage>) => void {
   return (event) => {
+    if (refs.workerRef.current !== worker) return
+
     refs.inboundMessagesRef.current++
     const message = event.data
 
+    if (
+      refs.pendingResetGenerationRef.current !== null &&
+      (
+        message.type === 'advisory' ||
+        message.type === 'advisoryCleared' ||
+        message.type === 'tracksUpdate' ||
+        message.type === 'contentTypeUpdate' ||
+        message.type === 'combPatternUpdate'
+      )
+    ) {
+      return
+    }
+
     switch (message.type) {
       case 'ready':
+        if (
+          refs.clearPendingResetOnReadyRef.current &&
+          refs.workerRef.current === worker
+        ) {
+          refs.pendingResetGenerationRef.current = null
+          refs.clearPendingResetOnReadyRef.current = false
+        }
         refs.isReadyRef.current = true
         refs.crashedRef.current = false
         refs.permanentlyDeadRef.current = false
@@ -395,6 +419,11 @@ export function createDSPWorkerMessageHandler(
         flushBufferedPeak(refs)
         refs.callbacksRef.current.onReady?.()
         break
+      case 'resetComplete':
+        if (refs.pendingResetGenerationRef.current === message.generation) {
+          refs.pendingResetGenerationRef.current = null
+        }
+        break
       case 'advisory':
         refs.callbacksRef.current.onAdvisory?.(message.advisory)
         break
@@ -402,7 +431,6 @@ export function createDSPWorkerMessageHandler(
         refs.callbacksRef.current.onAdvisoryCleared?.(message.advisoryId)
         break
       case 'tracksUpdate':
-        refs.busyRef.current = false
         refs.tracksUpdatesRef.current++
         if (TRACK_PAYLOAD_ENCODER) {
           const payloadBytes = TRACK_PAYLOAD_ENCODER.encode(JSON.stringify(message.tracks)).length
@@ -425,7 +453,6 @@ export function createDSPWorkerMessageHandler(
           lastReportFrequencyHz: message.lastReportFrequencyHz,
           lastReportTimestamp: message.lastReportTimestamp,
         })
-        flushBufferedPeak(refs)
         break
       case 'contentTypeUpdate':
         refs.callbacksRef.current.onContentTypeUpdate?.(
@@ -464,6 +491,7 @@ export function createDSPWorkerErrorHandler(
     refs.crashedRef.current = true
     refs.isReadyRef.current = false
     refs.busyRef.current = false
+    refs.clearPendingResetOnReadyRef.current = true
 
     const attempt = refs.restartCountRef.current + 1
     const canRestart = attempt <= MAX_RESTARTS && refs.lastInitRef.current !== null

@@ -606,7 +606,7 @@ export class TrackManager {
 
     let sumVelocity = 0
     let velocityCount = 0
-    let maxAbsVelocity = 0
+    let maxPositiveVelocity = 0
 
     let previous = getHistoryEntry(historyState, 0)
     for (let i = 1; i < count; i++) {
@@ -617,8 +617,7 @@ export class TrackManager {
         const velocity = (current.ampDb - previous.ampDb) / dt
         sumVelocity += velocity
         velocityCount++
-        const absVelocity = Math.abs(velocity)
-        if (absVelocity > maxAbsVelocity) maxAbsVelocity = absVelocity
+        if (velocity > maxPositiveVelocity) maxPositiveVelocity = velocity
       }
 
       previous = current
@@ -647,7 +646,7 @@ export class TrackManager {
       meanQ: historyState.sumQ / count,
       minQ,
       meanVelocityDbPerSec: velocityCount > 0 ? sumVelocity / velocityCount : 0,
-      maxVelocityDbPerSec: maxAbsVelocity,
+      maxVelocityDbPerSec: maxPositiveVelocity,
       persistenceMs,
       harmonicityScore,
       modulationScore,

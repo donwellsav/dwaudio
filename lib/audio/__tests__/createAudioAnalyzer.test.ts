@@ -171,19 +171,21 @@ describe('createAudioAnalyzer', () => {
     expect(analyzer.getState().isRunning).toBe(true)
   })
 
-  it('stops the wrapper when the detector reports an automatic shutdown', async () => {
+  it('exposes a suspended-context shutdown through wrapper state and callbacks', async () => {
     const onError = vi.fn()
     const onStateChange = vi.fn()
     const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
+    const message = 'Audio context suspended — could not resume. Try restarting.'
 
     await analyzer.start()
-    mockDetectorCallbacks?.onStopped?.('Microphone disconnected')
+    mockDetectorCallbacks?.onStopped?.(message)
 
     expect(cancelAnimationFrameMock).toHaveBeenCalledWith(1)
     expect(analyzer.getState().isRunning).toBe(false)
+    expect(analyzer.getState().error).toBe(message)
     expect(onStateChange).toHaveBeenLastCalledWith(false)
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({
-      message: 'Microphone disconnected',
+      message,
     }))
 
     await analyzer.start()
@@ -208,5 +210,32 @@ describe('createAudioAnalyzer', () => {
 
     expect(analyzer.getState().isRunning).toBe(false)
     expect(requestAnimationFrameMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores a stale start failure after a newer start is running', async () => {
+    let rejectStaleStart!: (error: Error) => void
+    startMock
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+        rejectStaleStart = reject
+      }))
+      .mockResolvedValueOnce(undefined)
+    const onError = vi.fn()
+    const onStateChange = vi.fn()
+    const analyzer = createAudioAnalyzer({}, { onError, onStateChange })
+
+    const staleStart = analyzer.start({ deviceId: 'A' })
+    analyzer.stop({ releaseMic: true })
+    await analyzer.start({ deviceId: 'B' })
+    onError.mockClear()
+    onStateChange.mockClear()
+
+    rejectStaleStart(new Error('Device A permission failed late'))
+
+    await expect(staleStart).resolves.toBeUndefined()
+    expect(analyzer.getState().isRunning).toBe(true)
+    expect(analyzer.getState().hasPermission).toBe(true)
+    expect(analyzer.getState().error).toBeNull()
+    expect(onError).not.toHaveBeenCalled()
+    expect(onStateChange).not.toHaveBeenCalled()
   })
 })

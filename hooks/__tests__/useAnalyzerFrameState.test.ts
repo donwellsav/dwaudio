@@ -3,7 +3,7 @@
 import { renderHook, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mergeFrameState, useAnalyzerFrameState } from '@/hooks/useAnalyzerFrameState'
-import type { SpectrumData } from '@/types/advisory'
+import type { SpectrumData, TrackSummary } from '@/types/advisory'
 import type { CombPatternResult } from '@/lib/dsp/advancedDetection'
 
 function makeSpectrum(overrides: Partial<SpectrumData> = {}): SpectrumData {
@@ -77,6 +77,44 @@ describe('mergeFrameState', () => {
 })
 
 describe('useAnalyzerFrameState', () => {
+  it('clears spectrum, tracks, worker status, throttle, frame state, and early warning for a new run', () => {
+    vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(300)
+      .mockReturnValueOnce(400)
+
+    const { result } = renderHook(() => useAnalyzerFrameState())
+    const firstSpectrum = makeSpectrum({ contentType: 'speech', peak: -18 })
+    const track = { id: 'track-1' } as TrackSummary
+
+    act(() => {
+      result.current.handleTracksUpdate([track], { contentType: 'music' })
+      result.current.handleSpectrum(firstSpectrum)
+      result.current.handleCombPatternDetected(makePattern())
+    })
+
+    expect(result.current.spectrumStatus?.contentType).toBe('music')
+    expect(result.current.tracksRef.current).toEqual([track])
+    expect(result.current.earlyWarning).not.toBeNull()
+
+    act(() => {
+      result.current.resetFrameState()
+    })
+
+    expect(result.current.noiseFloorDb).toBeNull()
+    expect(result.current.spectrumStatus).toBeNull()
+    expect(result.current.spectrumRef.current).toBeNull()
+    expect(result.current.tracksRef.current).toEqual([])
+    expect(result.current.earlyWarning).toBeNull()
+
+    const nextSpectrum = makeSpectrum({ contentType: 'speech', peak: -6 })
+    act(() => {
+      result.current.handleSpectrum(nextSpectrum)
+    })
+
+    expect(result.current.spectrumStatus?.peak).toBe(-6)
+    expect(result.current.spectrumStatus?.contentType).toBe('speech')
+  })
+
   it('throttles DOM-facing status updates but still refreshes the hot spectrum ref', () => {
     vi.spyOn(performance, 'now')
       .mockReturnValueOnce(300)

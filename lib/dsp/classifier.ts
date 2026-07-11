@@ -306,28 +306,6 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     pInstrument /= total
   }
 
-  // Calculate calibrated confidence using new utility
-  const calibratedResult = calculateCalibratedConfidence(
-    pFeedback,
-    pWhistle,
-    pInstrument,
-    modalAnalysis.feedbackProbabilityBoost,
-    cumulativeGrowth.severity
-  )
-
-  // F5 fix: apply adjustedPFeedback and renormalize so the scores
-  // and confidence describe the same model state.
-  pFeedback = calibratedResult.adjustedPFeedback
-  const postCalibTotal = pFeedback + pWhistle + pInstrument
-  if (postCalibTotal > 0) {
-    pFeedback /= postCalibTotal
-    pWhistle /= postCalibTotal
-    pInstrument /= postCalibTotal
-  }
-
-  const confidence = calibratedResult.confidence
-  // pUnknown is computed after severity overrides (below) to maintain score consistency
-
   // ==================== Classification ====================
 
   let label: IssueLabel
@@ -384,6 +362,12 @@ export function classifyTrack(track: TrackInput, settings?: DetectorSettings, ac
     pWhistle /= postSeverityTotal
     pInstrument /= postSeverityTotal
   }
+  const calibratedResult = calculateCalibratedConfidence(
+    pFeedback,
+    pWhistle,
+    pInstrument,
+  )
+  const confidence = calibratedResult.confidence
   const pUnknown = Math.max(0, 1 - (pFeedback + pWhistle + pInstrument))
 
   // Determine label

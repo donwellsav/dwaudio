@@ -75,6 +75,7 @@ export type WorkerInboundMessage =
     }
   | {
       type: 'reset'
+      generation: number
     }
   // Periodic spectrum feed for content-type detection (independent of peak backpressure)
   | {
@@ -101,9 +102,10 @@ export type WorkerOutboundMessage =
   | { type: 'advisoryCleared'; advisoryId: string }
   | ({ type: 'tracksUpdate'; tracks: TrackSummary[]; contentType?: ContentType; algorithmMode?: AlgorithmMode; isCompressed?: boolean; compressionRatio?: number } & WorkerReportGateStatus)
   | { type: 'combPatternUpdate'; pattern: CombPatternResult | null }
-  | { type: 'returnBuffers'; spectrum: Float32Array; timeDomain?: Float32Array; source?: 'peak' | 'spectrumUpdate' }
+  | { type: 'returnBuffers'; spectrum: Float32Array; timeDomain?: Float32Array; source: 'peak' | 'spectrumUpdate' }
   | { type: 'contentTypeUpdate'; contentType: ContentType; isCompressed: boolean; compressionRatio: number }
   | { type: 'ready' }
+  | { type: 'resetComplete'; generation: number }
   | { type: 'error'; message: string }
 
 // ─── Worker state ────────────────────────────────────────────────────────────
@@ -417,6 +419,10 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       settings = { ...DEFAULT_SETTINGS, ...msg.settings }
       sampleRate = msg.sampleRate
       fftSize = msg.fftSize
+      trackManager.updateOptions({
+        maxTracks: settings.maxTracks,
+        trackTimeoutMs: settings.trackTimeoutMs,
+      })
 
       algorithmEngine.init(fftSize)
       trackManager.clear()
@@ -453,6 +459,7 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
     }
 
     case 'reset': {
+      feedbackHotspotSummaries = []
       trackManager.clear()
       algorithmEngine.reset()
       advisoryManager.reset()
@@ -466,6 +473,10 @@ self.onmessage = (event: MessageEvent<WorkerInboundMessage>) => {
       publishCombPattern(null)
       lastTracksUpdateFrameId = -1
       clearReportGateStatus()
+      self.postMessage({
+        type: 'resetComplete',
+        generation: msg.generation,
+      } satisfies WorkerOutboundMessage)
       break
     }
 

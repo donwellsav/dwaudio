@@ -19,6 +19,7 @@ import {
 } from '../classifier'
 import { getSeverityUrgency } from '../severityUtils'
 import { calculateCalibratedConfidence } from '../acoustic/confidenceCalibration'
+import { TrackManager } from '../trackManager'
 import { DEFAULT_SETTINGS } from '../constants'
 import type { ClassificationResult, SeverityLevel, Track, DetectorSettings, FusedDetectionResult } from '@/types/advisory'
 import { buildScores } from '@/tests/helpers/mockAlgorithmScores'
@@ -411,6 +412,33 @@ describe('shouldReportIssue', () => {
 // ── classifyTrack ───────────────────────────────────────────────────────────
 
 describe('classifyTrack', () => {
+  it('does not classify a rapidly decaying track as growth', () => {
+    const manager = new TrackManager()
+    const peak = {
+      binIndex: 170,
+      trueFrequencyHz: 1000,
+      trueAmplitudeDb: -20,
+      prominenceDb: 15,
+      sustainedMs: 200,
+      harmonicOfHz: null,
+      noiseFloorDb: -80,
+      effectiveThresholdDb: -40,
+      qEstimate: 30,
+      bandwidthHz: 33,
+      timestamp: 1000,
+    }
+
+    manager.processPeak(peak)
+    manager.processPeak({ ...peak, trueAmplitudeDb: -23, timestamp: 1100 })
+    manager.processPeak({ ...peak, trueAmplitudeDb: -26, timestamp: 1200 })
+    const track = manager.processPeak({ ...peak, trueAmplitudeDb: -29, timestamp: 1300 })
+    const result = classifyTrack(track)
+
+    expect(result.severity).not.toBe('GROWING')
+    expect(result.severity).not.toBe('RUNAWAY')
+    expect(result.reasons.some((reason) => reason.startsWith('Rapid growth:'))).toBe(false)
+  })
+
   it('classifies a stable, non-harmonic, non-modulated track as feedback', () => {
     const track = makeTrack({
       features: {
@@ -1163,24 +1191,40 @@ describe('classifyTrack posterior consistency (F5)', () => {
     }
   })
 
-  it('adjustedPFeedback from calibration is reflected in returned posterior', () => {
-    // A track with strong feedback features should have boosted pFeedback
-    // because calculateCalibratedConfidence adjusts it
+  it('confidence equals the final posterior for a normal track', () => {
     const track = makeTrack({ prominenceDb: 25, qEstimate: 40 })
     const result = classifyTrack(track)
-    // The returned pFeedback should be > 0 (not the discarded pre-adjustment value)
-    expect(result.pFeedback).toBeGreaterThan(0)
-    // And confidence should be consistent with the returned class probs
-    expect(result.confidence).toBeGreaterThanOrEqual(
-      Math.max(result.pFeedback, result.pWhistle, result.pInstrument) - 0.01
+
+    expect(result.confidence).toBeCloseTo(
+      Math.max(result.pFeedback, result.pWhistle, result.pInstrument),
+      8,
     )
   })
 
-  it('calibration confidence follows the adjusted feedback posterior', () => {
-    const result = calculateCalibratedConfidence(0.4, 0.2, 0.1, 0.15, 'NONE')
+  it('confidence equals the final posterior after a runaway override', () => {
+    const result = classifyTrack(makeTrack({
+      features: {
+        ...makeTrack().features,
+        meanVelocityDbPerSec: 10,
+        maxVelocityDbPerSec: 30,
+      },
+    }))
 
-    expect(result.adjustedPFeedback).toBeCloseTo(0.55, 6)
-    expect(result.confidence).toBeCloseTo(0.55, 6)
+    expect(result.severity).toBe('RUNAWAY')
+    expect(result.confidence).toBeCloseTo(
+      Math.max(result.pFeedback, result.pWhistle, result.pInstrument),
+      8,
+    )
+  })
+
+  it('calibration reports the supplied posterior without adding evidence', () => {
+    const result = calculateCalibratedConfidence(0.5, 0.3, 0.2)
+
+    expect(result).toEqual({
+      adjustedPFeedback: 0.5,
+      confidence: 0.5,
+      confidenceLabel: 'LOW',
+    })
   })
 })
 
