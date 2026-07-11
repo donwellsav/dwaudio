@@ -1191,24 +1191,40 @@ describe('classifyTrack posterior consistency (F5)', () => {
     }
   })
 
-  it('adjustedPFeedback from calibration is reflected in returned posterior', () => {
-    // A track with strong feedback features should have boosted pFeedback
-    // because calculateCalibratedConfidence adjusts it
+  it('confidence equals the final posterior for a normal track', () => {
     const track = makeTrack({ prominenceDb: 25, qEstimate: 40 })
     const result = classifyTrack(track)
-    // The returned pFeedback should be > 0 (not the discarded pre-adjustment value)
-    expect(result.pFeedback).toBeGreaterThan(0)
-    // And confidence should be consistent with the returned class probs
-    expect(result.confidence).toBeGreaterThanOrEqual(
-      Math.max(result.pFeedback, result.pWhistle, result.pInstrument) - 0.01
+
+    expect(result.confidence).toBeCloseTo(
+      Math.max(result.pFeedback, result.pWhistle, result.pInstrument),
+      8,
     )
   })
 
-  it('calibration confidence follows the adjusted feedback posterior', () => {
-    const result = calculateCalibratedConfidence(0.4, 0.2, 0.1, 0.15, 'NONE')
+  it('confidence equals the final posterior after a runaway override', () => {
+    const result = classifyTrack(makeTrack({
+      features: {
+        ...makeTrack().features,
+        meanVelocityDbPerSec: 10,
+        maxVelocityDbPerSec: 30,
+      },
+    }))
 
-    expect(result.adjustedPFeedback).toBeCloseTo(0.55, 6)
-    expect(result.confidence).toBeCloseTo(0.55, 6)
+    expect(result.severity).toBe('RUNAWAY')
+    expect(result.confidence).toBeCloseTo(
+      Math.max(result.pFeedback, result.pWhistle, result.pInstrument),
+      8,
+    )
+  })
+
+  it('calibration reports the supplied posterior without adding evidence', () => {
+    const result = calculateCalibratedConfidence(0.5, 0.3, 0.2)
+
+    expect(result).toEqual({
+      adjustedPFeedback: 0.5,
+      confidence: 0.5,
+      confidenceLabel: 'LOW',
+    })
   })
 })
 
