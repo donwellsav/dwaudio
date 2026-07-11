@@ -19,7 +19,6 @@ import {
 } from './advancedDetection'
 import { TEMPORAL_ENVELOPE, MSD_CONSTANTS, MSD_SETTINGS } from './constants'
 import type { AlgorithmScores } from './advancedDetection'
-import { MSDPool } from './msdPool'
 import { dbToLinearLut as dbToLinear } from './expLut'
 import type { ContentType, DetectedPeak, Track, MSDResult } from '@/types/advisory'
 
@@ -70,19 +69,6 @@ export function computeNoiseSidebandScore(spectrum: Float32Array, peakBin: numbe
   return Math.max(0, Math.min(1, (excessDb - SIDEBAND_NOISE_OFFSET_DB) / SIDEBAND_NOISE_RANGE_DB))
 }
 
-
-/**
- * Choose MSD minimum frames based on detected content type.
- * DAFx-16 paper: speech 7 frames (100%), classical 13 (100%), rock 50 (22%).
- */
-export function getMsdMinFrames(contentType: string): number {
-  switch (contentType) {
-    case 'speech':     return MSD_CONSTANTS.MIN_FRAMES_SPEECH
-    case 'music':      return MSD_CONSTANTS.MIN_FRAMES_MUSIC
-    case 'compressed': return MSD_CONSTANTS.MAX_FRAMES
-    default:           return MSD_CONSTANTS.DEFAULT_FRAMES
-  }
-}
 
 function detectorMsdFallback(peak: DetectedPeak, spectrum: Float32Array, binIndex: number): MSDResult | null {
   if (peak.msd === undefined || !Number.isFinite(peak.msd) || peak.msd < 0) {
@@ -242,7 +228,6 @@ function hashActivePeakFrequencies(activePeakFrequencies: number[]): number {
  * Stateful — maintains MSD, phase, and amplitude histories across frames.
  */
 export class AlgorithmEngine {
-  private msdPool: MSDPool | null = null
   private phaseBuffer: PhaseHistoryBuffer | null = null
   private ampBuffer = new AmplitudeHistoryBuffer()
   private lastFrameTimestamp: number = -1
@@ -442,7 +427,6 @@ export class AlgorithmEngine {
   /** Allocate buffers for the given FFT size. */
   init(fftSize: number): void {
     const numBins = Math.floor(fftSize / 2)
-    this.msdPool = new MSDPool()  // 256 slots × 64 frames = 64KB (was 1MB dense)
     this.phaseBuffer = new PhaseHistoryBuffer(numBins, 12)
     this.ampBuffer.reset()
     ensureFftBuffers(fftSize)
@@ -544,31 +528,9 @@ export class AlgorithmEngine {
       ? this._contentType
       : this._instantContentType
 
-    // MSD: write this peak's magnitude to pool (builds history across frames)
-    this.msdPool?.write(binIndex, spectrum[binIndex])
-
-    // Compute MSD from pooled sparse history (matches feedbackDetector.ts per-bin tracking)
-    const msdMinFrames = getMsdMinFrames(this._contentType)
-    let msdResult: MSDResult | null = null
-    if (this.msdPool) {
-      const raw = this.msdPool.getMSD(binIndex, msdMinFrames)
-      if (raw.msd >= 0) {
-        // Energy gate (caller responsibility — MSDPool returns raw values)
-        const gated = peak.noiseFloorDb != null
-          && spectrum[binIndex] - peak.noiseFloorDb < MSD_SETTINGS.MIN_ENERGY_ABOVE_NOISE_DB
-        msdResult = {
-          msd: gated ? Infinity : raw.msd,
-          feedbackScore: gated ? 0 : Math.exp(-raw.msd / MSD_CONSTANTS.THRESHOLD),
-          secondDerivative: 0,
-          isFeedbackLikely: !gated && raw.msd < MSD_CONSTANTS.THRESHOLD,
-          framesAnalyzed: raw.frameCount,
-          meanMagnitudeDb: spectrum[binIndex],
-        }
-      }
-    }
-    if (!msdResult) {
-      msdResult = detectorMsdFallback(peak, spectrum, binIndex)
-    }
+    // The main detector owns the only MSD history. A second worker history ran
+    // at the slower peak-refresh cadence and produced incompatible frame units.
+    const msdResult = detectorMsdFallback(peak, spectrum, binIndex)
 
     // Compression detection
     let compressionResult = this._compressionCacheResult
@@ -644,7 +606,6 @@ export class AlgorithmEngine {
   }
 
   reset(): void {
-    this.msdPool?.reset()
     this.phaseBuffer?.reset()
     this.ampBuffer.reset()
     this.lastFrameTimestamp = -1

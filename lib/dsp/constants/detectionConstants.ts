@@ -132,10 +132,9 @@ export const MEMORY_LIMITS = {
 // ── MSD (Magnitude Slope Deviation) from DAFx-16 paper ──────────────────────
 
 export const MSD_SETTINGS = {
-  /** Default MSD threshold (dB²/frame²) - values below indicate feedback
-   *  DAFx-16 paper gives 1.0 dB²/frame² for 16-frame window.
-   *  After normalizing by numTerms (frameCount - 2), threshold ≈ 1.0/14 ≈ 0.071.
-   *  We use 0.1 (slightly loose) for robustness. */
+  /** Threshold for this app's mean-squared second-difference MSD variant.
+   *  The DAFx-16 paper uses a sum, so its published threshold is not directly
+   *  interchangeable with this normalized score. */
   THRESHOLD: 0.1,
   /** MSD below this → flag as feedback howl */
   HOWL_THRESHOLD: 0.1,

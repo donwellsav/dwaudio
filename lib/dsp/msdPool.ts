@@ -7,10 +7,13 @@
  * Tracks per-bin magnitude histories using a fixed-size slot pool with LRU eviction.
  * Memory: poolSize × historySize × 4 bytes (default: 256 × 64 × 4 = 64 KB).
  *
- * MSD formula (DAFx-16, "Howling Detection based on Magnitude Slope Deviation"):
- *   MSD = (1/N) × Σ|G''(k,n)|² for n in [2, frameCount)
+ * Normalized MSD variant of the DAFx-16 summing method:
+ *   MSD = mean(|G''(k,n)|²) for n in [2, frameCount)
  *   where G''(k,n) = G(k,n) − 2·G(k,n−1) + G(k,n−2)   (3-point second derivative)
  *
+ * The paper sums these terms; this implementation takes their mean so the
+ * score remains comparable as history length grows. Its threshold is local
+ * calibration and must not be treated as the paper's published threshold.
  * Low MSD ≈ feedback (constant magnitude trajectory).
  * High MSD ≈ music/speech (variable magnitude trajectory).
  *

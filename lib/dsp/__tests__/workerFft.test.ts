@@ -177,11 +177,7 @@ describe('AlgorithmEngine compression caching', () => {
       const result = engine.computeScores(makePeak(peakBin, timestamp), makeTrack(peakBin), spectrum, SAMPLE_RATE, FFT_SIZE, [])
 
       expect(result.contentType).toBe('music')
-      if (frame < 6) {
-        expect(result.algorithmScores.msd).toBeNull()
-      } else {
-        expect(result.algorithmScores.msd?.framesAnalyzed).toBe(7)
-      }
+      expect(result.algorithmScores.msd).toBeNull()
     }
   })
 
@@ -208,5 +204,30 @@ describe('AlgorithmEngine compression caching', () => {
     expect(result.algorithmScores.msd?.msd).toBe(0.02)
     expect(result.algorithmScores.msd?.isFeedbackLikely).toBe(true)
     expect(result.algorithmScores.msd?.framesAnalyzed).toBeGreaterThanOrEqual(8)
+  })
+
+  it('never replaces detector MSD with a differently clocked worker history', () => {
+    const engine = new AlgorithmEngine()
+    engine.init(FFT_SIZE)
+    const peakBin = 16
+
+    for (let frame = 0; frame < 10; frame++) {
+      const timestamp = 1000 + frame * 80
+      const spectrum = makeSpectrum(64, peakBin, frame % 2 === 0 ? -24 : -10)
+      const peak = {
+        ...makePeak(peakBin, timestamp),
+        msd: 0.02,
+        msdGrowthRate: 1.4,
+        msdIsHowl: true,
+        msdFastConfirm: true,
+        persistenceFrames: 8 + frame,
+      }
+
+      engine.feedFrame(timestamp, spectrum, undefined, 150, 10000, SAMPLE_RATE, FFT_SIZE)
+      const result = engine.computeScores(peak, makeTrack(peakBin), spectrum, SAMPLE_RATE, FFT_SIZE, [])
+
+      expect(result.algorithmScores.msd?.msd).toBe(peak.msd)
+      expect(result.algorithmScores.msd?.isFeedbackLikely).toBe(true)
+    }
   })
 })
