@@ -6,15 +6,11 @@ import { useAdvisoryActions, useAdvisoryData } from '@/contexts/AdvisoryContext'
 import { useEngine } from '@/contexts/EngineContext'
 import { useMetering } from '@/contexts/MeteringContext'
 import { useUI } from '@/contexts/UIContext'
-import type { AudioDevice } from '@/hooks/useAudioDevices'
 
 export interface HeaderBarState {
   isRunning: boolean
   isStarting: boolean
   inputLevel: number
-  devices: AudioDevice[]
-  selectedDeviceId: string
-  handleDeviceChange: (deviceId: string) => void
   isFrozen: boolean
   resolvedTheme: string | undefined
   hasClearableContent: boolean
@@ -30,9 +26,6 @@ export function useHeaderBarState(): HeaderBarState {
     isStarting,
     start,
     stop,
-    devices,
-    selectedDeviceId,
-    handleDeviceChange,
   } = useEngine()
   const { inputLevel } = useMetering()
   const { isFrozen, toggleFreeze } = useUI()
@@ -71,9 +64,6 @@ export function useHeaderBarState(): HeaderBarState {
     isRunning,
     isStarting,
     inputLevel,
-    devices,
-    selectedDeviceId,
-    handleDeviceChange,
     isFrozen,
     resolvedTheme,
     hasClearableContent,

@@ -13,8 +13,9 @@ import { DEFAULT_SETTINGS, OPERATION_MODES } from '@/lib/dsp/constants/presetCon
 import { MODE_BASELINES } from '@/lib/settings/modeBaselines'
 import { DEFAULT_ENVIRONMENT, FRESH_START_SESSION_STATE } from '@/lib/settings/defaults'
 
-const { mockUseSettings } = vi.hoisted(() => ({
+const { mockUseSettings, mockHandleDeviceChange } = vi.hoisted(() => ({
   mockUseSettings: vi.fn(),
+  mockHandleDeviceChange: vi.fn(),
 }))
 
 function slug(label: string): string {
@@ -92,6 +93,17 @@ vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => mockUseSettings(),
 }))
 
+vi.mock('@/contexts/EngineContext', () => ({
+  useEngine: () => ({
+    devices: [
+      { deviceId: 'stage-left', label: 'Stage Left Mic' },
+      { deviceId: 'stage-right', label: 'Stage Right Mic' },
+    ],
+    selectedDeviceId: 'stage-left',
+    handleDeviceChange: mockHandleDeviceChange,
+  }),
+}))
+
 function buildAdvancedActions() {
   return {
     updateDisplayField: vi.fn(),
@@ -104,6 +116,7 @@ function buildAdvancedActions() {
 describe('settings default alignment', () => {
   beforeEach(() => {
     mockUseSettings.mockReset()
+    mockHandleDeviceChange.mockReset()
   })
 
   it('resets mode-owned detection overrides back to the active mode baseline', () => {
@@ -185,6 +198,25 @@ describe('settings default alignment', () => {
     fireEvent.click(screen.getByRole('button', { name: 'reset-sensitivity' }))
 
     expect(setSensitivityOffset).toHaveBeenCalledWith(0)
+  })
+
+  it('puts audio input selection at the bottom of the Live panel', () => {
+    mockUseSettings.mockReturnValue({
+      session: FRESH_START_SESSION_STATE,
+      setSensitivityOffset: vi.fn(),
+      setFocusRange: vi.fn(),
+      setMode: vi.fn(),
+      setEqStyle: vi.fn(),
+    })
+
+    render(<LiveTab settings={deriveFreshStartDetectorSettings()} />)
+
+    const maximumFrequency = screen.getByRole('slider', { name: 'Maximum frequency' })
+    const audioInput = screen.getByRole('combobox', { name: 'Select audio input' })
+    expect(maximumFrequency.compareDocumentPosition(audioInput) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.change(audioInput, { target: { value: 'stage-right' } })
+    expect(mockHandleDeviceChange).toHaveBeenCalledWith('stage-right')
   })
 })
 

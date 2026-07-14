@@ -1,7 +1,9 @@
 'use client'
 
 import { memo, useCallback, type CSSProperties } from 'react'
+import { ChevronDown, Mic } from 'lucide-react'
 import { ConsoleSlider } from '@/components/ui/console-slider'
+import { useEngine } from '@/contexts/EngineContext'
 import { useSettings } from '@/contexts/SettingsContext'
 import type { DetectorSettings } from '@/types/advisory'
 import { FREQ_RANGE_PRESETS } from '@/lib/dsp/constants'
@@ -50,6 +52,10 @@ interface LiveTabProps {
 
 export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
   const ctx = useSettings()
+  const { devices, selectedDeviceId, handleDeviceChange } = useEngine()
+  const selectedDeviceLabel = selectedDeviceId
+    ? devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? 'Default (System)'
+    : 'Default (System)'
 
   /** Sensitivity slider writes absolute dB; compute delta for layered model */
   const defaultSensitivityOffsetDb =
@@ -203,6 +209,30 @@ export const LiveTab = memo(function LiveTab({ settings }: LiveTabProps) {
           </label>
         </div>
       </div>
+
+      <div className="panel-groove-subtle" />
+
+      <label className="block space-y-0.5">
+        <span className="section-label text-muted-foreground">Audio Input</span>
+        <div className="relative">
+          <select
+            aria-label="Select audio input"
+            title={`Audio input: ${selectedDeviceLabel}`}
+            value={selectedDeviceId}
+            onChange={(event) => handleDeviceChange(event.currentTarget.value)}
+            className="console-input h-8 w-full cursor-pointer appearance-none rounded bg-transparent pl-8 pr-7 font-mono text-dwa-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-primary"
+          >
+            <option value="" className="text-foreground">Default (System)</option>
+            {devices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId} className="text-foreground">
+                {device.label}
+              </option>
+            ))}
+          </select>
+          <Mic className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+        </div>
+      </label>
 
     </div>
   )

@@ -228,6 +228,16 @@ html {
   .light body {
     background: linear-gradient(160deg, #e8eaee 0%, #f0f1f4 25%, #f5f6f8 50%, #eef0f3 75%, #e5e7eb 100%);
   }
+  select {
+    color-scheme: dark;
+  }
+  select option {
+    background: var(--popover);
+    color: var(--popover-foreground);
+  }
+  .light select {
+    color-scheme: light;
+  }
   /* CRT scanline + noise overlays — desktop only. On mobile the cost of
      two full-viewport fixed pseudo-elements (one with a fractalNoise SVG
      tiled across a retina viewport) stacks on top of backdrop effects and
