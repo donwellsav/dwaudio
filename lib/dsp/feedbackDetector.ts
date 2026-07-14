@@ -971,7 +971,12 @@ export class FeedbackDetector {
       if (Number.isFinite(v) && v > rawPeak) rawPeak = v
     }
     this._rawPeakDb = rawPeak
-    this._isSignalPresent = rawPeak >= this._silenceThresholdDb
+    const appliedGain = this._autoGainEnabled
+      ? Math.round(this._autoGainDb)
+      : (this.config.inputGainDb ?? 0)
+    this._isSignalPresent =
+      rawPeak >= this._silenceThresholdDb ||
+      rawPeak + appliedGain >= this.computeEffectiveThresholdDb() - 9
 
     // ── Auto-gain: EMA calibration using the shared rawPeak ──────────────
     if (this._autoGainEnabled) {

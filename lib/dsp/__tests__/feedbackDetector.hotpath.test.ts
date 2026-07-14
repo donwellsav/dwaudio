@@ -1378,6 +1378,34 @@ describe('FeedbackDetector hot path — Part C: Performance optimizations', () =
   // ── Merged raw peak scan ──────────────────────────────────────────
 
   describe('merged raw peak scan (_measureSignalAndApplyGain)', () => {
+    it('analyzes a threshold-eligible peak below the mode signal gate', () => {
+      const peakBin = 500
+      const detectedPeaks: unknown[] = []
+      const detector = createReadyDetector(
+        (arr) => {
+          arr.fill(-100)
+          arr[peakBin] = -55
+        },
+        {
+          thresholdDb: -60,
+          thresholdMode: 'absolute',
+          sustainMs: 60,
+          prominenceDb: 8,
+        },
+      )
+      detector.updateSettings({ mode: 'liveMusic' })
+      ;(detector as any).callbacks = {
+        onPeakDetected: (peak: unknown) => detectedPeaks.push(peak),
+      }
+
+      for (let frame = 0; frame < 5; frame++) {
+        ;(detector as any).analyze(frame * 20, 20)
+      }
+
+      expect(detector.getState().rawPeakDb).toBeCloseTo(-55, 1)
+      expect(detectedPeaks.length).toBeGreaterThan(0)
+    })
+
     it('sets _rawPeakDb correctly with auto-gain disabled', () => {
       const peakBin = 500
       const peakDb = -25
