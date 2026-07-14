@@ -63,7 +63,7 @@
   --chart-3: #ffaa00;
   --chart-4: #ff4444;
   --chart-5: #00bcd4;
-  --radius: 0.375rem;
+  --radius: 5px;
   --sidebar: #141618;
   --sidebar-foreground: #e0e0e0;
   --sidebar-primary: #4B92FF;
@@ -197,10 +197,11 @@ html {
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-xs: var(--radius);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: var(--radius);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -710,7 +711,7 @@ html {
     background: rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.1);
     border: 1px solid rgba(var(--tint-r), var(--tint-g), var(--tint-b), 0.25);
     padding: 2px 7px;
-    border-radius: 10px;
+    border-radius: var(--radius);
   }
 
   /* ── Section label — sans-serif variant for non-data headers ────────── */
@@ -736,7 +737,7 @@ html {
   /* ── Segmented tab track — recessed container for tab strips ──────────── */
   .tab-track {
     background: rgba(0, 0, 0, 0.2);
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 3px;
     box-shadow:
       inset 0 1px 2px rgba(0, 0, 0, 0.3),
@@ -749,7 +750,7 @@ html {
       inset 0 0 0 1px rgba(0, 0, 0, 0.04);
   }
   .tab-track-item {
-    border-radius: 6px;
+    border-radius: var(--radius);
     /* Scope transition to non-layout paint + text color so browser can skip layout recalc */
     transition:
       color 200ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -926,6 +927,16 @@ html {
   }
 }
 
+/* Tailwind's bare radius utilities use a font-scaled 0.25rem default.
+ * Keep rectangular surfaces on the fixed 5px instrument radius instead. */
+.rounded {
+  border-radius: var(--radius);
+}
+.rounded-t {
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+
   /* ── Radar ping — sonar sweep for monitoring state ──────────────────────── */
   @keyframes radar-ping {
     0%   { transform: scale(0.35); opacity: 0.7; }
@@ -962,7 +973,7 @@ html {
   .fader-readout {
     background: rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.055);
-    border-radius: 4px;
+    border-radius: var(--radius);
     width: 100%;
     min-width: 0;
     padding: 3px 4px;
@@ -982,7 +993,7 @@ html {
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-top-color: rgba(255, 255, 255, 0.12);  /* catch-light */
     border-bottom-color: rgba(0, 0, 0, 0.30);
-    border-radius: 8px;
+    border-radius: var(--radius);
     padding: 2px;
     box-shadow:
       0 1px 4px rgba(0, 0, 0, 0.25),

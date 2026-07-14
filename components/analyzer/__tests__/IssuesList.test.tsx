@@ -361,6 +361,7 @@ describe('IssuesList', () => {
     // Should render 2 glass-card elements
     const cards = container.querySelectorAll('.glass-card')
     expect(cards.length).toBe(2)
+    expect(screen.queryByText('Instrument')).toBeNull()
   })
 
   it('limits displayed cards to maxIssues', () => {

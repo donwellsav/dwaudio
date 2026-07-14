@@ -57,7 +57,7 @@ describe('IssueCard', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('renders severity icon pill', () => {
+  it('places the severity icon in the spaced right-side metadata', () => {
     render(
       <IssueCard
         advisory={makeAdvisory({ severity: 'GROWING' as SeverityLevel })}
@@ -65,12 +65,15 @@ describe('IssueCard', () => {
       />,
     )
 
-    expect(screen.getByTitle(/growing/i)).toBeDefined()
+    const severityIcon = screen.getByRole('img', { name: 'Severity: Growing' })
+    expect(severityIcon.parentElement?.className).toContain('ml-auto')
+    expect(severityIcon.parentElement?.className).toContain('gap-1')
   })
 
-  it('renders confidence badge', () => {
+  it('keeps confidence off the card', () => {
     render(<IssueCard advisory={makeAdvisory({ confidence: 0.92 })} occurrenceCount={1} />)
-    expect(screen.getByText('92%')).toBeDefined()
+    expect(screen.queryByText('92%')).toBeNull()
+    expect(screen.queryByLabelText(/confidence/i)).toBeNull()
   })
 
   it('renders confirmation latency when available', () => {
@@ -135,6 +138,21 @@ describe('IssueCard', () => {
       expect(button.className).not.toContain('[44px]')
       expect(button.className).not.toMatch(/\bh-8\b|\bw-8\b/)
     }
+  })
+
+  it('keeps mobile actions on the EQ row', () => {
+    render(
+      <IssueCard
+        advisory={makeAdvisory()}
+        occurrenceCount={1}
+        touchFriendly
+        onDismiss={vi.fn()}
+      />,
+    )
+
+    const eqRow = screen.getByText(/-6dB/).closest('div')
+    expect(eqRow?.contains(screen.getByRole('button', { name: 'Copy issue guidance for 1.00kHz' }))).toBe(true)
+    expect(eqRow?.contains(screen.getByRole('button', { name: 'Dismiss 1.00kHz' }))).toBe(true)
   })
 
   it('labels and announces a successful issue-guidance copy', async () => {

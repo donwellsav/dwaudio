@@ -1,9 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, memo } from 'react'
-import { useTheme } from 'next-themes'
 import { X } from 'lucide-react'
-import { getSeverityText, getSeverityColor } from '@/lib/utils/advisoryDisplay'
 import { summarizeShelfRecommendations } from '@/lib/utils/recommendationDisplay'
 import type { Advisory } from '@/types/advisory'
 import { useIssueAnnouncement } from '@/hooks/useIssueAnnouncement'
@@ -13,7 +11,6 @@ import {
 } from '@/hooks/useIssuesListEntries'
 import { IssueCard } from './IssueCard'
 import { IssuesEmptyState } from './IssuesEmptyState'
-import { SEVERITY_ICON } from '@/components/analyzer/issueCardConfig'
 import type { SpectrumStatus } from '@/hooks/audioAnalyzerTypes'
 
 interface IssuesListProps {
@@ -213,45 +210,8 @@ export const IssuesList = memo(function IssuesList({
               onDismiss={onDismiss}
             />
           ))}
-
-          <SeverityLegend />
         </>
       )}
-    </div>
-  )
-})
-
-const LEGEND_SEVERITIES = [
-  'RUNAWAY',
-  'GROWING',
-  'RESONANCE',
-  'POSSIBLE_RING',
-  'WHISTLE',
-  'INSTRUMENT',
-] as const
-
-const SeverityLegend = memo(function SeverityLegend() {
-  const { resolvedTheme } = useTheme()
-  const isDark = resolvedTheme !== 'light'
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 pb-0.5 border-t border-border/30 mt-1">
-      {LEGEND_SEVERITIES.map((severity) => {
-        const Icon = SEVERITY_ICON[severity]
-        const color = getSeverityColor(severity, isDark)
-        if (!Icon) return null
-
-        return (
-          <span
-            key={severity}
-            className="inline-flex items-center gap-1 text-dwa-sm font-mono tracking-wide leading-none"
-            style={{ color }}
-          >
-            <Icon className="w-2.5 h-2.5" />
-            {getSeverityText(severity)}
-          </span>
-        )
-      })}
     </div>
   )
 })

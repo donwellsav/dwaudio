@@ -17,7 +17,7 @@ html { color-scheme: dark light; }
 .ge-btn {
   padding: 0.5rem 1rem; font-size: 0.875rem;
   font-family: ui-monospace, monospace; font-weight: 500;
-  border-radius: 0.375rem;
+  border-radius: 5px;
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
   border: 1px solid rgba(239, 68, 68, 0.4);

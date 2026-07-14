@@ -151,7 +151,7 @@ export const FaderTrack = memo(function FaderTrack({
         ) : null}
         <canvas ref={canvasRef} className="w-full h-full" />
         <div
-          className={`absolute left-1/2 -translate-x-1/2 translate-y-1/2 h-7 rounded-[6px] border-2 pointer-events-none transition-all duration-150 ${
+          className={`absolute left-1/2 -translate-x-1/2 translate-y-1/2 h-7 rounded border-2 pointer-events-none transition-all duration-150 ${
             isSensitivity
               ? 'border-cyan-300/60 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950'
               : autoGainEnabled
@@ -170,7 +170,7 @@ export const FaderTrack = memo(function FaderTrack({
           aria-hidden="true"
         >
           <div
-            className={`absolute inset-x-0 top-0 h-[2px] rounded-t-[4px] ${
+            className={`absolute inset-x-0 top-0 h-[2px] rounded-t ${
               isSensitivity ? 'bg-cyan-200/15' : autoGainEnabled ? 'bg-white/20' : 'bg-white/50'
             }`}
           />

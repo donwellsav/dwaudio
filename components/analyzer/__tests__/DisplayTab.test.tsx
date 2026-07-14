@@ -45,4 +45,12 @@ describe('DisplayTab', () => {
     expect(updateDisplayField).toHaveBeenNthCalledWith(1, 'faderLinkCenterGainDb', -40)
     expect(updateDisplayField).toHaveBeenNthCalledWith(2, 'faderLinkCenterGainDb', 40)
   })
+
+  it('omits the detection label legend', () => {
+    render(<DisplayTab settings={deriveFreshStartDetectorSettings()} />)
+
+    expect(screen.queryByText('Help: Detection Labels')).toBeNull()
+    expect(screen.queryByText('RUNAWAY')).toBeNull()
+    expect(screen.queryByText('Instrument')).toBeNull()
+  })
 })
