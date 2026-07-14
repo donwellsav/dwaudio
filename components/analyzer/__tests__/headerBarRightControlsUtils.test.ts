@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   getPA2StatusDotClass,
   getPA2TooltipText,
-  getThemeMenuLabel,
-  getThemeTooltipLabel,
 } from '@/components/analyzer/headerBarRightControlsUtils'
 
 describe('headerBarRightControlsUtils', () => {
@@ -36,7 +34,7 @@ describe('headerBarRightControlsUtils', () => {
     ).toBe('PA2 connecting')
   })
 
-  it('maps status and theme labels consistently', () => {
+  it('maps status labels consistently', () => {
     expect(getPA2StatusDotClass('connected')).toBe('bg-green-500')
     expect(getPA2StatusDotClass('connecting')).toBe(
       'bg-yellow-500 animate-pulse',
@@ -44,9 +42,5 @@ describe('headerBarRightControlsUtils', () => {
     expect(getPA2StatusDotClass('error')).toBe('bg-red-500')
     expect(getPA2StatusDotClass('idle')).toBe('bg-muted-foreground')
 
-    expect(getThemeTooltipLabel('dark')).toBe('Light mode')
-    expect(getThemeTooltipLabel('light')).toBe('Dark mode')
-    expect(getThemeMenuLabel('dark')).toBe('Light Mode')
-    expect(getThemeMenuLabel('light')).toBe('Dark Mode')
   })
 })

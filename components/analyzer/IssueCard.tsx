@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
-import { confidenceColor, RUNAWAY_COLOR } from '@/lib/canvas/canvasTokens'
+import { RUNAWAY_COLOR } from '@/lib/canvas/canvasTokens'
 import { getSeverityText } from '@/lib/utils/advisoryDisplay'
 import { getRecommendationStrategyLabel } from '@/lib/utils/recommendationDisplay'
 import { badgeClass } from '@/lib/utils/badgeClasses'
@@ -130,22 +130,7 @@ export const IssueCard = memo(function IssueCard({
       />
 
       <div className="flex flex-col relative z-10 @container pl-2.5 pr-1 py-0.5">
-        <div className="flex items-baseline gap-1">
-          {SeverityIconEl ? (
-            <span
-              className="flex-shrink-0 inline-flex items-center justify-center self-center"
-              style={{
-                color: isProvisional ? 'var(--muted-foreground)' : severityColor,
-                opacity: isProvisional ? 0.55 : 0.8,
-              }}
-              role="img"
-              aria-label={`Severity: ${getSeverityText(advisory.severity)}`}
-              title={getSeverityText(advisory.severity)}
-            >
-              <SeverityIconEl className="w-3.5 h-3.5" aria-hidden />
-            </span>
-          ) : null}
-
+        <div className="flex items-baseline gap-2">
           <span
             className={`font-mono font-black leading-none tracking-tight ${
               isRunaway ? 'text-3xl @[320px]:text-4xl' : 'text-2xl @[320px]:text-3xl'
@@ -172,7 +157,7 @@ export const IssueCard = memo(function IssueCard({
             </span>
           ) : null}
 
-          <div className="ml-auto flex items-center gap-0 flex-shrink-0 self-center">
+          <div className="ml-auto flex items-center gap-1 flex-shrink-0 self-center">
             {isInactive ? (
               <span
                 className={badgeClass('info', 'sm')}
@@ -219,43 +204,22 @@ export const IssueCard = memo(function IssueCard({
                 {advisory.clusterCount}pk
               </span>
             ) : null}
-            {advisory.confidence != null ? (
-              <span
-                className="inline-flex items-center gap-0 text-dwa-xs font-mono leading-none"
-                role="img"
-                aria-label={`${Math.round(advisory.confidence * 100)}% confidence`}
-                title={`${Math.round(advisory.confidence * 100)}% confidence`}
-              >
-                <svg width="12" height="12" viewBox="0 0 18 18" className="flex-shrink-0" aria-hidden>
-                  <circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" opacity={0.06} />
-                  <circle
-                    cx="9"
-                    cy="9"
-                    r="7"
-                    fill="none"
-                    stroke={confidenceColor(advisory.confidence ?? 0)}
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeDasharray={`${advisory.confidence * 44} 44`}
-                    transform="rotate(-90 9 9)"
-                  />
-                </svg>
-                <span className={`${
-                  advisory.confidence >= 0.85
-                    ? 'text-emerald-400/70'
-                    : advisory.confidence >= 0.70
-                      ? 'text-blue-400/70'
-                      : advisory.confidence >= 0.45
-                        ? 'text-amber-400/70'
-                        : 'text-muted-foreground/40'
-                }`}
-                >
-                  {Math.round(advisory.confidence * 100)}%
-                </span>
-              </span>
-            ) : null}
             {!isInactive ? (
               <span className="text-dwa-xs text-muted-foreground/70 font-mono leading-none">{ageStr}</span>
+            ) : null}
+            {SeverityIconEl ? (
+              <span
+                className="flex-shrink-0 inline-flex items-center justify-center"
+                style={{
+                  color: isProvisional ? 'var(--muted-foreground)' : severityColor,
+                  opacity: isProvisional ? 0.55 : 0.8,
+                }}
+                role="img"
+                aria-label={`Severity: ${getSeverityText(advisory.severity)}`}
+                title={getSeverityText(advisory.severity)}
+              >
+                <SeverityIconEl className="w-3.5 h-3.5" aria-hidden />
+              </span>
             ) : null}
           </div>
         </div>
@@ -317,6 +281,18 @@ export const IssueCard = memo(function IssueCard({
               />
             </div>
           ) : null}
+          {actionsLayout === 'mobile' ? (
+            <div className="ml-auto flex items-center">
+              <IssueCardActions
+                advisoryId={advisory.id}
+                exactFreqStr={exactFreqStr}
+                onDismiss={onDismiss}
+                onCopy={handleCopy}
+                copied={copied}
+                layout="mobile"
+              />
+            </div>
+          ) : null}
         </div>
 
         {showAlgorithmScores && advisory.algorithmScores ? (
@@ -345,16 +321,6 @@ export const IssueCard = memo(function IssueCard({
           </div>
         ) : null}
 
-        {actionsLayout === 'mobile' ? (
-          <IssueCardActions
-            advisoryId={advisory.id}
-            exactFreqStr={exactFreqStr}
-            onDismiss={onDismiss}
-            onCopy={handleCopy}
-            copied={copied}
-            layout="mobile"
-          />
-        ) : null}
       </div>
 
       {!isInactive && !isProvisional ? (

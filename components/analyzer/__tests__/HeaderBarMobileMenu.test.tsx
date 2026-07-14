@@ -10,10 +10,8 @@ function renderMobileMenu(overrides: Partial<ComponentProps<typeof HeaderBarMobi
     isRunning: true,
     isFrozen: false,
     hasClearableContent: true,
-    resolvedTheme: 'dark',
     onToggleFreeze: vi.fn(),
     onClearDisplays: vi.fn(),
-    onToggleTheme: vi.fn(),
     ...overrides,
   }
 
@@ -49,5 +47,13 @@ describe('HeaderBarMobileMenu', () => {
     })
 
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('keeps theme selection out of the header menu', () => {
+    renderMobileMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: /more actions/i }))
+
+    expect(screen.queryByRole('menuitem', { name: /mode/i })).toBeNull()
   })
 })

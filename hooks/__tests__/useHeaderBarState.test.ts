@@ -3,11 +3,8 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-let mockResolvedTheme: string | undefined = 'dark'
-const mockSetTheme = vi.fn()
 const mockStart = vi.fn(async () => {})
 const mockStop = vi.fn()
-const mockHandleDeviceChange = vi.fn()
 const mockToggleFreeze = vi.fn()
 const mockOnClearAll = vi.fn()
 const mockOnClearGEQ = vi.fn()
@@ -20,22 +17,12 @@ let mockDismissedIds = new Set<string>()
 let mockHasActiveGEQBars = false
 let mockHasActiveRTAMarkers = false
 
-vi.mock('next-themes', () => ({
-  useTheme: () => ({
-    resolvedTheme: mockResolvedTheme,
-    setTheme: mockSetTheme,
-  }),
-}))
-
 vi.mock('@/contexts/EngineContext', () => ({
   useEngine: () => ({
     isRunning: mockIsRunning,
     isStarting: mockIsStarting,
     start: mockStart,
     stop: mockStop,
-    devices: [{ deviceId: 'mic-1', label: 'Test Mic', kind: 'audioinput' }],
-    selectedDeviceId: 'mic-1',
-    handleDeviceChange: mockHandleDeviceChange,
   }),
 }))
 
@@ -89,17 +76,14 @@ import { useHeaderBarState } from '../useHeaderBarState'
 
 describe('useHeaderBarState', () => {
   beforeEach(() => {
-    mockResolvedTheme = 'dark'
     mockIsRunning = false
     mockIsStarting = false
     mockAdvisories = []
     mockDismissedIds = new Set()
     mockHasActiveGEQBars = false
     mockHasActiveRTAMarkers = false
-    mockSetTheme.mockReset()
     mockStart.mockClear()
     mockStop.mockClear()
-    mockHandleDeviceChange.mockClear()
     mockToggleFreeze.mockClear()
     mockOnClearAll.mockClear()
     mockOnClearGEQ.mockClear()
@@ -164,20 +148,4 @@ describe('useHeaderBarState', () => {
     expect(mockStop).not.toHaveBeenCalled()
   })
 
-  it('toggles the theme using the resolved theme', () => {
-    const { result, rerender } = renderHook(() => useHeaderBarState())
-
-    act(() => {
-      result.current.toggleTheme()
-    })
-    expect(mockSetTheme).toHaveBeenCalledWith('light')
-
-    mockResolvedTheme = 'light'
-    rerender()
-
-    act(() => {
-      result.current.toggleTheme()
-    })
-    expect(mockSetTheme).toHaveBeenCalledWith('dark')
-  })
 })

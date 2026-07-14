@@ -3,26 +3,18 @@
 import { memo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import {
-  Moon,
   MoreVertical,
   Pause,
   Play,
-  Sun,
   Trash2,
 } from 'lucide-react'
-import {
-  getThemeMenuLabel,
-  isDarkResolvedTheme,
-} from '@/components/analyzer/headerBarRightControlsUtils'
 
 interface HeaderBarMobileMenuProps {
   isRunning: boolean
   isFrozen: boolean
   hasClearableContent: boolean
-  resolvedTheme: string | undefined
   onToggleFreeze: () => void
   onClearDisplays: () => void
-  onToggleTheme: () => void
 }
 
 const mobileMenuItemClass = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left font-mono text-sm outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground disabled:pointer-events-none disabled:opacity-50'
@@ -31,12 +23,9 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
   isRunning,
   isFrozen,
   hasClearableContent,
-  resolvedTheme,
   onToggleFreeze,
   onClearDisplays,
-  onToggleTheme,
 }: HeaderBarMobileMenuProps) {
-  const isDarkTheme = isDarkResolvedTheme(resolvedTheme)
   const [isOpen, setIsOpen] = useState(false)
   const isPointerDownInsideMenuRef = useRef(false)
   const runMenuAction = (action: () => void) => {
@@ -116,20 +105,6 @@ export const HeaderBarMobileMenu = memo(function HeaderBarMobileMenu({
           >
             <Trash2 className="w-4 h-4" />
             Clear All
-          </button>
-          <div className="bg-border my-1 h-px" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => runMenuAction(onToggleTheme)}
-            className={mobileMenuItemClass}
-          >
-            {isDarkTheme ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
-            {getThemeMenuLabel(resolvedTheme)}
           </button>
         </div>
       ) : null}

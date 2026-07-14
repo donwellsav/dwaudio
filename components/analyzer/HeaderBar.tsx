@@ -14,16 +14,11 @@ export const HeaderBar = memo(function HeaderBar() {
     isRunning,
     isStarting,
     inputLevel,
-    devices,
-    selectedDeviceId,
-    handleDeviceChange,
     isFrozen,
-    resolvedTheme,
     hasClearableContent,
     handleToggleAnalysis,
     handleClearDisplays,
     toggleFreeze,
-    toggleTheme,
   } = useHeaderBarState()
 
   return (
@@ -39,9 +34,6 @@ export const HeaderBar = memo(function HeaderBar() {
         isRunning={isRunning}
         isStarting={isStarting}
         inputLevel={inputLevel}
-        devices={devices}
-        selectedDeviceId={selectedDeviceId}
-        handleDeviceChange={handleDeviceChange}
         onToggleAnalysis={handleToggleAnalysis}
       />
 
@@ -59,10 +51,8 @@ export const HeaderBar = memo(function HeaderBar() {
         isRunning={isRunning}
         isFrozen={isFrozen}
         hasClearableContent={hasClearableContent}
-        resolvedTheme={resolvedTheme}
         onToggleFreeze={toggleFreeze}
         onClearDisplays={handleClearDisplays}
-        onToggleTheme={toggleTheme}
       />
     </header>
   )
