@@ -15,12 +15,10 @@ export const HeaderBar = memo(function HeaderBar() {
     isStarting,
     inputLevel,
     isFrozen,
-    resolvedTheme,
     hasClearableContent,
     handleToggleAnalysis,
     handleClearDisplays,
     toggleFreeze,
-    toggleTheme,
   } = useHeaderBarState()
 
   return (
@@ -53,10 +51,8 @@ export const HeaderBar = memo(function HeaderBar() {
         isRunning={isRunning}
         isFrozen={isFrozen}
         hasClearableContent={hasClearableContent}
-        resolvedTheme={resolvedTheme}
         onToggleFreeze={toggleFreeze}
         onClearDisplays={handleClearDisplays}
-        onToggleTheme={toggleTheme}
       />
     </header>
   )

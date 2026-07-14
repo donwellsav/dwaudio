@@ -28,21 +28,3 @@ export function getPA2TooltipText({
 
   return `PA2 ${status}`
 }
-
-export function isDarkResolvedTheme(
-  resolvedTheme: string | undefined,
-): boolean {
-  return resolvedTheme === 'dark'
-}
-
-export function getThemeTooltipLabel(
-  resolvedTheme: string | undefined,
-): string {
-  return isDarkResolvedTheme(resolvedTheme) ? 'Light mode' : 'Dark mode'
-}
-
-export function getThemeMenuLabel(
-  resolvedTheme: string | undefined,
-): string {
-  return isDarkResolvedTheme(resolvedTheme) ? 'Light Mode' : 'Dark Mode'
-}

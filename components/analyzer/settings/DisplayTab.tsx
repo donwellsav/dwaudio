@@ -2,7 +2,9 @@
 
 import { memo } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useTheme } from 'next-themes'
+import { ChevronDown, Moon, Sun } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { ConsoleSlider } from '@/components/ui/console-slider'
 import { LEDToggle } from '@/components/ui/led-toggle'
 import { DEFAULT_DISPLAY_PREFS } from '@/lib/settings/defaults'
@@ -18,9 +20,26 @@ export const DisplayTab = memo(function DisplayTab({
   settings,
 }: DisplayTabProps) {
   const actions = useAdvancedTabState({ settings })
+  const { resolvedTheme, setTheme } = useTheme()
+  const isDarkTheme = resolvedTheme !== 'light'
 
   return (
     <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2 rounded border border-border/40 bg-card/20 px-2 py-1">
+        <span className="section-label text-muted-foreground">Appearance</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label={`Switch to ${isDarkTheme ? 'light' : 'dark'} mode`}
+          aria-pressed={isDarkTheme}
+          onClick={() => setTheme(isDarkTheme ? 'light' : 'dark')}
+          className="h-7 min-w-28 justify-start font-mono text-xs uppercase tracking-wide"
+        >
+          {isDarkTheme ? <Moon data-icon="inline-start" /> : <Sun data-icon="inline-start" />}
+          {isDarkTheme ? 'Dark Mode' : 'Light Mode'}
+        </Button>
+      </div>
       <SettingsGrid>
         <DisplayRtaSection settings={settings} actions={actions} />
         <DisplayIssueSection settings={settings} actions={actions} />
