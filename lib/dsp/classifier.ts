@@ -470,6 +470,7 @@ export function getReportGateDecision(
 
   const isSteadyChromaticTone =
     mode !== 'monitors' &&
+    classification.fusionVerdict !== 'FEEDBACK' &&
     classification.frequencyHz != null &&
     isChromaticallyQuantized(classification.frequencyHz) &&
     classification.cumulativeGrowthDb != null &&

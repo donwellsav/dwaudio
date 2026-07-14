@@ -1045,7 +1045,7 @@ describe('Worker Pipeline Integration', () => {
       expect(reported).toBe(false)
     })
 
-    it('keeps steady chromatic pure tones below the recommendation path', () => {
+    it('reports a steady chromatic pure tone when fusion confirms feedback', () => {
       const peakBin = Math.round(440 / (SAMPLE_RATE / FFT_SIZE))
       const sineFrame = makeStableSineFrame(peakBin)
       const settings = { ...DEFAULT_SETTINGS, mode: 'speech' as const }
@@ -1053,6 +1053,7 @@ describe('Worker Pipeline Integration', () => {
       const combTracker = new CombStabilityTracker()
       const agreementTracker = new AgreementPersistenceTracker()
       let maxFeedbackProbability = 0
+      let sawDefinitiveFeedback = false
       let reported = false
 
       for (let frame = 0; frame < 20; frame++) {
@@ -1128,11 +1129,13 @@ describe('Worker Pipeline Integration', () => {
         )
 
         maxFeedbackProbability = Math.max(maxFeedbackProbability, fusionResult.feedbackProbability)
+        sawDefinitiveFeedback ||= fusionResult.verdict === 'FEEDBACK'
         reported ||= shouldReportIssue(classification, settings)
       }
 
       expect(maxFeedbackProbability).toBeGreaterThan(0.35)
-      expect(reported).toBe(false)
+      expect(sawDefinitiveFeedback).toBe(true)
+      expect(reported).toBe(true)
     })
 
     it('reports clean confirmed feedback quickly at the live active-peak cadence', () => {

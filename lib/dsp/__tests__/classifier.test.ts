@@ -193,10 +193,24 @@ describe('shouldReportIssue', () => {
     expect(shouldReportIssue(classification, makeSettings({ mode: 'liveMusic' }))).toBe(true)
   })
 
-  it('suppresses steady chromatic pure tones even when severity is over-promoted', () => {
+  it('reports definitive steady chromatic feedback', () => {
     const classification = makeClassification({
       severity: 'RUNAWAY',
       fusionVerdict: 'FEEDBACK',
+      confidence: 0.95,
+      label: 'ACOUSTIC_FEEDBACK',
+      frequencyHz: 440,
+      cumulativeGrowthDb: 0,
+      persistenceMs: 240,
+    })
+
+    expect(shouldReportIssue(classification, makeSettings({ mode: 'speech' }))).toBe(true)
+  })
+
+  it('suppresses a steady chromatic tone while fusion is only possible', () => {
+    const classification = makeClassification({
+      severity: 'RESONANCE',
+      fusionVerdict: 'POSSIBLE_FEEDBACK',
       confidence: 0.95,
       label: 'ACOUSTIC_FEEDBACK',
       frequencyHz: 440,
